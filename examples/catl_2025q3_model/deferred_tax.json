@@ -1,0 +1,137 @@
+{
+  "loss_scenario": {
+    "current_tax": {
+      "value": 0,
+      "formula": "EBT < 0, 无需缴税",
+      "inputs": {
+        "ebt": -5000000
+      }
+    },
+    "dta_change": {
+      "value": 1250000.0,
+      "formula": "|EBT| × tax_rate",
+      "inputs": {
+        "current_loss": 5000000,
+        "tax_rate": 0.25
+      }
+    },
+    "closing_dta": {
+      "value": 1250000.0,
+      "formula": "opening_dta + dta_change",
+      "inputs": {
+        "opening_dta": 0,
+        "dta_change": 1250000.0
+      }
+    },
+    "closing_tax_loss": {
+      "value": 5000000,
+      "formula": "prior_loss + current_loss",
+      "inputs": {
+        "prior_loss": 0,
+        "current_loss": 5000000
+      }
+    },
+    "tax_expense": {
+      "value": -1250000.0,
+      "formula": "当期税 - DTA变动",
+      "inputs": {
+        "current_tax": 0,
+        "dta_change": 1250000.0
+      }
+    },
+    "impact": {
+      "income_statement": "所得税费用 = 当期税 ± DTA变动",
+      "balance_sheet": "递延税资产: 0.00 → 1250000.00",
+      "cash_flow": "递延税是非现金项目，经营现金流需加回"
+    }
+  },
+  "profit_with_loss": {
+    "current_tax": {
+      "value": 750000.0,
+      "formula": "(EBT - 可抵扣) × tax_rate",
+      "inputs": {
+        "ebt": 8000000,
+        "deductible": 5000000,
+        "taxable_income": 3000000,
+        "tax_rate": 0.25
+      }
+    },
+    "dta_change": {
+      "value": -1250000.0,
+      "formula": "-可抵扣 × tax_rate (DTA减少)",
+      "inputs": {
+        "deductible": 5000000,
+        "tax_rate": 0.25
+      }
+    },
+    "closing_dta": {
+      "value": 0.0,
+      "formula": "opening_dta + dta_change",
+      "inputs": {
+        "opening_dta": 1250000,
+        "dta_change": -1250000.0
+      }
+    },
+    "closing_tax_loss": {
+      "value": 0,
+      "formula": "prior_loss - deductible",
+      "inputs": {
+        "prior_loss": 5000000,
+        "deductible": 5000000
+      }
+    },
+    "tax_expense": {
+      "value": 2000000.0,
+      "formula": "当期税 - DTA变动",
+      "inputs": {
+        "current_tax": 750000.0,
+        "dta_change": -1250000.0
+      }
+    },
+    "impact": {
+      "income_statement": "所得税费用 = 当期税 ± DTA变动",
+      "balance_sheet": "递延税资产: 1250000.00 → 0.00",
+      "cash_flow": "递延税是非现金项目，经营现金流需加回"
+    }
+  },
+  "normal_profit": {
+    "current_tax": {
+      "value": 2500000.0,
+      "formula": "EBT × tax_rate",
+      "inputs": {
+        "ebt": 10000000,
+        "tax_rate": 0.25
+      }
+    },
+    "dta_change": {
+      "value": 0,
+      "formula": "无累计亏损，DTA不变",
+      "inputs": {}
+    },
+    "closing_dta": {
+      "value": 0,
+      "formula": "opening_dta (不变)",
+      "inputs": {
+        "opening_dta": 0
+      }
+    },
+    "closing_tax_loss": {
+      "value": 0,
+      "formula": "无累计亏损",
+      "inputs": {}
+    },
+    "tax_expense": {
+      "value": 2500000.0,
+      "formula": "当期税 - DTA变动",
+      "inputs": {
+        "current_tax": 2500000.0,
+        "dta_change": 0
+      }
+    },
+    "impact": {
+      "income_statement": "所得税费用 = 当期税 ± DTA变动",
+      "balance_sheet": "递延税资产: 0.00 → 0.00",
+      "cash_flow": "递延税是非现金项目，经营现金流需加回"
+    }
+  }
+}

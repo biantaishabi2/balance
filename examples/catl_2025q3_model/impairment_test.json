@@ -1,0 +1,87 @@
+{
+  "value_in_use_calculation": {
+    "value": 8267753.692929568,
+    "formula": "Σ CF / (1+r)^t",
+    "inputs": {
+      "discount_rate": 0.1,
+      "years": 5,
+      "cash_flow_details": [
+        {
+          "year": 1,
+          "cash_flow": 2000000,
+          "discount_factor": 0.9091,
+          "present_value": 1818181.82
+        },
+        {
+          "year": 2,
+          "cash_flow": 2100000,
+          "discount_factor": 0.8264,
+          "present_value": 1735537.19
+        },
+        {
+          "year": 3,
+          "cash_flow": 2200000,
+          "discount_factor": 0.7513,
+          "present_value": 1652892.56
+        },
+        {
+          "year": 4,
+          "cash_flow": 2300000,
+          "discount_factor": 0.683,
+          "present_value": 1570930.95
+        },
+        {
+          "year": 5,
+          "cash_flow": 2400000,
+          "discount_factor": 0.6209,
+          "present_value": 1490211.18
+        }
+      ]
+    }
+  },
+  "impairment_test": {
+    "asset_name": "商誉",
+    "carrying_value": 10000000,
+    "recoverable_amount": {
+      "value": 8267753.692929568,
+      "formula": "max(fair_value, value_in_use)",
+      "inputs": {
+        "fair_value": 7500000,
+        "value_in_use": 8267753.692929568
+      }
+    },
+    "is_impaired": true,
+    "impairment_loss": {
+      "value": 1732246.3070704322,
+      "formula": "carrying_value - recoverable_amount",
+      "inputs": {
+        "carrying_value": 10000000,
+        "recoverable_amount": 8267753.692929568
+      }
+    },
+    "new_carrying_value": {
+      "value": 8267753.692929568,
+      "formula": "recoverable_amount",
+      "inputs": {
+        "recoverable_amount": 8267753.692929568
+      }
+    },
+    "impact": {
+      "income_statement": "资产减值损失: 1,732,246.31 (费用增加)",
+      "balance_sheet": "商誉净值: 10,000,000.00 → 8,267,753.69",
+      "cash_flow": "减值是非现金项目，经营现金流需加回"
+    }
+  },
+  "_inputs": {
+    "future_cash_flows": [
+      2000000,
+      2100000,
+      2200000,
+      2300000,
+      2400000
+    ],
+    "discount_rate": 0.1,
+    "carrying_value": 10000000,
+    "fair_value": 7500000
+  }
+}

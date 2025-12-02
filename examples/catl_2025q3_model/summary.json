@@ -1,0 +1,32 @@
+{
+  "_meta": {
+    "company": "宁德时代",
+    "period": "2025Q3",
+    "generated_at": "2025-12-02T14:22:22.364956",
+    "model_version": "1.0"
+  },
+  "key_metrics": {
+    "base_case": {
+      "revenue": 30854846.583,
+      "net_income": 3958050.032456952,
+      "per_share_value": 40.64024067687581
+    }
+  },
+  "files_generated": [
+    "三表模型报告.xlsx",
+    "three_statement_base_case.json",
+    "three_statement_bull_case.json",
+    "three_statement_bear_case.json",
+    "three_statement_all.json",
+    "dcf_valuation.json",
+    "deferred_tax.json",
+    "impairment_test.json",
+    "lease_capitalization.json",
+    "scenario_analysis.json",
+    "balance_input.json",
+    "balance_output.json",
+    "balance_diagnose.json",
+    "balance_integration.json",
+    "summary.json"
+  ]
+}

@@ -1,0 +1,188 @@
+{
+  "_meta": {
+    "model_name": "宁德时代DCF估值",
+    "method": "DCF - FCFF"
+  },
+  "cost_of_equity": {
+    "value": 0.091,
+    "formula": "Rf + β × MRP",
+    "inputs": {
+      "risk_free_rate": 0.025,
+      "beta": 1.1,
+      "market_risk_premium": 0.06
+    }
+  },
+  "wacc": {
+    "value": 0.076864,
+    "formula": "E/(D+E) × Re + D/(D+E) × Rd × (1-t)",
+    "inputs": {
+      "cost_of_equity": 0.091,
+      "cost_of_debt": 0.04,
+      "tax_rate": 0.1386,
+      "debt_ratio": 0.25,
+      "equity_ratio": 0.75,
+      "after_tax_debt_cost": 0.034456
+    }
+  },
+  "terminal_value": {
+    "value": 90043995.8539604,
+    "formula": "FCF × (1+g) / (WACC - g)",
+    "inputs": {
+      "final_fcf": 4096914.39,
+      "terminal_growth": 0.03,
+      "wacc": 0.076864
+    }
+  },
+  "enterprise_value": {
+    "value": 75988739.35173625,
+    "formula": "Σ FCF/(1+WACC)^t + TV/(1+WACC)^n",
+    "inputs": {
+      "pv_of_fcf": 13808775.32,
+      "pv_of_terminal": 62179964.03173625,
+      "terminal_value": 90043995.8539604,
+      "wacc": 0.076864,
+      "projection_years": 5,
+      "fcf_details": [
+        {
+          "year": 1,
+          "fcf": 2902357.44,
+          "discount_factor": 0.9286,
+          "present_value": 2695194.04
+        },
+        {
+          "year": 2,
+          "fcf": 3163569.61,
+          "discount_factor": 0.8623,
+          "present_value": 2728071.06
+        },
+        {
+          "year": 3,
+          "fcf": 3448290.88,
+          "discount_factor": 0.8008,
+          "present_value": 2761349.12
+        },
+        {
+          "year": 4,
+          "fcf": 3758637.05,
+          "discount_factor": 0.7436,
+          "present_value": 2795033.11
+        },
+        {
+          "year": 5,
+          "fcf": 4096914.39,
+          "discount_factor": 0.6906,
+          "present_value": 2829127.99
+        }
+      ]
+    }
+  },
+  "equity_value": {
+    "value": 99037259.15173626,
+    "formula": "EV - Debt + Cash - Minority",
+    "inputs": {
+      "enterprise_value": 75988739.35173625,
+      "debt": 9375638.8,
+      "cash": 32424158.6,
+      "minority_interest": 0
+    }
+  },
+  "per_share_value": {
+    "value": 40.64024067687581,
+    "formula": "Equity Value / Shares Outstanding",
+    "inputs": {
+      "equity_value": 99037259.15173626,
+      "shares_outstanding": 2436926
+    }
+  },
+  "sensitivity_matrix": {
+    "headers": {
+      "rows": "WACC",
+      "columns": "Terminal Growth"
+    },
+    "data": [
+      {
+        "wacc": "7.0%",
+        "g=2.0%": 39.69,
+        "g=2.5%": 42.54,
+        "g=3.0%": 46.1,
+        "g=3.5%": 50.68,
+        "g=4.0%": 56.79
+      },
+      {
+        "wacc": "8.0%",
+        "g=2.0%": 34.53,
+        "g=2.5%": 36.4,
+        "g=3.0%": 38.65,
+        "g=3.5%": 41.39,
+        "g=4.0%": 44.82
+      },
+      {
+        "wacc": "9.0%",
+        "g=2.0%": 30.84,
+        "g=2.5%": 32.15,
+        "g=3.0%": 33.68,
+        "g=3.5%": 35.48,
+        "g=4.0%": 37.65
+      },
+      {
+        "wacc": "10.0%",
+        "g=2.0%": 28.08,
+        "g=2.5%": 29.04,
+        "g=3.0%": 30.13,
+        "g=3.5%": 31.4,
+        "g=4.0%": 32.87
+      },
+      {
+        "wacc": "11.0%",
+        "g=2.0%": 25.94,
+        "g=2.5%": 26.66,
+        "g=3.0%": 27.48,
+        "g=3.5%": 28.4,
+        "g=4.0%": 29.46
+      }
+    ]
+  },
+  "_inputs": {
+    "fcf_projections": {
+      "year_1": 2902357.44,
+      "year_2": 3163569.61,
+      "year_3": 3448290.88,
+      "year_4": 3758637.05,
+      "year_5": 4096914.39
+    },
+    "wacc_inputs": {
+      "risk_free_rate": 0.025,
+      "beta": 1.1,
+      "market_risk_premium": 0.06,
+      "cost_of_debt": 0.04,
+      "tax_rate": 0.1386,
+      "debt_ratio": 0.25
+    },
+    "terminal_inputs": {
+      "method": "perpetual_growth",
+      "terminal_growth": 0.03
+    },
+    "balance_sheet_adjustments": {
+      "cash": 32424158.6,
+      "debt": 9375638.8,
+      "shares_outstanding": 2436926
+    },
+    "sensitivity_config": {
+      "wacc_range": [
+        0.07,
+        0.08,
+        0.09,
+        0.1,
+        0.11
+      ],
+      "growth_range": [
+        0.02,
+        0.025,
+        0.03,
+        0.035,
+        0.04
+      ]
+    }
+  },
+  "_generated_at": "2025-12-02T14:22:22.238479"
+}

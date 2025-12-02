@@ -1,0 +1,707 @@
+{
+  "base_case": {
+    "_meta": {
+      "model_name": "宁德时代三表模型",
+      "scenario": "base_case",
+      "base_period": "2025Q3",
+      "company": "宁德时代",
+      "generated_at": "2025-12-02T14:22:22.235454",
+      "assumptions": {
+        "name": "基准情景",
+        "description": "维持当前增长趋势",
+        "growth_rate": 0.09,
+        "gross_margin": 0.253,
+        "opex_ratio": 0.097,
+        "capex_ratio": 0.042,
+        "ar_days": 64,
+        "ap_days": 120,
+        "inv_days": 102,
+        "interest_rate": 0.0233,
+        "tax_rate": 0.1386,
+        "dividend_ratio": 0.3
+      }
+    },
+    "income_statement": {
+      "revenue": {
+        "value": 30854846.583,
+        "formula": "last_revenue × (1 + growth_rate)",
+        "inputs": {
+          "last_revenue": 28307198.7,
+          "growth_rate": 0.09
+        }
+      },
+      "cost": {
+        "value": 23048570.397501,
+        "formula": "revenue × (1 - gross_margin)",
+        "inputs": {
+          "revenue": 30854846.583,
+          "gross_margin": 0.253
+        }
+      },
+      "gross_profit": {
+        "value": 7806276.185499001,
+        "formula": "revenue - cost",
+        "inputs": {
+          "revenue": 30854846.583,
+          "cost": 23048570.397501
+        }
+      },
+      "opex": {
+        "value": 2992920.118551,
+        "formula": "revenue × opex_ratio",
+        "inputs": {
+          "revenue": 30854846.583,
+          "opex_ratio": 0.097
+        }
+      },
+      "ebit": {
+        "value": 4813356.066948001,
+        "formula": "gross_profit - opex",
+        "inputs": {
+          "gross_profit": 7806276.185499001,
+          "opex": 2992920.118551
+        }
+      },
+      "interest": {
+        "value": 218452.38404000003,
+        "formula": "debt × interest_rate",
+        "inputs": {
+          "debt": 9375638.8,
+          "interest_rate": 0.0233
+        }
+      },
+      "ebt": {
+        "value": 4594903.682908001,
+        "formula": "ebit - interest",
+        "inputs": {
+          "ebit": 4813356.066948001,
+          "interest": 218452.38404000003
+        }
+      },
+      "tax": {
+        "value": 636853.650451049,
+        "formula": "max(ebt, 0) × tax_rate",
+        "inputs": {
+          "ebt": 4594903.682908001,
+          "tax_rate": 0.1386
+        }
+      },
+      "net_income": {
+        "value": 3958050.032456952,
+        "formula": "ebt - tax",
+        "inputs": {
+          "ebt": 4594903.682908001,
+          "tax": 636853.650451049
+        }
+      }
+    },
+    "balance_sheet": {
+      "assets": {
+        "cash": {
+          "value": 23999396.805357587,
+          "formula": "opening_cash + net_cash_change"
+        },
+        "receivable": {
+          "value": 5410164.880306849,
+          "formula": "revenue / 365 × ar_days",
+          "inputs": {
+            "revenue": 30854846.583,
+            "ar_days": 64
+          }
+        },
+        "inventory": {
+          "value": 6440970.3576578135,
+          "formula": "cost / 365 × inv_days",
+          "inputs": {
+            "cost": 23048570.397501,
+            "inv_days": 102
+          }
+        },
+        "fixed_assets_net": {
+          "value": 11456129.3608374,
+          "formula": "fixed_assets - accum_dep"
+        },
+        "total_assets": {
+          "value": 47306661.40415965
+        }
+      },
+      "liabilities": {
+        "payable": {
+          "value": 7577612.185479781,
+          "formula": "cost / 365 × ap_days",
+          "inputs": {
+            "cost": 23048570.397501,
+            "ap_days": 120
+          }
+        },
+        "debt": {
+          "value": 9375638.8
+        },
+        "total_liabilities": {
+          "value": 16953250.98547978
+        }
+      },
+      "equity": {
+        "opening_equity": {
+          "value": 27345617.4
+        },
+        "retained_change": {
+          "value": 2770635.0227198666,
+          "formula": "net_income - dividend"
+        },
+        "total_equity": {
+          "value": 30116252.422719866
+        }
+      }
+    },
+    "cash_flow": {
+      "operating": {
+        "value": -5722990.84437933,
+        "formula": "net_income + depreciation - ΔNWC",
+        "inputs": {
+          "net_income": 3958050.032456952,
+          "depreciation": 1415817.3756485998,
+          "delta_ar": -1237958.6196931507,
+          "delta_inv": -1580185.4423421863,
+          "delta_ap": -13915002.31452022,
+          "delta_nwc": 11096858.252484882
+        }
+      },
+      "investing": {
+        "value": -1295903.556486,
+        "formula": "-capex",
+        "inputs": {
+          "capex": 1295903.556486
+        }
+      },
+      "financing": {
+        "value": -1405867.3937770855,
+        "formula": "-interest - dividend + Δdebt",
+        "inputs": {
+          "interest": 218452.38404000003,
+          "dividend": 1187415.0097370856,
+          "delta_debt": 0
+        }
+      },
+      "net_change": {
+        "value": -8424761.794642415,
+        "formula": "OCF + ICF + FCF"
+      },
+      "closing_cash": {
+        "value": 23999396.805357587
+      }
+    },
+    "validation": {
+      "is_balanced": false,
+      "total_assets": 47306661.40415965,
+      "total_liabilities": 16953250.98547978,
+      "total_equity": 30116252.422719866,
+      "difference": 237157.99596000463
+    },
+    "working_capital": {
+      "receivable": {
+        "value": 5410164.880306849,
+        "formula": "revenue / 365 × ar_days",
+        "inputs": {
+          "revenue": 30854846.583,
+          "ar_days": 64
+        }
+      },
+      "payable": {
+        "value": 7577612.185479781,
+        "formula": "cost / 365 × ap_days",
+        "inputs": {
+          "cost": 23048570.397501,
+          "ap_days": 120
+        }
+      },
+      "inventory": {
+        "value": 6440970.3576578135,
+        "formula": "cost / 365 × inv_days",
+        "inputs": {
+          "cost": 23048570.397501,
+          "inv_days": 102
+        }
+      },
+      "delta_ar": {
+        "value": -1237958.6196931507
+      },
+      "delta_ap": {
+        "value": -13915002.31452022
+      },
+      "delta_inv": {
+        "value": -1580185.4423421863
+      }
+    }
+  },
+  "bull_case": {
+    "_meta": {
+      "model_name": "宁德时代三表模型",
+      "scenario": "bull_case",
+      "base_period": "2025Q3",
+      "company": "宁德时代",
+      "generated_at": "2025-12-02T14:22:22.236090",
+      "assumptions": {
+        "name": "乐观情景",
+        "description": "储能市场爆发，规模效应显现",
+        "growth_rate": 0.15,
+        "gross_margin": 0.273,
+        "opex_ratio": 0.095,
+        "capex_ratio": 0.05,
+        "ar_days": 60,
+        "ap_days": 125,
+        "inv_days": 95,
+        "interest_rate": 0.022,
+        "tax_rate": 0.1386,
+        "dividend_ratio": 0.32
+      }
+    },
+    "income_statement": {
+      "revenue": {
+        "value": 32553278.504999995,
+        "formula": "last_revenue × (1 + growth_rate)",
+        "inputs": {
+          "last_revenue": 28307198.7,
+          "growth_rate": 0.15
+        }
+      },
+      "cost": {
+        "value": 23666233.473134995,
+        "formula": "revenue × (1 - gross_margin)",
+        "inputs": {
+          "revenue": 32553278.504999995,
+          "gross_margin": 0.273
+        }
+      },
+      "gross_profit": {
+        "value": 8887045.031865,
+        "formula": "revenue - cost",
+        "inputs": {
+          "revenue": 32553278.504999995,
+          "cost": 23666233.473134995
+        }
+      },
+      "opex": {
+        "value": 3092561.4579749997,
+        "formula": "revenue × opex_ratio",
+        "inputs": {
+          "revenue": 32553278.504999995,
+          "opex_ratio": 0.095
+        }
+      },
+      "ebit": {
+        "value": 5794483.573890001,
+        "formula": "gross_profit - opex",
+        "inputs": {
+          "gross_profit": 8887045.031865,
+          "opex": 3092561.4579749997
+        }
+      },
+      "interest": {
+        "value": 206264.0536,
+        "formula": "debt × interest_rate",
+        "inputs": {
+          "debt": 9375638.8,
+          "interest_rate": 0.022
+        }
+      },
+      "ebt": {
+        "value": 5588219.52029,
+        "formula": "ebit - interest",
+        "inputs": {
+          "ebit": 5794483.573890001,
+          "interest": 206264.0536
+        }
+      },
+      "tax": {
+        "value": 774527.2255121941,
+        "formula": "max(ebt, 0) × tax_rate",
+        "inputs": {
+          "ebt": 5588219.52029,
+          "tax_rate": 0.1386
+        }
+      },
+      "net_income": {
+        "value": 4813692.294777806,
+        "formula": "ebt - tax",
+        "inputs": {
+          "ebt": 5588219.52029,
+          "tax": 774527.2255121941
+        }
+      }
+    },
+    "balance_sheet": {
+      "assets": {
+        "cash": {
+          "value": 25083145.60479254,
+          "formula": "opening_cash + net_cash_change"
+        },
+        "receivable": {
+          "value": 5351223.863835615,
+          "formula": "revenue / 365 × ar_days",
+          "inputs": {
+            "revenue": 32553278.504999995,
+            "ar_days": 60
+          }
+        },
+        "inventory": {
+          "value": 6159704.602596779,
+          "formula": "cost / 365 × inv_days",
+          "inputs": {
+            "cost": 23666233.473134995,
+            "inv_days": 95
+          }
+        },
+        "fixed_assets_net": {
+          "value": 11754713.692724999,
+          "formula": "fixed_assets - accum_dep"
+        },
+        "total_assets": {
+          "value": 48348787.76394993
+        }
+      },
+      "liabilities": {
+        "payable": {
+          "value": 8104874.477101025,
+          "formula": "cost / 365 × ap_days",
+          "inputs": {
+            "cost": 23666233.473134995,
+            "ap_days": 125
+          }
+        },
+        "debt": {
+          "value": 9375638.8
+        },
+        "total_liabilities": {
+          "value": 17480513.277101025
+        }
+      },
+      "equity": {
+        "opening_equity": {
+          "value": 27345617.4
+        },
+        "retained_change": {
+          "value": 3273310.760448908,
+          "formula": "net_income - dividend"
+        },
+        "total_equity": {
+          "value": 30618928.160448905
+        }
+      }
+    },
+    "cash_flow": {
+      "operating": {
+        "value": -3966703.4820285654,
+        "formula": "net_income + depreciation - ΔNWC",
+        "inputs": {
+          "net_income": 4813692.294777806,
+          "depreciation": 1448993.4125249998,
+          "delta_ar": -1296899.636164385,
+          "delta_inv": -1861451.1974032205,
+          "delta_ap": -13387740.022898976,
+          "delta_nwc": 10229389.189331371
+        }
+      },
+      "investing": {
+        "value": -1627663.9252499999,
+        "formula": "-capex",
+        "inputs": {
+          "capex": 1627663.9252499999
+        }
+      },
+      "financing": {
+        "value": -1746645.587928898,
+        "formula": "-interest - dividend + Δdebt",
+        "inputs": {
+          "interest": 206264.0536,
+          "dividend": 1540381.534328898,
+          "delta_debt": 0
+        }
+      },
+      "net_change": {
+        "value": -7341012.995207463,
+        "formula": "OCF + ICF + FCF"
+      },
+      "closing_cash": {
+        "value": 25083145.60479254
+      }
+    },
+    "validation": {
+      "is_balanced": false,
+      "total_assets": 48348787.76394993,
+      "total_liabilities": 17480513.277101025,
+      "total_equity": 30618928.160448905,
+      "difference": 249346.32639999688
+    },
+    "working_capital": {
+      "receivable": {
+        "value": 5351223.863835615,
+        "formula": "revenue / 365 × ar_days",
+        "inputs": {
+          "revenue": 32553278.504999995,
+          "ar_days": 60
+        }
+      },
+      "payable": {
+        "value": 8104874.477101025,
+        "formula": "cost / 365 × ap_days",
+        "inputs": {
+          "cost": 23666233.473134995,
+          "ap_days": 125
+        }
+      },
+      "inventory": {
+        "value": 6159704.602596779,
+        "formula": "cost / 365 × inv_days",
+        "inputs": {
+          "cost": 23666233.473134995,
+          "inv_days": 95
+        }
+      },
+      "delta_ar": {
+        "value": -1296899.636164385
+      },
+      "delta_ap": {
+        "value": -13387740.022898976
+      },
+      "delta_inv": {
+        "value": -1861451.1974032205
+      }
+    }
+  },
+  "bear_case": {
+    "_meta": {
+      "model_name": "宁德时代三表模型",
+      "scenario": "bear_case",
+      "base_period": "2025Q3",
+      "company": "宁德时代",
+      "generated_at": "2025-12-02T14:22:22.236560",
+      "assumptions": {
+        "name": "悲观情景",
+        "description": "市场竞争加剧，价格战",
+        "growth_rate": 0.05,
+        "gross_margin": 0.233,
+        "opex_ratio": 0.1,
+        "capex_ratio": 0.035,
+        "ar_days": 70,
+        "ap_days": 115,
+        "inv_days": 110,
+        "interest_rate": 0.025,
+        "tax_rate": 0.1386,
+        "dividend_ratio": 0.25
+      }
+    },
+    "income_statement": {
+      "revenue": {
+        "value": 29722558.635,
+        "formula": "last_revenue × (1 + growth_rate)",
+        "inputs": {
+          "last_revenue": 28307198.7,
+          "growth_rate": 0.05
+        }
+      },
+      "cost": {
+        "value": 22797202.473045003,
+        "formula": "revenue × (1 - gross_margin)",
+        "inputs": {
+          "revenue": 29722558.635,
+          "gross_margin": 0.233
+        }
+      },
+      "gross_profit": {
+        "value": 6925356.161954999,
+        "formula": "revenue - cost",
+        "inputs": {
+          "revenue": 29722558.635,
+          "cost": 22797202.473045003
+        }
+      },
+      "opex": {
+        "value": 2972255.8635000004,
+        "formula": "revenue × opex_ratio",
+        "inputs": {
+          "revenue": 29722558.635,
+          "opex_ratio": 0.1
+        }
+      },
+      "ebit": {
+        "value": 3953100.2984549985,
+        "formula": "gross_profit - opex",
+        "inputs": {
+          "gross_profit": 6925356.161954999,
+          "opex": 2972255.8635000004
+        }
+      },
+      "interest": {
+        "value": 234390.97000000003,
+        "formula": "debt × interest_rate",
+        "inputs": {
+          "debt": 9375638.8,
+          "interest_rate": 0.025
+        }
+      },
+      "ebt": {
+        "value": 3718709.3284549983,
+        "formula": "ebit - interest",
+        "inputs": {
+          "ebit": 3953100.2984549985,
+          "interest": 234390.97000000003
+        }
+      },
+      "tax": {
+        "value": 515413.11292386276,
+        "formula": "max(ebt, 0) × tax_rate",
+        "inputs": {
+          "ebt": 3718709.3284549983,
+          "tax_rate": 0.1386
+        }
+      },
+      "net_income": {
+        "value": 3203296.2155311354,
+        "formula": "ebt - tax",
+        "inputs": {
+          "ebt": 3718709.3284549983,
+          "tax": 515413.11292386276
+        }
+      }
+    },
+    "balance_sheet": {
+      "assets": {
+        "cash": {
+          "value": 22730944.73496154,
+          "formula": "opening_cash + net_cash_change"
+        },
+        "receivable": {
+          "value": 5700216.724520548,
+          "formula": "revenue / 365 × ar_days",
+          "inputs": {
+            "revenue": 29722558.635,
+            "ar_days": 70
+          }
+        },
+        "inventory": {
+          "value": 6870389.786397125,
+          "formula": "cost / 365 × inv_days",
+          "inputs": {
+            "cost": 22797202.473045003,
+            "inv_days": 110
+          }
+        },
+        "fixed_assets_net": {
+          "value": 11226076.757002499,
+          "formula": "fixed_assets - accum_dep"
+        },
+        "total_assets": {
+          "value": 46527628.002881706
+        }
+      },
+      "liabilities": {
+        "payable": {
+          "value": 7182680.231233357,
+          "formula": "cost / 365 × ap_days",
+          "inputs": {
+            "cost": 22797202.473045003,
+            "ap_days": 115
+          }
+        },
+        "debt": {
+          "value": 9375638.8
+        },
+        "total_liabilities": {
+          "value": 16558319.03123336
+        }
+      },
+      "equity": {
+        "opening_equity": {
+          "value": 27345617.4
+        },
+        "retained_change": {
+          "value": 2402472.1616483517,
+          "formula": "net_income - dividend"
+        },
+        "total_equity": {
+          "value": 29748089.56164835
+        }
+      }
+    },
+    "cash_flow": {
+      "operating": {
+        "value": -7617709.288930681,
+        "formula": "net_income + depreciation - ΔNWC",
+        "inputs": {
+          "net_income": 3203296.2155311354,
+          "depreciation": 1390255.9752224998,
+          "delta_ar": -947906.7754794518,
+          "delta_inv": -1150766.0136028752,
+          "delta_ap": -14309934.268766642,
+          "delta_nwc": 12211261.479684316
+        }
+      },
+      "investing": {
+        "value": -1040289.5522250001,
+        "formula": "-capex",
+        "inputs": {
+          "capex": 1040289.5522250001
+        }
+      },
+      "financing": {
+        "value": -1035215.023882784,
+        "formula": "-interest - dividend + Δdebt",
+        "inputs": {
+          "interest": 234390.97000000003,
+          "dividend": 800824.0538827839,
+          "delta_debt": 0
+        }
+      },
+      "net_change": {
+        "value": -9693213.865038464,
+        "formula": "OCF + ICF + FCF"
+      },
+      "closing_cash": {
+        "value": 22730944.73496154
+      }
+    },
+    "validation": {
+      "is_balanced": false,
+      "total_assets": 46527628.002881706,
+      "total_liabilities": 16558319.03123336,
+      "total_equity": 29748089.56164835,
+      "difference": 221219.40999999642
+    },
+    "working_capital": {
+      "receivable": {
+        "value": 5700216.724520548,
+        "formula": "revenue / 365 × ar_days",
+        "inputs": {
+          "revenue": 29722558.635,
+          "ar_days": 70
+        }
+      },
+      "payable": {
+        "value": 7182680.231233357,
+        "formula": "cost / 365 × ap_days",
+        "inputs": {
+          "cost": 22797202.473045003,
+          "ap_days": 115
+        }
+      },
+      "inventory": {
+        "value": 6870389.786397125,
+        "formula": "cost / 365 × inv_days",
+        "inputs": {
+          "cost": 22797202.473045003,
+          "inv_days": 110
+        }
+      },
+      "delta_ar": {
+        "value": -947906.7754794518
+      },
+      "delta_ap": {
+        "value": -14309934.268766642
+      },
+      "delta_inv": {
+        "value": -1150766.0136028752
+      }
+    }
+  }
+}

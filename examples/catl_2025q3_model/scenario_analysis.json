@@ -1,0 +1,122 @@
+{
+  "scenario_comparison": {
+    "headers": [
+      "指标",
+      "base_case",
+      "bull_case",
+      "bear_case"
+    ],
+    "rows": [
+      {
+        "metric": "营业收入",
+        "base_case": 30854847.0,
+        "bull_case": 32553279.0,
+        "bear_case": 29722559.0
+      },
+      {
+        "metric": "营业成本",
+        "base_case": 23048570.0,
+        "bull_case": 23666233.0,
+        "bear_case": 22797202.0
+      },
+      {
+        "metric": "毛利",
+        "base_case": 7806276.0,
+        "bull_case": 8887045.0,
+        "bear_case": 6925356.0
+      },
+      {
+        "metric": "营业利润",
+        "base_case": 4813356.0,
+        "bull_case": 5794484.0,
+        "bear_case": 3953100.0
+      },
+      {
+        "metric": "净利润",
+        "base_case": 3958050.0,
+        "bull_case": 4813692.0,
+        "bear_case": 3203296.0
+      },
+      {
+        "metric": "毛利率",
+        "base_case": "25.3%",
+        "bull_case": "27.3%",
+        "bear_case": "23.3%"
+      },
+      {
+        "metric": "净利率",
+        "base_case": "12.8%",
+        "bull_case": "14.8%",
+        "bear_case": "10.8%"
+      }
+    ],
+    "validation": {
+      "is_valid": true,
+      "message": "Bull > Base > Bear"
+    }
+  },
+  "sensitivity_1d": {
+    "param": "growth_rate",
+    "output_metric": "net_income",
+    "base_scenario": "base_case",
+    "data": [
+      {
+        "growth_rate": 0.05,
+        "net_income": 3805894.989665429
+      },
+      {
+        "growth_rate": 0.07,
+        "net_income": 3881972.5110611897
+      },
+      {
+        "growth_rate": 0.09,
+        "net_income": 3958050.032456952
+      },
+      {
+        "growth_rate": 0.12,
+        "net_income": 4072166.3145505954
+      },
+      {
+        "growth_rate": 0.15,
+        "net_income": 4186282.5966442353
+      }
+    ]
+  },
+  "sensitivity_2d": {
+    "headers": {
+      "rows": "growth_rate",
+      "columns": "gross_margin"
+    },
+    "output_metric": "net_income",
+    "data": [
+      {
+        "growth_rate": 0.05,
+        "gross_margin=0.23": 3217026.0,
+        "gross_margin=0.25": 3729086.0,
+        "gross_margin=0.27": 4241146.0,
+        "gross_margin=0.3": 5009237.0
+      },
+      {
+        "growth_rate": 0.09,
+        "gross_margin=0.23": 3346748.0,
+        "gross_margin=0.25": 3878315.0,
+        "gross_margin=0.27": 4409882.0,
+        "gross_margin=0.3": 5207233.0
+      },
+      {
+        "growth_rate": 0.12,
+        "gross_margin=0.23": 3444039.0,
+        "gross_margin=0.25": 3990237.0,
+        "gross_margin=0.27": 4536434.0,
+        "gross_margin=0.3": 5355731.0
+      },
+      {
+        "growth_rate": 0.15,
+        "gross_margin=0.23": 3541331.0,
+        "gross_margin=0.25": 4102158.0,
+        "gross_margin=0.27": 4662986.0,
+        "gross_margin=0.3": 5504228.0
+      }
+    ]
+  }
+}

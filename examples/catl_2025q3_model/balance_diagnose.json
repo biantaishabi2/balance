@@ -1,0 +1,70 @@
+{
+  "status": "ok",
+  "all_match": true,
+  "delta_table": [
+    {
+      "item": "现金",
+      "delta": -10014897.22,
+      "cf_item": "经营+投资+筹资现金流",
+      "cf_value": -10014897.22,
+      "match": true
+    },
+    {
+      "item": "累计折旧",
+      "delta": 1415817.38,
+      "cf_item": "加回折旧",
+      "cf_value": 1415817.38,
+      "match": true
+    },
+    {
+      "item": "固定资产原值",
+      "delta": 1295903.56,
+      "cf_item": "资本支出",
+      "cf_value": 1295903.56,
+      "match": true
+    },
+    {
+      "item": "应收账款",
+      "delta": 0.0,
+      "cf_item": "应收变动(输入)",
+      "cf_value": -1237958.62,
+      "match": true,
+      "note": "期末值可能被轧差调整"
+    },
+    {
+      "item": "应付账款",
+      "delta": -25105851.93,
+      "cf_item": "应付变动(经营/轧差)",
+      "cf_value": -25105851.93,
+      "match": true
+    },
+    {
+      "item": "借款",
+      "delta": 0.0,
+      "cf_item": "新增借款-还款",
+      "cf_value": 0,
+      "match": true
+    },
+    {
+      "item": "留存收益",
+      "delta": 1551049.93,
+      "cf_item": "净利润-分红",
+      "cf_value": 1551049.93,
+      "match": true
+    },
+    {
+      "item": "权益合计",
+      "delta": 1551049.93,
+      "cf_item": "新增股本+净利润-分红",
+      "cf_value": 1551049.93,
+      "match": true
+    }
+  ],
+  "mismatches": [],
+  "warnings": [],
+  "summary": {
+    "net_income": 2738464.94,
+    "closing_cash": 22409261.38,
+    "is_balanced": true
+  }
+}

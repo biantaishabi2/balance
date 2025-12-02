@@ -1,0 +1,97 @@
+{
+  "initial_recognition": {
+    "lease_liability": {
+      "value": 4329476.670630823,
+      "formula": "Σ rent / (1+r)^t, t=1..5",
+      "inputs": {
+        "annual_rent": 1000000,
+        "discount_rate": 0.05,
+        "lease_term": 5,
+        "pv_factor": 4.3295
+      }
+    },
+    "rou_asset": {
+      "value": 4329476.670630823,
+      "formula": "= lease_liability at inception",
+      "inputs": {
+        "lease_liability": 4329476.670630823
+      }
+    }
+  },
+  "annual_schedule": [
+    {
+      "year": 1,
+      "opening_liability": 4329476.67,
+      "interest_expense": 216473.83,
+      "rent_payment": 1000000,
+      "principal_payment": 783526.17,
+      "closing_liability": 3545950.5,
+      "depreciation": 865895.33,
+      "opening_rou_asset": 4329476.67,
+      "closing_rou_asset": 3463581.34
+    },
+    {
+      "year": 2,
+      "opening_liability": 3545950.5,
+      "interest_expense": 177297.53,
+      "rent_payment": 1000000,
+      "principal_payment": 822702.47,
+      "closing_liability": 2723248.03,
+      "depreciation": 865895.33,
+      "opening_rou_asset": 3463581.34,
+      "closing_rou_asset": 2597686.0
+    },
+    {
+      "year": 3,
+      "opening_liability": 2723248.03,
+      "interest_expense": 136162.4,
+      "rent_payment": 1000000,
+      "principal_payment": 863837.6,
+      "closing_liability": 1859410.43,
+      "depreciation": 865895.33,
+      "opening_rou_asset": 2597686.0,
+      "closing_rou_asset": 1731790.67
+    },
+    {
+      "year": 4,
+      "opening_liability": 1859410.43,
+      "interest_expense": 92970.52,
+      "rent_payment": 1000000,
+      "principal_payment": 907029.48,
+      "closing_liability": 952380.95,
+      "depreciation": 865895.33,
+      "opening_rou_asset": 1731790.67,
+      "closing_rou_asset": 865895.33
+    },
+    {
+      "year": 5,
+      "opening_liability": 952380.95,
+      "interest_expense": 47619.05,
+      "rent_payment": 1000000,
+      "principal_payment": 952380.95,
+      "closing_liability": 0.0,
+      "depreciation": 865895.33,
+      "opening_rou_asset": 865895.33,
+      "closing_rou_asset": 0
+    }
+  ],
+  "impact_summary": {
+    "old_rent_expense": 1000000,
+    "new_depreciation": 865895.33,
+    "new_interest": 216473.83,
+    "total_new_expense": 1082369.16,
+    "ebitda_improvement": 1000000,
+    "net_income_impact": -82369.16
+  },
+  "impact": {
+    "income_statement": "租金费用 1,000,000 → 折旧 865,895 + 利息 216,474",
+    "ebitda": "EBITDA 改善 1,000,000 (租金不再扣除)",
+    "balance_sheet": "使用权资产 4,329,477 / 租赁负债 4,329,477",
+    "cash_flow": "经营流出 216,474(利息) + 筹资流出 783,526(本金)"
+  },
+  "_inputs": {
+    "annual_rent": 1000000,
+    "lease_term": 5,
+    "discount_rate": 0.05
+  }
+}
