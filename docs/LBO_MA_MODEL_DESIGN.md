@@ -1917,14 +1917,14 @@ financial_model/
 ├── tools/
 │   ├── __init__.py              # 统一导出
 │   ├── lbo_tools.py             # ✅ 已完成 (9个工具)
-│   ├── dcf_tools.py             # 🔲 待做 (9个工具)
-│   ├── three_statement_tools.py # 🔲 待做 (11个工具)
+│   ├── dcf_tools.py             # ✅ 已完成 (9个工具)
+│   ├── three_statement_tools.py # ✅ 已完成 (11个工具)
 │   └── ma_tools.py              # 🔲 待做 (7个工具)
 │
 ├── models/
 │   ├── lbo.py                   # ✅ 已重构，调用原子工具
-│   ├── dcf.py                   # 🔲 待重构
-│   ├── three_statement.py       # 🔲 待重构
+│   ├── dcf.py                   # 保持兼容，可调用原子工具
+│   ├── three_statement.py       # 保持兼容，可调用原子工具
 │   └── ...
 ```
 
@@ -1934,8 +1934,8 @@ financial_model/
 |--------|------|--------|------|
 | P1 | LBO原子工具 | 9 | ✅ 已完成 |
 | P2 | M&A原子工具 | 7 | 🔲 待做 |
-| P3 | DCF原子工具 | 9 | 🔲 待做 |
-| P3 | 三表模型原子工具 | 11 | 🔲 待做 |
+| P3 | DCF原子工具 | 9 | ✅ 已完成 |
+| P3 | 三表模型原子工具 | 11 | ✅ 已完成 |
 
 ## 7.3 使用示例
 
