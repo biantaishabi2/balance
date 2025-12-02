@@ -1233,10 +1233,387 @@ print(output_dcf)
 
 ---
 
-## 五、扩展方向
+## 五、高级功能模块
 
-1. **递延税模块** - 处理亏损抵扣、加速折旧等
-2. **租赁资本化** - IFRS 16 使用权资产
-3. **LBO模型** - 杠杆收购估值
-4. **并购模型** - 合并报表、协同效应
-5. **蒙特卡洛** - 概率分布模拟
+当前基础模型缺失以下高级功能，本节定义扩展工具。
+
+### 5.1 当前模型能力评估
+
+| 功能 | 状态 | 说明 |
+|------|------|------|
+| 基础三表联动 | ✅ 有 | 利润表、资产负债表、现金流量表 |
+| 驱动因子参数化 | ✅ 有 | 增长率、毛利率、周转天数等 |
+| DCF估值 | ✅ 有 | FCFF、WACC、终值 |
+| **税损递延** | ❌ 无 | 亏损时税=0，没有递延税资产 |
+| **资产减值** | ❌ 无 | 没有减值测试逻辑 |
+| **经营租赁资本化** | ❌ 无 | 没有 IFRS 16 处理 |
+| **多场景切换** | ⚠️ 有限 | 需手动改JSON，无自动联动 |
+
+---
+
+### 5.2 税损递延工具 (Deferred Tax)
+
+#### 背景
+
+当公司亏损时，税法允许用亏损抵扣未来的应税收入。会计上需要确认"递延税资产"。
+
+#### 工具定义
+
+```python
+def calc_deferred_tax(
+    ebt: float,                    # 当期税前利润
+    prior_tax_loss: float,         # 累计可抵扣亏损
+    tax_rate: float,               # 税率
+    dta_balance: float             # 期初递延税资产余额
+) -> dict:
+    """
+    计算递延税资产和当期所得税
+
+    逻辑:
+      1. 如果 EBT < 0 (亏损):
+         - 当期税 = 0
+         - 新增递延税资产 = |EBT| × 税率
+         - 累计亏损增加
+
+      2. 如果 EBT > 0 且有累计亏损:
+         - 可抵扣金额 = min(EBT, 累计亏损)
+         - 当期税 = (EBT - 可抵扣) × 税率
+         - 递延税资产减少 = 可抵扣 × 税率
+         - 累计亏损减少
+
+      3. 如果 EBT > 0 且无累计亏损:
+         - 当期税 = EBT × 税率
+         - 递延税资产不变
+    """
+    pass
+```
+
+#### 输入输出格式
+
+```json
+// 输入
+{
+  "ebt": -1000000,
+  "prior_tax_loss": 500000,
+  "tax_rate": 0.25,
+  "dta_balance": 125000
+}
+
+// 输出
+{
+  "current_tax": {
+    "value": 0,
+    "formula": "EBT < 0, 无需缴税"
+  },
+  "dta_change": {
+    "value": 250000,
+    "formula": "|EBT| × tax_rate = 1000000 × 0.25"
+  },
+  "closing_dta": {
+    "value": 375000,
+    "formula": "opening_dta + dta_change"
+  },
+  "closing_tax_loss": {
+    "value": 1500000,
+    "formula": "prior_loss + current_loss"
+  }
+}
+```
+
+#### 对三表的影响
+
+| 报表 | 科目 | 影响 |
+|------|------|------|
+| 利润表 | 所得税费用 | 当期税 ± 递延税变动 |
+| 资产负债表 | 递延税资产 | 资产增加 |
+| 现金流量表 | 无现金影响 | 递延税是非现金项目 |
+
+---
+
+### 5.3 资产减值工具 (Impairment Test)
+
+#### 背景
+
+当资产的可回收金额低于账面价值时，需要计提减值损失。适用于固定资产、无形资产、商誉等。
+
+#### 工具定义
+
+```python
+def calc_impairment(
+    carrying_value: float,         # 资产账面价值
+    fair_value: float,             # 公允价值 - 处置费用
+    value_in_use: float,           # 使用价值 (未来现金流折现)
+) -> dict:
+    """
+    资产减值测试
+
+    逻辑:
+      可回收金额 = max(公允价值-处置费用, 使用价值)
+
+      如果 账面价值 > 可回收金额:
+        减值损失 = 账面价值 - 可回收金额
+        新账面价值 = 可回收金额
+      否则:
+        无需减值
+    """
+    pass
+```
+
+#### 输入输出格式
+
+```json
+// 输入
+{
+  "asset_name": "商誉",
+  "carrying_value": 10000000,
+  "fair_value": 7000000,
+  "value_in_use": 8000000
+}
+
+// 输出
+{
+  "recoverable_amount": {
+    "value": 8000000,
+    "formula": "max(fair_value, value_in_use)"
+  },
+  "is_impaired": true,
+  "impairment_loss": {
+    "value": 2000000,
+    "formula": "carrying_value - recoverable_amount"
+  },
+  "new_carrying_value": {
+    "value": 8000000,
+    "formula": "recoverable_amount"
+  }
+}
+```
+
+#### 使用价值计算（辅助工具）
+
+```python
+def calc_value_in_use(
+    future_cash_flows: list,       # 未来各期现金流
+    discount_rate: float           # 折现率
+) -> dict:
+    """
+    计算使用价值 = Σ CF / (1+r)^t
+    """
+    pass
+```
+
+#### 对三表的影响
+
+| 报表 | 科目 | 影响 |
+|------|------|------|
+| 利润表 | 资产减值损失 | 费用增加，利润减少 |
+| 资产负债表 | 资产净值 | 资产减少 |
+| 现金流量表 | 无现金影响 | 减值是非现金项目，经营现金流加回 |
+
+---
+
+### 5.4 经营租赁资本化工具 (IFRS 16 / ASC 842)
+
+#### 背景
+
+IFRS 16 要求将经营租赁资本化：
+- 确认"使用权资产"（Right-of-Use Asset）
+- 确认"租赁负债"（Lease Liability）
+- 原租金费用 → 折旧 + 利息
+
+#### 工具定义
+
+```python
+def capitalize_lease(
+    annual_rent: float,            # 年租金
+    lease_term: int,               # 租赁期限（年）
+    discount_rate: float,          # 增量借款利率
+    payment_timing: str = "end"    # 付款时点: "end" 或 "begin"
+) -> dict:
+    """
+    租赁资本化计算
+
+    逻辑:
+      1. 租赁负债 = Σ 租金 / (1+r)^t  (租金现值)
+      2. 使用权资产 = 租赁负债 (初始确认)
+      3. 每期:
+         - 折旧 = 使用权资产 / 租赁期限
+         - 利息 = 期初负债 × 折现率
+         - 负债减少 = 租金 - 利息
+    """
+    pass
+```
+
+#### 输入输出格式
+
+```json
+// 输入
+{
+  "annual_rent": 1000000,
+  "lease_term": 5,
+  "discount_rate": 0.05
+}
+
+// 输出
+{
+  "initial_recognition": {
+    "lease_liability": {
+      "value": 4329477,
+      "formula": "Σ rent / (1+r)^t, t=1..5"
+    },
+    "rou_asset": {
+      "value": 4329477,
+      "formula": "= lease_liability at inception"
+    }
+  },
+  "annual_schedule": [
+    {
+      "year": 1,
+      "opening_liability": 4329477,
+      "interest_expense": 216474,
+      "rent_payment": 1000000,
+      "principal_payment": 783526,
+      "closing_liability": 3545951,
+      "depreciation": 865895,
+      "closing_rou_asset": 3463582
+    },
+    {
+      "year": 2,
+      "...": "..."
+    }
+  ],
+  "impact_summary": {
+    "old_rent_expense": 1000000,
+    "new_depreciation": 865895,
+    "new_interest": 216474,
+    "total_new_expense": 1082369,
+    "ebitda_improvement": 1000000,
+    "net_income_impact": -82369
+  }
+}
+```
+
+#### 对三表的影响
+
+| 报表 | 旧准则 | IFRS 16 |
+|------|--------|---------|
+| **利润表** | 租金费用 100 | 折旧 87 + 利息 22 = 109 |
+| **EBITDA** | 扣除租金 | 不扣（折旧利息在下面） |
+| **资产负债表** | 无 | 使用权资产 433 / 租赁负债 433 |
+| **现金流量表** | 经营流出 100 | 经营流出 22(利息) + 筹资流出 78(本金) |
+
+---
+
+### 5.5 多场景切换工具 (Scenario Manager)
+
+#### 背景
+
+财务模型需要支持多种情景的快速切换和对比，而不是每次手动修改JSON。
+
+#### 工具定义
+
+```python
+class ScenarioManager:
+    """
+    场景管理器
+
+    功能:
+      - 保存/加载场景
+      - 场景对比
+      - 参数联动（改一个自动重算）
+    """
+
+    def __init__(self, base_data: dict):
+        self.base_data = base_data
+        self.scenarios = {}
+
+    def add_scenario(self, name: str, assumptions: dict, description: str = ""):
+        """添加场景"""
+        pass
+
+    def get_scenario(self, name: str) -> dict:
+        """获取场景假设"""
+        pass
+
+    def run_scenario(self, name: str) -> dict:
+        """运行单个场景，返回完整三表"""
+        pass
+
+    def compare_scenarios(self, names: list) -> pd.DataFrame:
+        """对比多个场景"""
+        pass
+
+    def sensitivity_1d(self, param: str, values: list) -> pd.DataFrame:
+        """单参数敏感性分析"""
+        pass
+
+    def sensitivity_2d(self, param1: str, values1: list,
+                       param2: str, values2: list) -> pd.DataFrame:
+        """双参数敏感性矩阵"""
+        pass
+```
+
+#### 输入输出格式
+
+```json
+// 场景定义
+{
+  "scenarios": {
+    "base_case": {
+      "description": "维持当前趋势",
+      "assumptions": {
+        "growth_rate": 0.09,
+        "gross_margin": 0.253
+      }
+    },
+    "bull_case": {
+      "description": "乐观情景",
+      "assumptions": {
+        "growth_rate": 0.15,
+        "gross_margin": 0.273
+      }
+    },
+    "bear_case": {
+      "description": "悲观情景",
+      "assumptions": {
+        "growth_rate": 0.05,
+        "gross_margin": 0.233
+      }
+    }
+  }
+}
+
+// 对比输出
+{
+  "comparison": {
+    "headers": ["指标", "Base Case", "Bull Case", "Bear Case"],
+    "rows": [
+      ["营业收入", 30854846, 32553278, 29722558],
+      ["毛利", 7806276, 8887045, 6925356],
+      ["净利润", 2738464, 3555190, 2079014],
+      ["毛利率", "25.3%", "27.3%", "23.3%"],
+      ["净利率", "8.9%", "10.9%", "7.0%"]
+    ]
+  }
+}
+```
+
+---
+
+### 5.6 高级功能工具汇总
+
+| 工具 | 功能 | 复杂度 | 优先级 |
+|------|------|--------|--------|
+| `calc_deferred_tax` | 税损递延计算 | ⭐⭐ | 高 |
+| `calc_impairment` | 资产减值测试 | ⭐⭐ | 中 |
+| `calc_value_in_use` | 使用价值计算 | ⭐⭐ | 中 |
+| `capitalize_lease` | 租赁资本化 | ⭐⭐⭐ | 中 |
+| `ScenarioManager` | 场景管理 | ⭐ | 高 |
+
+---
+
+## 六、未来扩展方向
+
+1. **LBO模型** - 杠杆收购估值，复杂债务结构
+2. **并购模型** - 合并报表、购买价格分摊、协同效应
+3. **蒙特卡洛模拟** - 概率分布输入，模拟输出分布
+4. **实时数据接入** - Wind/Bloomberg API 自动更新假设
