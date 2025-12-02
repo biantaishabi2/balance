@@ -5,13 +5,15 @@
 提供:
 - 三表模型工具 (ThreeStatementModel)
 - DCF估值工具 (DCFModel)
+- LBO模型工具 (LBOModel)
 - 高级功能 (DeferredTax, Impairment, LeaseCapitalization)
 - 场景管理器 (ScenarioManager)
+- 原子工具 (tools) - 独立的、可组合的计算工具
 
 每个计算都带追溯信息，支持完整的依赖链追溯。
 
 使用示例:
-    from financial_model import ThreeStatementModel, DCFModel, ScenarioManager
+    from financial_model import ThreeStatementModel, DCFModel, LBOModel
 
     # 三表模型
     model = ThreeStatementModel(base_data)
@@ -21,22 +23,28 @@
     dcf = DCFModel()
     valuation = dcf.valuate(inputs)
 
-    # 场景管理
-    sm = ScenarioManager(base_data)
-    sm.add_scenario("base_case", assumptions)
-    comparison = sm.compare_scenarios()
+    # LBO模型
+    lbo = LBOModel()
+    result = lbo.build(inputs)
+
+    # 原子工具（推荐LLM使用）
+    from financial_model.tools import calc_purchase_price, calc_irr
+    purchase = calc_purchase_price(100_000_000, 8.0)
+    irr = calc_irr([-344_000_000, 0, 0, 0, 0, 880_000_000])
 """
 
 from .core import ModelCell, ModelResult, FinancialModel
 from .models import (
     ThreeStatementModel,
     DCFModel,
+    LBOModel,
     DeferredTax,
     Impairment,
     LeaseCapitalization,
     ScenarioManager
 )
 from .io import ExcelWriter
+from . import tools
 
 __version__ = "0.1.0"
 __all__ = [
@@ -45,9 +53,11 @@ __all__ = [
     'FinancialModel',
     'ThreeStatementModel',
     'DCFModel',
+    'LBOModel',
     'DeferredTax',
     'Impairment',
     'LeaseCapitalization',
     'ScenarioManager',
-    'ExcelWriter'
+    'ExcelWriter',
+    'tools'
 ]

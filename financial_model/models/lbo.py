@@ -4,20 +4,22 @@ LBO 模型（杠杆收购）
 
 私募股权基金收购分析工具
 
-工具清单:
-- calc_purchase_price: 收购价格计算
-- calc_sources_uses: 资金来源与用途
-- build_debt_schedule: 债务计划表
-- calc_cash_sweep: 现金瀑布还款
-- calc_exit_value: 退出价值
-- calc_irr: 内部收益率
-- calc_moic: 投资倍数
-- sensitivity_analysis: 敏感性分析
+本模块提供两种使用方式:
+
+1. 原子工具（推荐LLM使用）:
+   from financial_model.tools import calc_purchase_price, calc_sources_uses, ...
+   每个工具独立运行，可自由组合
+
+2. LBOModel类（封装接口）:
+   lbo = LBOModel()
+   result = lbo.build(inputs)
+   内部调用原子工具，提供统一接口
 """
 
 from typing import Dict, List, Any, Optional
 from dataclasses import dataclass, field
 from ..core import ModelResult, FinancialModel
+from ..tools import lbo_tools
 
 
 @dataclass
@@ -540,6 +542,8 @@ class LBOModel(FinancialModel):
         """
         构建完整LBO模型
 
+        内部调用原子工具实现，保持接口兼容。
+
         Args:
             inputs: LBO输入参数，包含：
                 - entry_ebitda: 入场EBITDA
@@ -559,21 +563,17 @@ class LBOModel(FinancialModel):
         Returns:
             dict: 完整LBO分析结果
         """
-        # 清空之前的债务
+        # 使用原子工具快捷构建
+        result = lbo_tools.lbo_quick_build(inputs)
+
+        # 转换为与旧接口兼容的格式
+        result["_meta"]["model_name"] = self.name
+
+        # 同步内部状态（保持兼容）
         self.clear_debt_tranches()
-
-        # 1. 收购价格
-        purchase_price = self.calc_purchase_price(
-            inputs["entry_ebitda"],
-            inputs["entry_multiple"]
-        )
-
-        # 2. 债务设置
-        debt_amounts = {}
         for name, config in inputs["debt_structure"].items():
-            amount = purchase_price.value * config["amount_percent"]
-            debt_amounts[name] = amount
-
+            purchase_price = result["transaction"]["purchase_price"]["value"]
+            amount = purchase_price * config["amount_percent"]
             tranche = DebtTranche(
                 name=name,
                 initial_amount=amount,
@@ -585,107 +585,37 @@ class LBOModel(FinancialModel):
             )
             self.add_debt_tranche(tranche)
 
-        # 3. 资金来源与用途
-        sources_uses = self.calc_sources_uses(
-            purchase_price.value,
-            inputs.get("transaction_fee_rate", 0.02),
-            inputs.get("financing_fee_rate", 0.01),
-            debt_amounts,
-            inputs.get("existing_cash", 0)
+        # 转换 ModelResult 格式
+        def to_model_result_dict(d: dict) -> dict:
+            """转换为 ModelResult.to_dict() 格式"""
+            return {
+                "value": d.get("value"),
+                "formula": d.get("formula"),
+                "inputs": d.get("inputs", {})
+            }
+
+        # 转换各个结果
+        result["transaction"]["purchase_price"] = to_model_result_dict(
+            result["transaction"]["purchase_price"]
         )
-
-        equity_invested = sources_uses.value
-
-        # 4. 运营预测
-        # 根据EBITDA margin反推base_revenue
-        base_margin = inputs["ebitda_margin"][0] if isinstance(inputs["ebitda_margin"], list) else inputs["ebitda_margin"]
-        base_revenue = inputs["entry_ebitda"] / base_margin
-
-        revenue_growth = inputs["revenue_growth"]
-        ebitda_margin = inputs["ebitda_margin"]
-        if not isinstance(revenue_growth, list):
-            revenue_growth = [revenue_growth] * inputs["holding_period"]
-        if not isinstance(ebitda_margin, list):
-            ebitda_margin = [ebitda_margin] * inputs["holding_period"]
-
-        operations = self.project_operations(
-            base_revenue=base_revenue,
-            revenue_growth_rates=revenue_growth,
-            ebitda_margins=ebitda_margin,
-            capex_percent=inputs.get("capex_percent", 0.03),
-            nwc_percent=inputs.get("nwc_percent", 0.10),
-            tax_rate=inputs.get("tax_rate", 0.25),
-            da_percent=inputs.get("da_percent", 0.03)
-        )
-
-        # 5. 债务计划
-        debt_schedule = self.build_debt_schedule(
-            operations,
-            sweep_percent=inputs.get("sweep_percent", 0.75),
-            min_cash=inputs.get("min_cash", 0)
-        )
-
-        # 6. 退出分析
-        exit_ebitda = operations[-1]["ebitda"]
-        exit_value = self.calc_exit_value(
-            exit_ebitda,
-            inputs["exit_multiple"]
-        )
-
-        ending_debt = debt_schedule["final_debt"]
-        equity_proceeds = self.calc_equity_proceeds(
-            exit_value.value,
-            ending_debt
-        )
-
-        # 7. 回报计算
-        # 现金流：[-投入, 0, 0, ..., 退出所得]
-        # 简化模型：假设期间无分红
-        cash_flows = [-equity_invested]
-        for summary in debt_schedule["annual_summary"][:-1]:
-            cash_flows.append(0)  # 期间分红可以在这里加入
-        cash_flows.append(equity_proceeds.value)
-
-        irr = self.calc_irr(cash_flows)
-        moic = self.calc_moic(equity_invested, equity_proceeds.value)
-
-        # 8. 信用指标
-        credit_stats = []
-        for i, (ops, summ) in enumerate(zip(operations, debt_schedule["annual_summary"])):
-            total_debt = summ["ending_debt"]
-            interest = summ["total_interest"]
-            ebitda = ops["ebitda"]
-
-            credit_stats.append({
-                "year": i + 1,
-                "debt_to_ebitda": round(total_debt / ebitda, 2) if ebitda > 0 else None,
-                "interest_coverage": round(ebitda / interest, 2) if interest > 0 else None,
-                "debt_paydown": summ["total_debt_paydown"]
-            })
-
-        return {
-            "_meta": {
-                "model_name": self.name,
-                "model_type": "lbo",
-                "holding_period": inputs["holding_period"]
-            },
-            "transaction": {
-                "purchase_price": purchase_price.to_dict(),
-                "sources_uses": sources_uses.to_dict(),
-                "equity_invested": equity_invested
-            },
-            "operating_model": operations,
-            "debt_schedule": debt_schedule,
-            "exit_analysis": {
-                "exit_ebitda": exit_ebitda,
-                "exit_value": exit_value.to_dict(),
-                "ending_debt": ending_debt,
-                "equity_proceeds": equity_proceeds.to_dict()
-            },
-            "returns": {
-                "irr": irr.to_dict(),
-                "moic": moic.to_dict(),
-                "cash_flows": cash_flows
-            },
-            "credit_stats": credit_stats
+        result["transaction"]["sources_uses"] = {
+            "value": result["transaction"]["sources_uses"]["equity_required"],
+            "formula": result["transaction"]["sources_uses"]["formula"],
+            "inputs": {
+                "sources": result["transaction"]["sources_uses"]["sources"],
+                "uses": result["transaction"]["sources_uses"]["uses"]
+            }
         }
+        result["exit_analysis"]["exit_value"] = to_model_result_dict(
+            result["exit_analysis"]["exit_value"]
+        )
+        result["exit_analysis"]["equity_proceeds"] = to_model_result_dict(
+            result["exit_analysis"]["equity_proceeds"]
+        )
+        result["returns"]["irr"] = to_model_result_dict(result["returns"]["irr"])
+        result["returns"]["moic"] = to_model_result_dict(result["returns"]["moic"])
+
+        # 转换 operating_model 格式
+        result["operating_model"] = result["operating_model"]["projections"]
+
+        return result
