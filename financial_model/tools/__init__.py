@@ -8,6 +8,7 @@
 - lbo_tools: LBO原子工具（9个）
 - dcf_tools: DCF原子工具（9个）
 - three_statement_tools: 三表模型原子工具（11个）
+- ma_tools: M&A原子工具（8个）
 """
 
 # LBO 原子工具
@@ -51,6 +52,18 @@ from .three_statement_tools import (
     three_statement_quick_build,
 )
 
+# M&A 原子工具
+from .ma_tools import (
+    calc_offer_price,
+    calc_funding_mix,
+    calc_goodwill,
+    calc_pro_forma,
+    calc_accretion_dilution,
+    calc_synergies,
+    calc_breakeven,
+    ma_quick_build,
+)
+
 __all__ = [
     # LBO 工具
     "calc_purchase_price",
@@ -84,4 +97,13 @@ __all__ = [
     "calc_cash_flow_statement",
     "check_balance",
     "three_statement_quick_build",
+    # M&A 工具
+    "calc_offer_price",
+    "calc_funding_mix",
+    "calc_goodwill",
+    "calc_pro_forma",
+    "calc_accretion_dilution",
+    "calc_synergies",
+    "calc_breakeven",
+    "ma_quick_build",
 ]

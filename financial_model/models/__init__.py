@@ -7,6 +7,8 @@
 - DCF估值工具
 - 高级功能（递延税、减值、租赁资本化）
 - 场景管理器
+- LBO模型
+- M&A模型
 """
 
 from .three_statement import ThreeStatementModel
@@ -14,6 +16,7 @@ from .dcf import DCFModel
 from .advanced import DeferredTax, Impairment, LeaseCapitalization
 from .scenario import ScenarioManager
 from .lbo import LBOModel, DebtTranche
+from .ma import MAModel
 
 __all__ = [
     'ThreeStatementModel',
@@ -23,5 +26,6 @@ __all__ = [
     'LeaseCapitalization',
     'ScenarioManager',
     'LBOModel',
-    'DebtTranche'
+    'DebtTranche',
+    'MAModel'
 ]
