@@ -9,6 +9,7 @@
 - dcf_tools: DCF原子工具（9个）
 - three_statement_tools: 三表模型原子工具（11个）
 - ma_tools: M&A原子工具（8个）
+- ratio_tools: 财务比率分析工具（6个）
 """
 
 # LBO 原子工具
@@ -64,6 +65,17 @@ from .ma_tools import (
     ma_quick_build,
 )
 
+# 财务比率分析工具
+from .ratio_tools import (
+    calc_profitability,
+    calc_liquidity,
+    calc_solvency,
+    calc_efficiency,
+    calc_valuation,
+    calc_dupont,
+    calc_all_ratios,
+)
+
 __all__ = [
     # LBO 工具
     "calc_purchase_price",
@@ -106,4 +118,12 @@ __all__ = [
     "calc_synergies",
     "calc_breakeven",
     "ma_quick_build",
+    # 财务比率分析工具
+    "calc_profitability",
+    "calc_liquidity",
+    "calc_solvency",
+    "calc_efficiency",
+    "calc_valuation",
+    "calc_dupont",
+    "calc_all_ratios",
 ]

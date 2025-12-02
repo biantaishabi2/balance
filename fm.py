@@ -541,6 +541,229 @@ def cmd_three_check(args):
 
 
 # ============================================================
+# Ratio 命令
+# ============================================================
+
+def cmd_ratio_calc(args):
+    """比率计算"""
+    from financial_model.tools import (
+        calc_profitability, calc_liquidity, calc_solvency,
+        calc_efficiency, calc_valuation, calc_all_ratios
+    )
+
+    data = read_json_input()
+
+    # 从输入数据提取财务数据
+    income = data.get("income_statement", data)
+    balance = data.get("balance_sheet", data)
+    market = data.get("market_data", data)
+
+    ratio_type = args.type or "all"
+
+    if ratio_type == "all":
+        result = calc_all_ratios(
+            income_statement=income,
+            balance_sheet=balance,
+            market_data=market
+        )
+    elif ratio_type == "profitability":
+        result = calc_profitability(
+            revenue=income.get("revenue"),
+            gross_profit=income.get("gross_profit"),
+            cost_of_revenue=income.get("cost_of_revenue"),
+            operating_income=income.get("operating_income"),
+            net_income=income.get("net_income"),
+            ebitda=income.get("ebitda"),
+            total_assets=balance.get("total_assets"),
+            total_equity=balance.get("total_equity")
+        )
+    elif ratio_type == "liquidity":
+        result = calc_liquidity(
+            cash=balance.get("cash"),
+            inventory=balance.get("inventory"),
+            current_assets=balance.get("current_assets"),
+            current_liabilities=balance.get("current_liabilities")
+        )
+    elif ratio_type == "solvency":
+        total_debt = balance.get("total_debt")
+        if total_debt is None:
+            total_debt = balance.get("short_term_debt", 0) + balance.get("long_term_debt", 0)
+        result = calc_solvency(
+            total_debt=total_debt,
+            total_equity=balance.get("total_equity"),
+            total_assets=balance.get("total_assets"),
+            ebit=income.get("ebit"),
+            ebitda=income.get("ebitda"),
+            interest_expense=income.get("interest_expense")
+        )
+    elif ratio_type == "efficiency":
+        result = calc_efficiency(
+            revenue=income.get("revenue"),
+            cost_of_revenue=income.get("cost_of_revenue"),
+            total_assets=balance.get("total_assets"),
+            inventory=balance.get("inventory"),
+            accounts_receivable=balance.get("accounts_receivable"),
+            accounts_payable=balance.get("accounts_payable")
+        )
+    elif ratio_type == "valuation":
+        total_debt = balance.get("total_debt")
+        if total_debt is None:
+            total_debt = balance.get("short_term_debt", 0) + balance.get("long_term_debt", 0)
+        result = calc_valuation(
+            market_cap=market.get("market_cap"),
+            stock_price=market.get("stock_price"),
+            shares_outstanding=market.get("shares_outstanding"),
+            net_income=income.get("net_income"),
+            total_equity=balance.get("total_equity"),
+            revenue=income.get("revenue"),
+            ebitda=income.get("ebitda"),
+            total_debt=total_debt,
+            cash=balance.get("cash")
+        )
+    else:
+        print(f"错误: 未知的比率类型 '{ratio_type}'", file=sys.stderr)
+        sys.exit(1)
+
+    print_json(result, args.compact)
+
+
+def cmd_ratio_dupont(args):
+    """杜邦分析"""
+    from financial_model.tools import calc_dupont
+
+    data = read_json_input()
+
+    income = data.get("income_statement", data)
+    balance = data.get("balance_sheet", data)
+
+    levels = args.levels or 3
+
+    result = calc_dupont(
+        net_income=income.get("net_income"),
+        revenue=income.get("revenue"),
+        total_assets=balance.get("total_assets"),
+        total_equity=balance.get("total_equity"),
+        ebit=income.get("ebit"),
+        ebt=income.get("ebt"),
+        levels=levels
+    )
+
+    print_json(result, args.compact)
+
+
+def cmd_ratio_compare(args):
+    """同业对比"""
+    data = read_json_input()
+
+    # 输入应该是多个公司的数据
+    companies = data.get("companies", [])
+    metrics = args.metrics.split(",") if args.metrics else ["roe", "net_margin", "roic"]
+
+    from financial_model.tools import calc_profitability, calc_solvency
+
+    comparison = {"metrics": {}}
+
+    for metric in metrics:
+        comparison["metrics"][metric] = {}
+
+        for company in companies:
+            name = company.get("name", "Unknown")
+            income = company.get("income_statement", company)
+            balance = company.get("balance_sheet", company)
+
+            # 计算指标
+            if metric in ["gross_margin", "operating_margin", "net_margin", "ebitda_margin", "roa", "roe", "roic"]:
+                result = calc_profitability(
+                    revenue=income.get("revenue"),
+                    gross_profit=income.get("gross_profit"),
+                    operating_income=income.get("operating_income"),
+                    net_income=income.get("net_income"),
+                    ebitda=income.get("ebitda"),
+                    total_assets=balance.get("total_assets"),
+                    total_equity=balance.get("total_equity")
+                )
+                if metric in result.get("ratios", {}):
+                    comparison["metrics"][metric][name] = result["ratios"][metric]["value"]
+
+            elif metric in ["debt_to_equity", "interest_coverage"]:
+                result = calc_solvency(
+                    total_debt=balance.get("total_debt"),
+                    total_equity=balance.get("total_equity"),
+                    total_assets=balance.get("total_assets"),
+                    ebit=income.get("ebit"),
+                    interest_expense=income.get("interest_expense")
+                )
+                if metric in result.get("ratios", {}):
+                    comparison["metrics"][metric][name] = result["ratios"][metric]["value"]
+
+    # 生成排名
+    comparison["ranking"] = {}
+    for metric, values in comparison["metrics"].items():
+        sorted_companies = sorted(values.items(), key=lambda x: x[1], reverse=True)
+        comparison["ranking"][metric] = [c[0] for c in sorted_companies]
+
+    print_json(comparison, args.compact)
+
+
+def cmd_ratio_trend(args):
+    """趋势分析"""
+    from financial_model.tools import calc_profitability
+
+    data = read_json_input()
+
+    # 输入应该是多期数据
+    periods = data.get("periods", [])
+    metrics = args.metrics.split(",") if args.metrics else ["roe", "net_margin", "asset_turnover"]
+
+    trend = {"trend_analysis": {}}
+
+    for metric in metrics:
+        values = []
+
+        for period_data in periods:
+            income = period_data.get("income_statement", period_data)
+            balance = period_data.get("balance_sheet", period_data)
+
+            result = calc_profitability(
+                revenue=income.get("revenue"),
+                gross_profit=income.get("gross_profit"),
+                operating_income=income.get("operating_income"),
+                net_income=income.get("net_income"),
+                total_assets=balance.get("total_assets"),
+                total_equity=balance.get("total_equity")
+            )
+
+            if metric in result.get("ratios", {}):
+                values.append(result["ratios"][metric]["value"])
+
+        if values:
+            # 计算CAGR
+            if len(values) > 1 and values[0] > 0:
+                cagr = (values[-1] / values[0]) ** (1 / (len(values) - 1)) - 1
+            else:
+                cagr = 0
+
+            # 判断趋势
+            if len(values) > 1:
+                if values[-1] > values[0] * 1.1:
+                    trend_desc = "上升"
+                elif values[-1] < values[0] * 0.9:
+                    trend_desc = "下降"
+                else:
+                    trend_desc = "稳定"
+            else:
+                trend_desc = "数据不足"
+
+            trend["trend_analysis"][metric] = {
+                "values": values,
+                "cagr": round(cagr, 4),
+                "trend": trend_desc
+            }
+
+    print_json(trend, args.compact)
+
+
+# ============================================================
 # Tool 命令
 # ============================================================
 
@@ -586,6 +809,14 @@ TOOL_REGISTRY = {
     "calc_cash_flow_statement": ("financial_model.tools.three_statement_tools", "现金流量表"),
     "check_balance": ("financial_model.tools.three_statement_tools", "配平检验"),
     "three_statement_quick_build": ("financial_model.tools.three_statement_tools", "三表快捷构建"),
+    # Ratio Analysis
+    "calc_profitability": ("financial_model.tools.ratio_tools", "盈利能力分析"),
+    "calc_liquidity": ("financial_model.tools.ratio_tools", "流动性分析"),
+    "calc_solvency": ("financial_model.tools.ratio_tools", "偿债能力分析"),
+    "calc_efficiency": ("financial_model.tools.ratio_tools", "运营效率分析"),
+    "calc_valuation": ("financial_model.tools.ratio_tools", "估值分析"),
+    "calc_dupont": ("financial_model.tools.ratio_tools", "杜邦分析"),
+    "calc_all_ratios": ("financial_model.tools.ratio_tools", "全部比率分析"),
 }
 
 
@@ -673,6 +904,8 @@ def main():
   fm ma calc < deal.json
   fm ma breakeven < deal.json
   fm dcf calc --wacc 0.09 < projections.json
+  fm ratio calc --type all < financial.json
+  fm ratio dupont --levels 5 < financial.json
   fm tool list
   fm tool run calc_irr < cashflows.json
 
@@ -788,6 +1021,35 @@ def main():
     three_chk.add_argument("--compact", action="store_true", help="紧凑输出")
     three_chk.set_defaults(func=cmd_three_check)
 
+    # ===== Ratio =====
+    ratio_parser = subparsers.add_parser("ratio", help="财务比率分析")
+    ratio_sub = ratio_parser.add_subparsers(dest="subcommand")
+
+    # ratio calc
+    ratio_calc = ratio_sub.add_parser("calc", help="计算比率")
+    ratio_calc.add_argument("--type", choices=["all", "profitability", "liquidity", "solvency", "efficiency", "valuation"],
+                            default="all", help="比率类型")
+    ratio_calc.add_argument("--compact", action="store_true", help="紧凑输出")
+    ratio_calc.set_defaults(func=cmd_ratio_calc)
+
+    # ratio dupont
+    ratio_dupont = ratio_sub.add_parser("dupont", help="杜邦分析")
+    ratio_dupont.add_argument("--levels", type=int, choices=[3, 5], default=3, help="分解层级(3或5)")
+    ratio_dupont.add_argument("--compact", action="store_true", help="紧凑输出")
+    ratio_dupont.set_defaults(func=cmd_ratio_dupont)
+
+    # ratio compare
+    ratio_cmp = ratio_sub.add_parser("compare", help="同业对比")
+    ratio_cmp.add_argument("--metrics", help="对比指标(逗号分隔)")
+    ratio_cmp.add_argument("--compact", action="store_true", help="紧凑输出")
+    ratio_cmp.set_defaults(func=cmd_ratio_compare)
+
+    # ratio trend
+    ratio_trend = ratio_sub.add_parser("trend", help="趋势分析")
+    ratio_trend.add_argument("--metrics", help="分析指标(逗号分隔)")
+    ratio_trend.add_argument("--compact", action="store_true", help="紧凑输出")
+    ratio_trend.set_defaults(func=cmd_ratio_trend)
+
     # ===== Tool =====
     tool_parser = subparsers.add_parser("tool", help="原子工具")
     tool_sub = tool_parser.add_subparsers(dest="subcommand")
@@ -828,6 +1090,8 @@ def main():
             dcf_parser.print_help()
         elif args.command == "three":
             three_parser.print_help()
+        elif args.command == "ratio":
+            ratio_parser.print_help()
         elif args.command == "tool":
             tool_parser.print_help()
 
