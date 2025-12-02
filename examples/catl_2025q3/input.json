@@ -1,0 +1,41 @@
+{
+  "_comment": "宁德时代2025年Q3财务数据 - 单位：万元",
+  "_source": "2025年第三季度报告 (2025-10-21发布)",
+
+  "revenue": 28307198.70,
+  "cost": 21142714.70,
+  "other_expense": 2755312.90,
+
+  "opening_cash": 30351199.30,
+  "opening_debt": 9341055.30,
+  "opening_equity": 27345617.40,
+  "opening_retained": 12660154.10,
+
+  "opening_receivable": 6413551.00,
+  "opening_payable": 21038879.40,
+  "opening_inventory": 5983553.30,
+
+  "delta_receivable": 234572.50,
+  "delta_payable": 453773.50,
+  "delta_inventory": 2037560.25,
+
+  "fixed_asset_cost": 12862270.20,
+  "accum_depreciation": 0,
+  "fixed_asset_life": 10,
+  "fixed_asset_salvage": 0,
+
+  "interest_rate": 0.0233,
+  "tax_rate": 0.1386,
+
+  "capex": 992560.50,
+  "dividend": 2511320.80,
+  "min_cash": 5000000,
+
+  "interest_expense": 218347.70,
+  "interest_income": 806068.20,
+  "tax_expense": 841553.50,
+
+  "operating_cashflow": 8066043.00,
+  "investing_cashflow": -5729149.00,
+  "financing_cashflow": 427653.90
+}

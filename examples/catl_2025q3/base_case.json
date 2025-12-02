@@ -1,0 +1,33 @@
+{
+  "_scenario": "Base Case - 基准情景",
+  "_assumption": "维持当前增长趋势，收入增长9%，毛利率维持25.3%",
+
+  "revenue": 30854946.59,
+  "cost": 23046279.02,
+  "other_expense": 3003291.06,
+
+  "opening_cash": 33188419.01,
+  "opening_debt": 9341055.3,
+  "opening_equity": 27345617.4,
+  "opening_retained": 12651456.56,
+
+  "opening_receivable": 6648123.50,
+  "opening_payable": 8815997.73,
+  "opening_inventory": 8021113.55,
+
+  "delta_receivable": 255700.00,
+  "delta_payable": 494600.00,
+  "delta_inventory": 721200.00,
+
+  "fixed_asset_cost": 13854830.70,
+  "accum_depreciation": 1286227.02,
+  "fixed_asset_life": 10,
+  "fixed_asset_salvage": 0,
+
+  "interest_rate": 0.0233,
+  "tax_rate": 0.1386,
+
+  "capex": 1200000.00,
+  "dividend": 2500000.00,
+  "min_cash": 5000000
+}

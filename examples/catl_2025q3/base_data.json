@@ -1,0 +1,29 @@
+{
+  "_comment": "基础数据 - 来自2025Q3实际财报，作为预测的起点",
+
+  "period": "2025Q3",
+  "company": "宁德时代",
+
+  "last_revenue": 28307198.70,
+  "last_cost": 21142714.70,
+  "last_gross_margin": 0.253,
+
+  "closing_cash": 32424158.60,
+  "closing_debt": 9375638.80,
+  "closing_equity": 27345617.40,
+  "closing_retained": 15171504.90,
+
+  "closing_receivable": 6648123.50,
+  "closing_payable": 21492614.50,
+  "closing_inventory": 8021155.80,
+
+  "fixed_asset_gross": 12862270.20,
+  "accum_depreciation": 1286227.02,
+  "fixed_asset_life": 10,
+
+  "last_interest_rate": 0.0233,
+  "last_tax_rate": 0.1386,
+
+  "last_opex": 2755312.90,
+  "last_opex_ratio": 0.0973
+}

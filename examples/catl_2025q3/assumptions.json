@@ -1,0 +1,50 @@
+{
+  "_comment": "情景假设参数 - 只需修改这些驱动因子",
+
+  "scenarios": {
+    "base_case": {
+      "name": "基准情景",
+      "description": "维持当前增长趋势",
+      "growth_rate": 0.09,
+      "gross_margin": 0.253,
+      "opex_ratio": 0.097,
+      "capex_ratio": 0.042,
+      "ar_days": 64,
+      "ap_days": 120,
+      "inv_days": 102,
+      "interest_rate": 0.0233,
+      "tax_rate": 0.1386,
+      "dividend_ratio": 0.30
+    },
+
+    "bull_case": {
+      "name": "乐观情景",
+      "description": "储能市场爆发，规模效应显现",
+      "growth_rate": 0.15,
+      "gross_margin": 0.273,
+      "opex_ratio": 0.095,
+      "capex_ratio": 0.050,
+      "ar_days": 60,
+      "ap_days": 125,
+      "inv_days": 95,
+      "interest_rate": 0.0220,
+      "tax_rate": 0.1386,
+      "dividend_ratio": 0.32
+    },
+
+    "bear_case": {
+      "name": "悲观情景",
+      "description": "市场竞争加剧，价格战",
+      "growth_rate": 0.05,
+      "gross_margin": 0.233,
+      "opex_ratio": 0.100,
+      "capex_ratio": 0.035,
+      "ar_days": 70,
+      "ap_days": 115,
+      "inv_days": 110,
+      "interest_rate": 0.0250,
+      "tax_rate": 0.1386,
+      "dividend_ratio": 0.25
+    }
+  }
+}

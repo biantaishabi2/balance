@@ -1,0 +1,33 @@
+{
+  "_scenario": "Bear Case - 悲观情景",
+  "_assumption": "市场竞争加剧，收入增长5%，毛利率下降至23.3%",
+
+  "revenue": 29722558.64,
+  "cost": 22796941.48,
+  "other_expense": 2893078.04,
+
+  "opening_cash": 33188419.01,
+  "opening_debt": 9341055.3,
+  "opening_equity": 27345617.4,
+  "opening_retained": 12651456.56,
+
+  "opening_receivable": 6648123.50,
+  "opening_payable": 8815997.73,
+  "opening_inventory": 8021113.55,
+
+  "delta_receivable": 350000.00,
+  "delta_payable": 300000.00,
+  "delta_inventory": 900000.00,
+
+  "fixed_asset_cost": 13854830.70,
+  "accum_depreciation": 1286227.02,
+  "fixed_asset_life": 10,
+  "fixed_asset_salvage": 0,
+
+  "interest_rate": 0.0250,
+  "tax_rate": 0.1386,
+
+  "capex": 800000.00,
+  "dividend": 2000000.00,
+  "min_cash": 5000000
+}
