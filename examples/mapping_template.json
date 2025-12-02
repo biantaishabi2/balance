@@ -1,0 +1,57 @@
+{
+  "_说明": "这是字段映射配置，告诉工具从 Excel 哪里读取数据",
+  "_格式": "sheet名 -> { Excel标签: JSON字段名 }",
+  "_用法": "excel2json 报表.xlsx --mapping mapping.json",
+
+  "资产负债表": {
+    "_说明": "第一列是科目名，第二列是期初数",
+    "现金": "opening_cash",
+    "货币资金": "opening_cash",
+    "银行存款": "opening_cash",
+    "应收账款": "opening_receivable",
+    "应收款项": "opening_receivable",
+    "存货": "opening_inventory",
+    "库存商品": "opening_inventory",
+    "固定资产原值": "fixed_asset_cost",
+    "固定资产": "fixed_asset_cost",
+    "累计折旧": "accum_depreciation",
+    "短期借款": "opening_debt",
+    "借款": "opening_debt",
+    "应付账款": "opening_payable",
+    "应付款项": "opening_payable",
+    "实收资本": "opening_equity",
+    "股本": "opening_equity",
+    "留存收益": "opening_retained",
+    "未分配利润": "opening_retained"
+  },
+
+  "损益表": {
+    "_说明": "利润表也行",
+    "营业收入": "revenue",
+    "主营业务收入": "revenue",
+    "收入": "revenue",
+    "营业成本": "cost",
+    "主营业务成本": "cost",
+    "成本": "cost",
+    "管理费用": "other_expense",
+    "其他费用": "other_expense",
+    "销售费用": "other_expense"
+  },
+
+  "参数": {
+    "_说明": "也可以叫假设、设定等",
+    "利率": "interest_rate",
+    "贷款利率": "interest_rate",
+    "年利率": "interest_rate",
+    "税率": "tax_rate",
+    "所得税率": "tax_rate",
+    "折旧年限": "fixed_asset_life",
+    "使用年限": "fixed_asset_life",
+    "残值": "fixed_asset_salvage",
+    "分红": "dividend",
+    "股利": "dividend",
+    "资本支出": "capex",
+    "购置设备": "capex",
+    "最低现金": "min_cash"
+  }
+}

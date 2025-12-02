@@ -1,0 +1,31 @@
+{
+  "revenue": 100000,
+  "cost": 60000,
+  "other_expense": 5000,
+
+  "opening_cash": 20000,
+  "opening_debt": 50000,
+  "opening_equity": 30000,
+  "opening_retained": 10000,
+  "opening_receivable": 8000,
+  "opening_payable": 6000,
+  "opening_inventory": 12000,
+
+  "fixed_asset_cost": 100000,
+  "fixed_asset_life": 10,
+  "fixed_asset_salvage": 0,
+  "accum_depreciation": 20000,
+  "capex": 5000,
+
+  "interest_rate": 0.08,
+  "min_cash": 5000,
+  "repayment": 0,
+  "new_equity": 0,
+
+  "tax_rate": 0.25,
+  "dividend": 5000,
+
+  "estimated_depreciation": 10000,
+  "delta_receivable": 2000,
+  "delta_payable": 1000
+}
