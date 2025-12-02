@@ -674,6 +674,239 @@ class ExcelWriter:
         ws.cell(row=row, column=1, value="3. 点击单元格可在公式栏查看公式")
         row += 1
 
+    def write_lbo(self, result: Dict[str, Any], sheet_name: str = "LBO模型"):
+        """
+        写入 LBO 模型结果
+
+        Args:
+            result: LBOModel.build() 的返回结果
+            sheet_name: 工作表名称
+        """
+        ws = self.wb.create_sheet(title=sheet_name)
+
+        # 设置列宽
+        self._set_column_width(ws, 1, 22)
+        for i in range(2, 10):
+            self._set_column_width(ws, i, 15)
+
+        row = 1
+
+        # ===== 元信息 =====
+        meta = result.get("_meta", {})
+        row = self._write_title(ws, row, f"LBO 模型 - 持有期 {meta.get('holding_period', 5)} 年")
+        row += 1
+
+        # ===== 交易结构 =====
+        row = self._write_title(ws, row, "交易结构")
+        row = self._write_header_row(ws, row, ["项目", "金额", "说明"])
+
+        transaction = result.get("transaction", {})
+
+        # 收购价格
+        pp = transaction.get("purchase_price", {})
+        row = self._write_data_row(ws, row, [
+            "收购价格",
+            pp.get("value", 0),
+            pp.get("formula", "")
+        ])
+
+        # 资金来源
+        su = transaction.get("sources_uses", {})
+        su_inputs = su.get("inputs", {})
+        sources = su_inputs.get("sources", {})
+        uses = su_inputs.get("uses", {})
+
+        row = self._write_data_row(ws, row, ["交易费用", uses.get("transaction_fees", 0), ""])
+        row = self._write_data_row(ws, row, ["融资费用", uses.get("financing_fees", 0), ""])
+        row = self._write_data_row(ws, row, ["总用途", uses.get("total_uses", 0), ""], is_total=True)
+
+        row += 1
+        ws.cell(row=row, column=1, value="资金来源").font = Font(bold=True)
+        row += 1
+
+        row = self._write_data_row(ws, row, ["总债务", sources.get("total_debt", 0), ""])
+        row = self._write_data_row(ws, row, ["股权投入", transaction.get("equity_invested", 0), ""], is_total=True)
+
+        row += 1
+
+        # ===== 运营预测 =====
+        row = self._write_title(ws, row, "运营预测")
+
+        operations = result.get("operating_model", [])
+        if operations:
+            headers = ["指标"] + [f"Year {op['year']}" for op in operations]
+            row = self._write_header_row(ws, row, headers)
+
+            metrics = [
+                ("revenue", "收入"),
+                ("ebitda", "EBITDA"),
+                ("ebit", "EBIT"),
+                ("ufcf", "无杠杆FCF"),
+            ]
+
+            for key, label in metrics:
+                values = [label] + [op.get(key, 0) for op in operations]
+                is_total = key in ["ebitda", "ufcf"]
+                row = self._write_data_row(ws, row, values, is_total=is_total)
+
+        row += 1
+
+        # ===== 债务计划 =====
+        row = self._write_title(ws, row, "债务计划")
+
+        debt_schedule = result.get("debt_schedule", {})
+        annual_summary = debt_schedule.get("annual_summary", [])
+
+        if annual_summary:
+            headers = ["指标"] + [f"Year {s['year']}" for s in annual_summary]
+            row = self._write_header_row(ws, row, headers)
+
+            debt_metrics = [
+                ("total_interest", "利息支出"),
+                ("mandatory_amort", "强制还本"),
+                ("cash_sweep", "现金扫荡"),
+                ("total_debt_paydown", "总还本"),
+                ("ending_debt", "期末债务"),
+            ]
+
+            for key, label in debt_metrics:
+                values = [label] + [s.get(key, 0) for s in annual_summary]
+                is_total = key == "ending_debt"
+                row = self._write_data_row(ws, row, values, is_total=is_total)
+
+        row += 1
+
+        # ===== 信用指标 =====
+        row = self._write_title(ws, row, "信用指标")
+
+        credit_stats = result.get("credit_stats", [])
+        if credit_stats:
+            headers = ["指标"] + [f"Year {s['year']}" for s in credit_stats]
+            row = self._write_header_row(ws, row, headers)
+
+            row = self._write_data_row(ws, row,
+                ["Debt/EBITDA"] + [f"{s.get('debt_to_ebitda', 0):.1f}x" for s in credit_stats])
+            row = self._write_data_row(ws, row,
+                ["利息覆盖倍数"] + [f"{s.get('interest_coverage', 0):.1f}x" for s in credit_stats])
+
+        row += 1
+
+        # ===== 退出分析 =====
+        row = self._write_title(ws, row, "退出分析")
+        row = self._write_header_row(ws, row, ["项目", "金额", "公式"])
+
+        exit_analysis = result.get("exit_analysis", {})
+
+        row = self._write_data_row(ws, row, [
+            "退出EBITDA",
+            exit_analysis.get("exit_ebitda", 0),
+            ""
+        ])
+
+        ev = exit_analysis.get("exit_value", {})
+        row = self._write_data_row(ws, row, [
+            "退出价值",
+            ev.get("value", 0),
+            ev.get("formula", "")
+        ])
+
+        row = self._write_data_row(ws, row, [
+            "期末债务",
+            exit_analysis.get("ending_debt", 0),
+            ""
+        ])
+
+        ep = exit_analysis.get("equity_proceeds", {})
+        row = self._write_data_row(ws, row, [
+            "股权所得",
+            ep.get("value", 0),
+            ep.get("formula", "")
+        ], is_total=True)
+
+        row += 1
+
+        # ===== 回报指标 =====
+        row = self._write_title(ws, row, "回报指标")
+        row = self._write_header_row(ws, row, ["指标", "值", "公式"])
+
+        returns = result.get("returns", {})
+
+        irr = returns.get("irr", {})
+        row = self._write_data_row(ws, row, [
+            "IRR",
+            f"{irr.get('value', 0):.1%}",
+            irr.get("formula", "")
+        ], is_total=True)
+
+        moic = returns.get("moic", {})
+        row = self._write_data_row(ws, row, [
+            "MOIC",
+            f"{moic.get('value', 0):.2f}x",
+            moic.get("formula", "")
+        ], is_total=True)
+
+        # 现金流
+        row += 1
+        row = self._write_title(ws, row, "现金流序列")
+        cash_flows = returns.get("cash_flows", [])
+        if cash_flows:
+            cf_headers = ["Year"] + [str(i) for i in range(len(cash_flows))]
+            row = self._write_header_row(ws, row, cf_headers)
+            cf_values = ["Cash Flow"] + cash_flows
+            row = self._write_data_row(ws, row, cf_values)
+
+    def write_lbo_sensitivity(self, result: Dict[str, Any], sheet_name: str = "LBO敏感性"):
+        """
+        写入 LBO 敏感性分析结果
+
+        Args:
+            result: LBOModel.sensitivity_entry_exit() 的返回结果
+            sheet_name: 工作表名称
+        """
+        ws = self.wb.create_sheet(title=sheet_name)
+
+        self._set_column_width(ws, 1, 18)
+        for i in range(2, 8):
+            self._set_column_width(ws, i, 12)
+
+        row = 1
+
+        # IRR 敏感性
+        irr_sens = result.get("irr_sensitivity", {})
+        if irr_sens:
+            row = self._write_title(ws, row, "IRR 敏感性 (Entry vs Exit Multiple)")
+            row += 1
+
+            data = irr_sens.get("data", [])
+            if data:
+                # 表头
+                first_row = data[0]
+                headers = ["Entry \\ Exit"] + [k for k in first_row.keys() if k != "entry_multiple"]
+                row = self._write_header_row(ws, row, headers)
+
+                # 数据
+                for d in data:
+                    values = [d["entry_multiple"]] + [d.get(k, "") for k in headers[1:]]
+                    row = self._write_data_row(ws, row, values)
+
+        row += 2
+
+        # MOIC 敏感性
+        moic_sens = result.get("moic_sensitivity", {})
+        if moic_sens:
+            row = self._write_title(ws, row, "MOIC 敏感性 (Entry vs Exit Multiple)")
+            row += 1
+
+            data = moic_sens.get("data", [])
+            if data:
+                first_row = data[0]
+                headers = ["Entry \\ Exit"] + [k for k in first_row.keys() if k != "entry_multiple"]
+                row = self._write_header_row(ws, row, headers)
+
+                for d in data:
+                    values = [d["entry_multiple"]] + [d.get(k, "") for k in headers[1:]]
+                    row = self._write_data_row(ws, row, values)
+
     def save(self, filepath: str):
         """
         保存 Excel 文件

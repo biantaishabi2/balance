@@ -13,6 +13,7 @@ from .three_statement import ThreeStatementModel
 from .dcf import DCFModel
 from .advanced import DeferredTax, Impairment, LeaseCapitalization
 from .scenario import ScenarioManager
+from .lbo import LBOModel, DebtTranche
 
 __all__ = [
     'ThreeStatementModel',
@@ -20,5 +21,7 @@ __all__ = [
     'DeferredTax',
     'Impairment',
     'LeaseCapitalization',
-    'ScenarioManager'
+    'ScenarioManager',
+    'LBOModel',
+    'DebtTranche'
 ]
