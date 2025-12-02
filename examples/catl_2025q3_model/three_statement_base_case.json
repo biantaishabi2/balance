@@ -4,7 +4,7 @@
     "scenario": "base_case",
     "base_period": "2025Q3",
     "company": "宁德时代",
-    "generated_at": "2025-12-02T14:22:22.235454",
+    "generated_at": "2025-12-02T15:20:11.101116",
     "assumptions": {
       "name": "基准情景",
       "description": "维持当前增长趋势",

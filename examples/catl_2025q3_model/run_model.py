@@ -407,12 +407,19 @@ def main():
     try:
         writer = ExcelWriter()
 
-        # 三表模型 - 三种情景
+        # 三表模型 - 三种情景（值模式）
         for scenario in ["base_case", "bull_case", "bear_case"]:
             writer.write_three_statement(
                 results["three_statement"][scenario],
                 f"三表-{scenario}"
             )
+
+        # 三表模型 - 公式模式（基准情景）
+        # 用户可以在 Excel 中直接修改参数，自动重算
+        _, assumptions_data = load_data()
+        base_result = results["three_statement"]["base_case"]
+        base_result["_meta"]["assumptions"] = assumptions_data["scenarios"]["base_case"]
+        writer.write_three_statement_formula(base_result, "三表-公式模式")
 
         # DCF 估值
         writer.write_dcf(results["dcf"], "DCF估值")

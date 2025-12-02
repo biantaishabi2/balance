@@ -6,5 +6,7 @@
 """
 
 from .excel_writer import ExcelWriter
+from .cell_tracker import CellTracker
+from .formula_builder import FormulaBuilder
 
-__all__ = ['ExcelWriter']
+__all__ = ['ExcelWriter', 'CellTracker', 'FormulaBuilder']

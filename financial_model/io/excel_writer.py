@@ -486,6 +486,194 @@ class ExcelWriter:
                     if key in impact:
                         row = self._write_data_row(ws, row, [label, impact[key], ""])
 
+    def write_three_statement_formula(self, result: Dict[str, Any],
+                                        sheet_name: str = "三表模型(公式)"):
+        """
+        以公式模式写入三表模型
+
+        输出的单元格包含真正的 Excel 公式，用户可以直接在 Excel 中修改参数
+
+        布局:
+            A列: 科目名称
+            B列: 金额/公式
+            C列: 参数值（可修改）
+
+        Args:
+            result: ThreeStatementModel.build() 的返回结果
+            sheet_name: 工作表名称
+        """
+        from .cell_tracker import CellTracker
+        from .formula_builder import FormulaBuilder
+
+        ws = self.wb.create_sheet(title=sheet_name)
+        tracker = CellTracker()
+        builder = FormulaBuilder(tracker)
+
+        # 设置列宽
+        self._set_column_width(ws, 1, 18)  # 科目
+        self._set_column_width(ws, 2, 20)  # 金额/公式
+        self._set_column_width(ws, 3, 15)  # 参数
+
+        row = 1
+
+        # 参数填充样式
+        param_fill = PatternFill(start_color="FFF2CC", end_color="FFF2CC", fill_type="solid")
+
+        # ===== 驱动假设区 =====
+        row = self._write_title(ws, row, "驱动假设 (可修改)")
+        row = self._write_header_row(ws, row, ["参数", "值", "说明"])
+
+        # 从 result 中提取假设参数
+        assumptions = result.get("_meta", {}).get("assumptions", {})
+
+        params = [
+            ("growth_rate", "收入增长率", assumptions.get("growth_rate", 0.09), "0.0%"),
+            ("gross_margin", "毛利率", assumptions.get("gross_margin", 0.253), "0.0%"),
+            ("opex_ratio", "费用率", assumptions.get("opex_ratio", 0.097), "0.0%"),
+            ("tax_rate", "税率", assumptions.get("tax_rate", 0.1386), "0.0%"),
+            ("interest_rate", "利率", assumptions.get("interest_rate", 0.0233), "0.00%"),
+            ("ar_days", "应收周转天数", assumptions.get("ar_days", 64), "0"),
+            ("ap_days", "应付周转天数", assumptions.get("ap_days", 120), "0"),
+            ("inv_days", "存货周转天数", assumptions.get("inv_days", 102), "0"),
+        ]
+
+        for name, label, value, fmt in params:
+            ws.cell(row=row, column=1, value=label).border = self.thin_border
+            cell = ws.cell(row=row, column=2, value=value)
+            cell.border = self.thin_border
+            cell.fill = param_fill
+            cell.number_format = fmt
+            ws.cell(row=row, column=3, value="← 可修改").font = Font(color="808080", italic=True)
+            tracker.set(name, row, 2)  # 记录参数位置
+            builder.register_param(name)  # 注册为参数（绝对引用）
+            row += 1
+
+        row += 1
+
+        # ===== 基础数据区 =====
+        row = self._write_title(ws, row, "基础数据")
+
+        income = result.get("income_statement", {})
+        base_inputs = income.get("revenue", {}).get("inputs", {})
+        last_revenue = base_inputs.get("last_revenue", 0)
+
+        ws.cell(row=row, column=1, value="上期收入").border = self.thin_border
+        ws.cell(row=row, column=2, value=last_revenue).border = self.thin_border
+        ws.cell(row=row, column=2).number_format = '#,##0.00'
+        tracker.set("last_revenue", row, 2)
+        row += 1
+
+        # 上期负债（用于利息计算）
+        interest_inputs = income.get("interest", {}).get("inputs", {})
+        opening_debt = interest_inputs.get("debt", 0)
+
+        ws.cell(row=row, column=1, value="期初负债").border = self.thin_border
+        ws.cell(row=row, column=2, value=opening_debt).border = self.thin_border
+        ws.cell(row=row, column=2).number_format = '#,##0.00'
+        tracker.set("opening_debt", row, 2)
+        row += 1
+
+        row += 1
+
+        # ===== 利润表（公式） =====
+        row = self._write_title(ws, row, "利润表")
+        row = self._write_header_row(ws, row, ["科目", "金额(万元)"])
+
+        # 收入 = 上期 × (1 + 增长率)
+        ws.cell(row=row, column=1, value="营业收入").border = self.thin_border
+        ws.cell(row=row, column=2, value=builder.growth("last_revenue", "growth_rate")).border = self.thin_border
+        tracker.set("revenue", row, 2)
+        row += 1
+
+        # 成本 = 收入 × (1 - 毛利率)
+        ws.cell(row=row, column=1, value="营业成本").border = self.thin_border
+        ws.cell(row=row, column=2, value=builder.margin("revenue", "gross_margin")).border = self.thin_border
+        tracker.set("cost", row, 2)
+        row += 1
+
+        # 毛利 = 收入 - 成本
+        ws.cell(row=row, column=1, value="毛利").border = self.thin_border
+        ws.cell(row=row, column=2, value=builder.subtract("revenue", "cost")).border = self.thin_border
+        ws.cell(row=row, column=1).font = Font(bold=True)
+        ws.cell(row=row, column=2).font = Font(bold=True)
+        tracker.set("gross_profit", row, 2)
+        row += 1
+
+        # 费用 = 收入 × 费用率
+        ws.cell(row=row, column=1, value="营业费用").border = self.thin_border
+        ws.cell(row=row, column=2, value=builder.ratio("revenue", "opex_ratio")).border = self.thin_border
+        tracker.set("opex", row, 2)
+        row += 1
+
+        # 营业利润 = 毛利 - 费用
+        ws.cell(row=row, column=1, value="营业利润").border = self.thin_border
+        ws.cell(row=row, column=2, value=builder.subtract("gross_profit", "opex")).border = self.thin_border
+        ws.cell(row=row, column=1).font = Font(bold=True)
+        ws.cell(row=row, column=2).font = Font(bold=True)
+        tracker.set("ebit", row, 2)
+        row += 1
+
+        # 利息 = 负债 × 利率
+        ws.cell(row=row, column=1, value="利息费用").border = self.thin_border
+        ws.cell(row=row, column=2, value=builder.ratio("opening_debt", "interest_rate")).border = self.thin_border
+        tracker.set("interest", row, 2)
+        row += 1
+
+        # 税前利润 = 营业利润 - 利息
+        ws.cell(row=row, column=1, value="税前利润").border = self.thin_border
+        ws.cell(row=row, column=2, value=builder.subtract("ebit", "interest")).border = self.thin_border
+        tracker.set("ebt", row, 2)
+        row += 1
+
+        # 所得税 = MAX(税前利润, 0) × 税率
+        ws.cell(row=row, column=1, value="所得税").border = self.thin_border
+        ws.cell(row=row, column=2, value=builder.tax("ebt", "tax_rate")).border = self.thin_border
+        tracker.set("tax", row, 2)
+        row += 1
+
+        # 净利润 = 税前利润 - 所得税
+        ws.cell(row=row, column=1, value="净利润").border = self.thin_border
+        ws.cell(row=row, column=2, value=builder.subtract("ebt", "tax")).border = self.thin_border
+        ws.cell(row=row, column=1).font = Font(bold=True)
+        ws.cell(row=row, column=2).font = Font(bold=True)
+        tracker.set("net_income", row, 2)
+        row += 1
+
+        row += 1
+
+        # ===== 营运资本（公式） =====
+        row = self._write_title(ws, row, "营运资本")
+        row = self._write_header_row(ws, row, ["科目", "金额(万元)"])
+
+        # 应收账款 = 收入 / 365 × 天数
+        ws.cell(row=row, column=1, value="应收账款").border = self.thin_border
+        ws.cell(row=row, column=2, value=builder.turnover_days("revenue", "ar_days")).border = self.thin_border
+        tracker.set("receivable", row, 2)
+        row += 1
+
+        # 应付账款 = 成本 / 365 × 天数
+        ws.cell(row=row, column=1, value="应付账款").border = self.thin_border
+        ws.cell(row=row, column=2, value=builder.turnover_days("cost", "ap_days")).border = self.thin_border
+        tracker.set("payable", row, 2)
+        row += 1
+
+        # 存货 = 成本 / 365 × 天数
+        ws.cell(row=row, column=1, value="存货").border = self.thin_border
+        ws.cell(row=row, column=2, value=builder.turnover_days("cost", "inv_days")).border = self.thin_border
+        tracker.set("inventory", row, 2)
+        row += 1
+
+        row += 1
+
+        # ===== 说明 =====
+        row = self._write_title(ws, row, "使用说明")
+        ws.cell(row=row, column=1, value="1. 修改黄色单元格中的参数值")
+        row += 1
+        ws.cell(row=row, column=1, value="2. 所有公式会自动重新计算")
+        row += 1
+        ws.cell(row=row, column=1, value="3. 点击单元格可在公式栏查看公式")
+        row += 1
+
     def save(self, filepath: str):
         """
         保存 Excel 文件
