@@ -11,9 +11,9 @@
 | 资金管理 | `cf` | ✅ 已完成 | 3 | 3 |
 | 税务筹划 | `tx` | ✅ 已完成 | 6 | 6 |
 | 风险管理 | `ri` | ✅ 已完成 | 4 | 4 |
-| 绩效考核 | `kp` | ⏳ 待开发 | 4 | 0 |
+| 绩效考核 | `kp` | ✅ 已完成 | 4 | 4 |
 
-**总计：60 个工具，已完成 52 个（87%）**
+**总计：60 个工具，已完成 56 个（93%）**
 
 ---
 
@@ -140,16 +140,21 @@
 
 ---
 
-### 8. kp - 绩效考核 ⏳
+### 8. kp - 绩效考核 ✅
 
-**状态：待开发 | 优先级：P2**
+**状态：已完成 | 优先级：P2**
 
 | 工具 | 描述 | 状态 |
 |------|------|------|
-| `kpi_dashboard` | KPI 仪表盘数据 | ⏳ |
-| `eva_calc` | 经济增加值计算 | ⏳ |
-| `balanced_scorecard` | 平衡计分卡评分 | ⏳ |
-| `okr_progress` | OKR 进度追踪 | ⏳ |
+| `kpi_dashboard` | KPI 仪表盘数据 | ✅ |
+| `eva_calc` | 经济增加值计算 | ✅ |
+| `balanced_scorecard` | 平衡计分卡评分 | ✅ |
+| `okr_progress` | OKR 进度追踪 | ✅ |
+
+**文件：**
+- `fin_tools/tools/performance_tools.py` - 工具函数
+- `kp.py` - CLI 入口
+- `tests/test_performance_tools.py` - 测试用例（51个）
 
 ---
 
@@ -216,3 +221,4 @@ Phase 3 (P2)
 | 2025-12-03 | ma 模块测试补全（26→45个），增加边界情况测试 |
 | 2025-12-03 | fa/cf/tx 模块边界测试补全（fa: 25→35, cf: 18→27, tx: 25→44） |
 | 2025-12-03 | ri 模块4个工具已完成（credit_score, ar_aging, bad_debt_provision, fx_exposure） |
+| 2025-12-03 | kp 模块4个工具已完成（kpi_dashboard, eva_calc, balanced_scorecard, okr_progress） |
