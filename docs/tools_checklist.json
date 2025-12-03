@@ -1,0 +1,979 @@
+{
+  "_meta": {
+    "description": "财务工具开发检查清单",
+    "version": "1.0",
+    "updated": "2025-12-03"
+  },
+
+  "modules": {
+    "fm": {
+      "name": "Financial Model",
+      "description": "投行/投资建模工具",
+      "priority": "P0",
+      "status": "completed",
+      "cli": "fm.py",
+      "tools_file": "fin_tools/tools/"
+    },
+    "fa": {
+      "name": "Financial Analysis",
+      "description": "财务分析工具",
+      "priority": "P0",
+      "status": "pending",
+      "cli": "fa.py",
+      "tools_file": "fin_tools/tools/budget_tools.py"
+    },
+    "ma": {
+      "name": "Management Accounting",
+      "description": "管理会计工具",
+      "priority": "P1",
+      "status": "pending",
+      "cli": "ma.py",
+      "tools_file": "fin_tools/tools/management_tools.py"
+    },
+    "ac": {
+      "name": "Accounting",
+      "description": "会计审计工具",
+      "priority": "P2",
+      "status": "pending",
+      "cli": "ac.py",
+      "tools_file": "fin_tools/tools/audit_tools.py"
+    },
+    "cf": {
+      "name": "Cash Flow",
+      "description": "资金管理工具",
+      "priority": "P0",
+      "status": "pending",
+      "cli": "cf.py",
+      "tools_file": "fin_tools/tools/cash_tools.py"
+    },
+    "tx": {
+      "name": "Tax",
+      "description": "税务筹划工具",
+      "priority": "P1",
+      "status": "pending",
+      "cli": "tx.py",
+      "tools_file": "fin_tools/tools/tax_tools.py"
+    },
+    "ri": {
+      "name": "Risk",
+      "description": "风险管理工具",
+      "priority": "P2",
+      "status": "pending",
+      "cli": "ri.py",
+      "tools_file": "fin_tools/tools/risk_tools.py"
+    },
+    "kp": {
+      "name": "KPI",
+      "description": "绩效考核工具",
+      "priority": "P2",
+      "status": "pending",
+      "cli": "kp.py",
+      "tools_file": "fin_tools/tools/kpi_tools.py"
+    }
+  },
+
+  "tools": [
+    {
+      "id": "fa_001",
+      "module": "fa",
+      "name": "variance_analysis",
+      "description": "预算 vs 实际差异分析",
+      "goal": "对比预算与实际数据，计算差异金额和百分比，标记重大差异",
+      "input": {
+        "budget": "预算数据 (按科目)",
+        "actual": "实际数据 (按科目)",
+        "threshold": "重大差异阈值 (默认10%)"
+      },
+      "output": {
+        "variances": "各科目差异列表",
+        "total_variance": "总差异",
+        "significant_items": "超阈值的重大差异项"
+      },
+      "test_cases": [
+        "正常差异计算",
+        "无差异情况",
+        "全部超阈值",
+        "部分科目缺失"
+      ],
+      "status": "pending",
+      "completed_date": null
+    },
+    {
+      "id": "fa_002",
+      "module": "fa",
+      "name": "flex_budget",
+      "description": "弹性预算计算",
+      "goal": "根据实际业务量调整预算，区分固定成本和变动成本",
+      "input": {
+        "original_budget": "原预算",
+        "actual_volume": "实际业务量",
+        "budget_volume": "预算业务量",
+        "cost_behavior": "成本性态 (fixed/variable/mixed)"
+      },
+      "output": {
+        "flexed_budget": "调整后预算",
+        "volume_variance": "业务量差异",
+        "efficiency_variance": "效率差异"
+      },
+      "test_cases": [
+        "业务量增加",
+        "业务量减少",
+        "混合成本处理",
+        "零业务量"
+      ],
+      "status": "pending",
+      "completed_date": null
+    },
+    {
+      "id": "fa_003",
+      "module": "fa",
+      "name": "rolling_forecast",
+      "description": "滚动预测",
+      "goal": "基于历史数据和趋势生成未来N期预测",
+      "input": {
+        "historical_data": "历史数据 (至少6期)",
+        "periods": "预测期数 (3/6/12)",
+        "method": "预测方法 (moving_avg/exponential/linear)"
+      },
+      "output": {
+        "forecast": "预测数据",
+        "trend": "趋势方向",
+        "confidence": "置信度"
+      },
+      "test_cases": [
+        "上升趋势",
+        "下降趋势",
+        "平稳趋势",
+        "季节性数据"
+      ],
+      "status": "pending",
+      "completed_date": null
+    },
+    {
+      "id": "fa_004",
+      "module": "fa",
+      "name": "trend_analysis",
+      "description": "多期趋势分析",
+      "goal": "分析多期财务数据的变化趋势和增长率",
+      "input": {
+        "periods_data": "多期数据",
+        "base_period": "基期 (默认第一期)"
+      },
+      "output": {
+        "yoy_growth": "同比增长率",
+        "cagr": "复合增长率",
+        "trend_direction": "趋势方向",
+        "indexed_values": "以基期为100的指数"
+      },
+      "test_cases": [
+        "持续增长",
+        "持续下降",
+        "波动趋势",
+        "单期数据"
+      ],
+      "status": "pending",
+      "completed_date": null
+    },
+    {
+      "id": "cf_001",
+      "module": "cf",
+      "name": "cash_forecast_13w",
+      "description": "13周现金流预测",
+      "goal": "生成未来13周的现金流入流出预测，识别资金缺口",
+      "input": {
+        "opening_cash": "期初现金",
+        "receivables_schedule": "应收回款计划",
+        "payables_schedule": "应付付款计划",
+        "recurring_items": "固定收支项目"
+      },
+      "output": {
+        "weekly_forecast": "每周现金预测",
+        "closing_balances": "每周期末余额",
+        "funding_gaps": "资金缺口周次",
+        "min_balance": "最低余额周"
+      },
+      "test_cases": [
+        "正常现金流",
+        "存在资金缺口",
+        "全部为正",
+        "季节性波动"
+      ],
+      "status": "pending",
+      "completed_date": null
+    },
+    {
+      "id": "cf_002",
+      "module": "cf",
+      "name": "working_capital_cycle",
+      "description": "营运资金周期分析",
+      "goal": "计算CCC(现金转换周期)及各组成部分",
+      "input": {
+        "receivables": "应收账款",
+        "inventory": "存货",
+        "payables": "应付账款",
+        "revenue": "收入",
+        "cogs": "销售成本"
+      },
+      "output": {
+        "dso": "应收周转天数",
+        "dio": "存货周转天数",
+        "dpo": "应付周转天数",
+        "ccc": "现金转换周期",
+        "working_capital_need": "营运资金需求"
+      },
+      "test_cases": [
+        "正常周期",
+        "负CCC(预收模式)",
+        "零存货",
+        "周转率极低"
+      ],
+      "status": "pending",
+      "completed_date": null
+    },
+    {
+      "id": "cf_003",
+      "module": "cf",
+      "name": "cash_drivers",
+      "description": "现金流驱动因素分解",
+      "goal": "分解现金流变动的驱动因素",
+      "input": {
+        "period1_cash_flow": "期初现金流量表",
+        "period2_cash_flow": "期末现金流量表"
+      },
+      "output": {
+        "operating_change": "经营活动变动",
+        "investing_change": "投资活动变动",
+        "financing_change": "筹资活动变动",
+        "key_drivers": "主要驱动因素排名"
+      },
+      "test_cases": [
+        "经营改善",
+        "投资增加",
+        "偿债导致",
+        "综合变动"
+      ],
+      "status": "pending",
+      "completed_date": null
+    },
+    {
+      "id": "tx_001",
+      "module": "tx",
+      "name": "vat_calc",
+      "description": "增值税计算",
+      "goal": "计算销项税、进项税、应纳税额",
+      "input": {
+        "sales": "销售明细 (含税率)",
+        "purchases": "采购明细 (含税率)",
+        "tax_rate": "适用税率 (13%/9%/6%/0)"
+      },
+      "output": {
+        "output_tax": "销项税额",
+        "input_tax": "进项税额",
+        "tax_payable": "应纳税额",
+        "tax_burden_rate": "税负率"
+      },
+      "test_cases": [
+        "一般纳税人",
+        "多税率混合",
+        "进项大于销项",
+        "零税率出口"
+      ],
+      "status": "pending",
+      "completed_date": null
+    },
+    {
+      "id": "tx_002",
+      "module": "tx",
+      "name": "cit_calc",
+      "description": "企业所得税计算",
+      "goal": "计算应纳所得税，含优惠政策",
+      "input": {
+        "accounting_profit": "会计利润",
+        "adjustments": "纳税调整项",
+        "preferences": "优惠政策 (small_micro/high_tech/etc)"
+      },
+      "output": {
+        "taxable_income": "应纳税所得额",
+        "tax_rate": "适用税率",
+        "tax_payable": "应纳税额",
+        "effective_rate": "实际税负率"
+      },
+      "test_cases": [
+        "一般企业25%",
+        "小微企业优惠",
+        "高新技术15%",
+        "亏损结转"
+      ],
+      "status": "pending",
+      "completed_date": null
+    },
+    {
+      "id": "tx_003",
+      "module": "tx",
+      "name": "iit_calc",
+      "description": "个人所得税计算",
+      "goal": "计算工资薪金个税(累计预扣法)",
+      "input": {
+        "monthly_salary": "月工资",
+        "social_insurance": "五险一金",
+        "special_deductions": "专项附加扣除",
+        "cumulative_income": "累计收入(年初至今)"
+      },
+      "output": {
+        "taxable_income": "应纳税所得额",
+        "tax_rate": "适用税率",
+        "quick_deduction": "速算扣除数",
+        "tax_payable": "应纳税额",
+        "cumulative_tax": "累计应纳税额"
+      },
+      "test_cases": [
+        "月薪1万",
+        "月薪5万",
+        "年末累计",
+        "有专项扣除"
+      ],
+      "status": "pending",
+      "completed_date": null
+    },
+    {
+      "id": "tx_004",
+      "module": "tx",
+      "name": "bonus_optimize",
+      "description": "年终奖最优拆分",
+      "goal": "计算年终奖与工资的最优拆分点，最小化总税负",
+      "input": {
+        "annual_salary": "年薪总额",
+        "bonus_total": "年终奖总额",
+        "deductions": "各项扣除"
+      },
+      "output": {
+        "optimal_split": "最优拆分方案",
+        "bonus_as_bonus": "作为年终奖发放金额",
+        "bonus_as_salary": "并入工资金额",
+        "total_tax": "总税负",
+        "tax_saved": "节税金额"
+      },
+      "test_cases": [
+        "年终奖3.6万",
+        "年终奖14.4万",
+        "年终奖30万",
+        "年终奖100万"
+      ],
+      "status": "pending",
+      "completed_date": null
+    },
+    {
+      "id": "tx_005",
+      "module": "tx",
+      "name": "rd_deduction",
+      "description": "研发加计扣除",
+      "goal": "计算研发费用加计扣除金额",
+      "input": {
+        "rd_expenses": "研发费用明细",
+        "deduction_rate": "加计比例 (100%/120%)"
+      },
+      "output": {
+        "eligible_expenses": "可加计金额",
+        "additional_deduction": "加计扣除额",
+        "tax_saving": "节税金额"
+      },
+      "test_cases": [
+        "制造业120%",
+        "其他行业100%",
+        "部分不符合条件",
+        "委外研发"
+      ],
+      "status": "pending",
+      "completed_date": null
+    },
+    {
+      "id": "tx_006",
+      "module": "tx",
+      "name": "tax_burden",
+      "description": "综合税负分析",
+      "goal": "计算企业综合税负率",
+      "input": {
+        "vat": "增值税",
+        "cit": "企业所得税",
+        "other_taxes": "其他税费",
+        "revenue": "营业收入"
+      },
+      "output": {
+        "total_tax": "税费总额",
+        "burden_rate": "综合税负率",
+        "breakdown": "税种构成",
+        "industry_comparison": "行业对比"
+      },
+      "test_cases": [
+        "制造业",
+        "服务业",
+        "零售业",
+        "高新技术"
+      ],
+      "status": "pending",
+      "completed_date": null
+    },
+    {
+      "id": "ma_001",
+      "module": "ma",
+      "name": "dept_pnl",
+      "description": "部门损益表",
+      "goal": "生成各部门损益表，分摊公共费用",
+      "input": {
+        "revenue_by_dept": "各部门收入",
+        "direct_costs": "直接成本",
+        "shared_costs": "共享费用",
+        "allocation_base": "分摊基础 (revenue/headcount/area)"
+      },
+      "output": {
+        "dept_pnl": "各部门损益",
+        "contribution_margin": "边际贡献",
+        "allocated_costs": "分摊费用明细",
+        "ranking": "部门盈利排名"
+      },
+      "test_cases": [
+        "按收入分摊",
+        "按人数分摊",
+        "混合分摊",
+        "有亏损部门"
+      ],
+      "status": "pending",
+      "completed_date": null
+    },
+    {
+      "id": "ma_002",
+      "module": "ma",
+      "name": "product_profitability",
+      "description": "产品盈利分析",
+      "goal": "计算各产品的盈利能力",
+      "input": {
+        "products": "产品列表",
+        "revenue": "各产品收入",
+        "variable_costs": "变动成本",
+        "fixed_costs": "固定成本"
+      },
+      "output": {
+        "gross_margin": "毛利率",
+        "contribution_margin": "边际贡献率",
+        "net_margin": "净利率",
+        "ranking": "产品盈利排名"
+      },
+      "test_cases": [
+        "高毛利产品",
+        "亏损产品",
+        "多产品组合",
+        "单一产品"
+      ],
+      "status": "pending",
+      "completed_date": null
+    },
+    {
+      "id": "ma_003",
+      "module": "ma",
+      "name": "cost_allocation",
+      "description": "成本分摊",
+      "goal": "使用不同方法分摊间接成本",
+      "input": {
+        "cost_pools": "成本池",
+        "cost_objects": "成本对象",
+        "drivers": "成本动因",
+        "method": "分摊方法 (direct/step_down/reciprocal/abc)"
+      },
+      "output": {
+        "allocated_costs": "分摊结果",
+        "allocation_rates": "分摊率",
+        "cost_per_unit": "单位成本"
+      },
+      "test_cases": [
+        "直接分摊法",
+        "阶梯分摊法",
+        "交互分摊法",
+        "作业成本法"
+      ],
+      "status": "pending",
+      "completed_date": null
+    },
+    {
+      "id": "ma_004",
+      "module": "ma",
+      "name": "cvp_analysis",
+      "description": "本量利分析",
+      "goal": "计算成本-业务量-利润关系",
+      "input": {
+        "selling_price": "销售单价",
+        "variable_cost": "单位变动成本",
+        "fixed_costs": "固定成本总额",
+        "target_profit": "目标利润"
+      },
+      "output": {
+        "breakeven_units": "盈亏平衡销量",
+        "breakeven_revenue": "盈亏平衡收入",
+        "target_units": "目标利润销量",
+        "margin_of_safety": "安全边际",
+        "operating_leverage": "经营杠杆系数"
+      },
+      "test_cases": [
+        "正常盈利",
+        "亏损情况",
+        "高固定成本",
+        "低边际贡献"
+      ],
+      "status": "pending",
+      "completed_date": null
+    },
+    {
+      "id": "ma_005",
+      "module": "ma",
+      "name": "breakeven",
+      "description": "盈亏平衡点计算",
+      "goal": "多产品盈亏平衡分析",
+      "input": {
+        "products": "产品组合",
+        "sales_mix": "销售结构",
+        "prices": "各产品价格",
+        "variable_costs": "各产品变动成本",
+        "fixed_costs": "固定成本"
+      },
+      "output": {
+        "weighted_cm_ratio": "加权边际贡献率",
+        "breakeven_revenue": "盈亏平衡收入",
+        "breakeven_by_product": "各产品盈亏平衡量"
+      },
+      "test_cases": [
+        "双产品组合",
+        "多产品组合",
+        "销售结构变化",
+        "单一产品"
+      ],
+      "status": "pending",
+      "completed_date": null
+    },
+    {
+      "id": "ri_001",
+      "module": "ri",
+      "name": "credit_score",
+      "description": "客户信用评分",
+      "goal": "基于财务和行为数据评估客户信用",
+      "input": {
+        "financial_data": "财务指标",
+        "payment_history": "付款历史",
+        "years_in_business": "经营年限",
+        "industry": "行业"
+      },
+      "output": {
+        "credit_score": "信用评分 (0-100)",
+        "risk_level": "风险等级 (A/B/C/D)",
+        "credit_limit": "建议授信额度",
+        "payment_terms": "建议账期"
+      },
+      "test_cases": [
+        "优质客户",
+        "高风险客户",
+        "新客户",
+        "历史有逾期"
+      ],
+      "status": "pending",
+      "completed_date": null
+    },
+    {
+      "id": "ri_002",
+      "module": "ri",
+      "name": "ar_aging",
+      "description": "应收账款账龄分析",
+      "goal": "按账龄分类应收账款，识别风险",
+      "input": {
+        "receivables": "应收账款明细",
+        "invoice_dates": "发票日期",
+        "due_dates": "到期日期"
+      },
+      "output": {
+        "aging_buckets": "账龄分布 (0-30/31-60/61-90/90+)",
+        "overdue_amount": "逾期金额",
+        "overdue_rate": "逾期率",
+        "high_risk_customers": "高风险客户"
+      },
+      "test_cases": [
+        "全部正常",
+        "部分逾期",
+        "大额逾期",
+        "长期逾期"
+      ],
+      "status": "pending",
+      "completed_date": null
+    },
+    {
+      "id": "ri_003",
+      "module": "ri",
+      "name": "bad_debt_provision",
+      "description": "坏账准备计算",
+      "goal": "按账龄法或个别认定法计提坏账",
+      "input": {
+        "ar_aging": "账龄分析结果",
+        "provision_rates": "各账龄计提比例",
+        "specific_items": "个别认定项目"
+      },
+      "output": {
+        "provision_by_aging": "账龄法计提",
+        "provision_specific": "个别认定计提",
+        "total_provision": "坏账准备总额",
+        "provision_rate": "计提比例"
+      },
+      "test_cases": [
+        "标准账龄法",
+        "含个别认定",
+        "零坏账",
+        "高比例计提"
+      ],
+      "status": "pending",
+      "completed_date": null
+    },
+    {
+      "id": "ri_004",
+      "module": "ri",
+      "name": "fx_exposure",
+      "description": "汇率风险敞口",
+      "goal": "计算外币资产负债的汇率风险",
+      "input": {
+        "fx_assets": "外币资产",
+        "fx_liabilities": "外币负债",
+        "currencies": "币种",
+        "exchange_rates": "汇率"
+      },
+      "output": {
+        "net_exposure": "净敞口 (按币种)",
+        "potential_loss": "潜在损失 (按波动率)",
+        "hedge_recommendation": "套期保值建议"
+      },
+      "test_cases": [
+        "美元敞口",
+        "多币种",
+        "净负债敞口",
+        "已对冲部分"
+      ],
+      "status": "pending",
+      "completed_date": null
+    },
+    {
+      "id": "kp_001",
+      "module": "kp",
+      "name": "kpi_dashboard",
+      "description": "KPI仪表盘数据",
+      "goal": "汇总关键绩效指标，生成仪表盘数据",
+      "input": {
+        "metrics": "指标定义",
+        "actuals": "实际值",
+        "targets": "目标值"
+      },
+      "output": {
+        "kpi_status": "各指标状态 (green/yellow/red)",
+        "achievement_rate": "达成率",
+        "trend": "趋势",
+        "alerts": "预警项目"
+      },
+      "test_cases": [
+        "全部达标",
+        "部分未达标",
+        "严重偏离",
+        "无目标值"
+      ],
+      "status": "pending",
+      "completed_date": null
+    },
+    {
+      "id": "kp_002",
+      "module": "kp",
+      "name": "eva_calc",
+      "description": "经济增加值计算",
+      "goal": "计算EVA衡量真实价值创造",
+      "input": {
+        "nopat": "税后经营利润",
+        "invested_capital": "投入资本",
+        "wacc": "加权平均资本成本"
+      },
+      "output": {
+        "eva": "经济增加值",
+        "roic": "投入资本回报率",
+        "eva_spread": "EVA利差",
+        "value_created": "是否创造价值"
+      },
+      "test_cases": [
+        "正EVA",
+        "负EVA",
+        "ROIC等于WACC",
+        "高资本成本"
+      ],
+      "status": "pending",
+      "completed_date": null
+    },
+    {
+      "id": "kp_003",
+      "module": "kp",
+      "name": "balanced_scorecard",
+      "description": "平衡计分卡评分",
+      "goal": "从四个维度评估绩效",
+      "input": {
+        "financial_metrics": "财务指标",
+        "customer_metrics": "客户指标",
+        "process_metrics": "流程指标",
+        "learning_metrics": "学习成长指标",
+        "weights": "各维度权重"
+      },
+      "output": {
+        "dimension_scores": "各维度得分",
+        "overall_score": "综合得分",
+        "weak_areas": "薄弱环节",
+        "recommendations": "改进建议"
+      },
+      "test_cases": [
+        "均衡发展",
+        "财务强其他弱",
+        "客户导向型",
+        "创新驱动型"
+      ],
+      "status": "pending",
+      "completed_date": null
+    },
+    {
+      "id": "kp_004",
+      "module": "kp",
+      "name": "okr_progress",
+      "description": "OKR进度追踪",
+      "goal": "追踪OKR完成进度",
+      "input": {
+        "objectives": "目标列表",
+        "key_results": "关键结果",
+        "current_values": "当前值",
+        "target_values": "目标值"
+      },
+      "output": {
+        "objective_progress": "目标进度",
+        "kr_progress": "各KR进度",
+        "overall_progress": "整体进度",
+        "at_risk_items": "风险项"
+      },
+      "test_cases": [
+        "按计划进行",
+        "严重落后",
+        "提前完成",
+        "部分KR未设置"
+      ],
+      "status": "pending",
+      "completed_date": null
+    },
+    {
+      "id": "ac_001",
+      "module": "ac",
+      "name": "trial_balance",
+      "description": "试算平衡检查",
+      "goal": "检查借贷是否平衡，识别异常",
+      "input": {
+        "accounts": "科目余额表"
+      },
+      "output": {
+        "is_balanced": "是否平衡",
+        "debit_total": "借方合计",
+        "credit_total": "贷方合计",
+        "difference": "差额",
+        "suspicious_items": "可疑科目"
+      },
+      "test_cases": [
+        "完全平衡",
+        "有差额",
+        "异常余额方向",
+        "空科目"
+      ],
+      "status": "pending",
+      "completed_date": null
+    },
+    {
+      "id": "ac_002",
+      "module": "ac",
+      "name": "adjusting_entries",
+      "description": "调整分录建议",
+      "goal": "根据审计发现生成调整分录",
+      "input": {
+        "findings": "审计发现",
+        "account_mapping": "科目对照"
+      },
+      "output": {
+        "entries": "调整分录列表",
+        "impact_pnl": "对利润影响",
+        "impact_bs": "对资产负债表影响"
+      },
+      "test_cases": [
+        "收入调整",
+        "费用调整",
+        "资产减值",
+        "负债重分类"
+      ],
+      "status": "pending",
+      "completed_date": null
+    },
+    {
+      "id": "ac_003",
+      "module": "ac",
+      "name": "audit_sampling",
+      "description": "审计抽样",
+      "goal": "生成审计样本",
+      "input": {
+        "population": "总体数据",
+        "method": "抽样方法 (random/mus/stratified)",
+        "confidence_level": "置信水平",
+        "tolerable_error": "可容忍误差"
+      },
+      "output": {
+        "sample_size": "样本量",
+        "selected_items": "抽中项目",
+        "sampling_interval": "抽样间隔 (MUS)",
+        "strata": "分层信息 (分层抽样)"
+      },
+      "test_cases": [
+        "随机抽样",
+        "货币单位抽样",
+        "分层抽样",
+        "小总体"
+      ],
+      "status": "pending",
+      "completed_date": null
+    },
+    {
+      "id": "ac_004",
+      "module": "ac",
+      "name": "consolidation",
+      "description": "合并报表抵消",
+      "goal": "生成合并抵消分录",
+      "input": {
+        "parent_fs": "母公司报表",
+        "sub_fs": "子公司报表",
+        "ownership": "持股比例",
+        "intercompany": "内部交易"
+      },
+      "output": {
+        "elimination_entries": "抵消分录",
+        "minority_interest": "少数股东权益",
+        "consolidated_fs": "合并报表"
+      },
+      "test_cases": [
+        "全资子公司",
+        "控股子公司",
+        "有内部交易",
+        "有未实现利润"
+      ],
+      "status": "pending",
+      "completed_date": null
+    },
+    {
+      "id": "fm_031",
+      "module": "fm",
+      "name": "npv_calc",
+      "description": "净现值计算",
+      "goal": "计算项目净现值",
+      "input": {
+        "initial_investment": "初始投资",
+        "cash_flows": "各期现金流",
+        "discount_rate": "折现率"
+      },
+      "output": {
+        "npv": "净现值",
+        "pv_of_inflows": "现金流入现值",
+        "is_acceptable": "是否可接受"
+      },
+      "test_cases": [
+        "正NPV项目",
+        "负NPV项目",
+        "NPV为零",
+        "不规则现金流"
+      ],
+      "status": "pending",
+      "completed_date": null
+    },
+    {
+      "id": "fm_032",
+      "module": "fm",
+      "name": "irr_calc",
+      "description": "内部收益率计算",
+      "goal": "计算项目内部收益率",
+      "input": {
+        "initial_investment": "初始投资",
+        "cash_flows": "各期现金流"
+      },
+      "output": {
+        "irr": "内部收益率",
+        "is_acceptable": "是否超过门槛收益率",
+        "mirr": "修正内部收益率"
+      },
+      "test_cases": [
+        "正常项目",
+        "无IRR解",
+        "多个IRR",
+        "全正现金流"
+      ],
+      "status": "pending",
+      "completed_date": null
+    },
+    {
+      "id": "fm_033",
+      "module": "fm",
+      "name": "payback_calc",
+      "description": "回收期计算",
+      "goal": "计算投资回收期",
+      "input": {
+        "initial_investment": "初始投资",
+        "cash_flows": "各期现金流",
+        "discount_rate": "折现率 (用于折现回收期)"
+      },
+      "output": {
+        "payback_period": "静态回收期",
+        "discounted_payback": "动态回收期",
+        "is_acceptable": "是否在可接受期限内"
+      },
+      "test_cases": [
+        "2年回收",
+        "无法回收",
+        "恰好回收",
+        "不规则现金流"
+      ],
+      "status": "pending",
+      "completed_date": null
+    },
+    {
+      "id": "fm_034",
+      "module": "fm",
+      "name": "lease_vs_buy",
+      "description": "租赁vs购买决策",
+      "goal": "比较租赁和购买的经济性",
+      "input": {
+        "purchase_price": "购买价格",
+        "useful_life": "使用年限",
+        "residual_value": "残值",
+        "lease_payments": "租赁付款",
+        "discount_rate": "折现率",
+        "tax_rate": "税率"
+      },
+      "output": {
+        "npv_buy": "购买NPV",
+        "npv_lease": "租赁NPV",
+        "recommendation": "建议方案",
+        "savings": "节省金额"
+      },
+      "test_cases": [
+        "购买更优",
+        "租赁更优",
+        "差异很小",
+        "经营租赁vs融资租赁"
+      ],
+      "status": "pending",
+      "completed_date": null
+    }
+  ],
+
+  "completed_tools": [
+    "lbo_calc", "lbo_sensitivity", "lbo_sources_uses", "lbo_debt_schedule", "lbo_returns", "lbo_credit_metrics",
+    "merger_calc", "merger_accretion_dilution", "merger_synergies", "merger_purchase_price_allocation", "merger_pro_forma", "merger_contribution",
+    "dcf_calc", "dcf_sensitivity", "dcf_wacc", "dcf_terminal_value",
+    "three_statement_forecast", "three_statement_quick_build", "income_statement", "balance_sheet", "cash_flow_statement", "check_balance",
+    "ratio_analysis", "dupont_analysis", "liquidity_ratios", "profitability_ratios",
+    "prepare_data", "extract_financials",
+    "export_excel", "excel_writer"
+  ]
+}
