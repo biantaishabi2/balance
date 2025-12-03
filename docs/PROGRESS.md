@@ -9,11 +9,11 @@
 | 管理会计 | `ma` | ⏳ 待开发 | 5 | 0 |
 | 会计审计 | `ac` | ⏳ 待开发 | 4 | 0 |
 | 资金管理 | `cf` | ✅ 已完成 | 3 | 3 |
-| 税务筹划 | `tx` | ⏳ 待开发 | 6 | 0 |
+| 税务筹划 | `tx` | ✅ 已完成 | 6 | 6 |
 | 风险管理 | `ri` | ⏳ 待开发 | 4 | 0 |
 | 绩效考核 | `kp` | ⏳ 待开发 | 4 | 0 |
 
-**总计：60 个工具，已完成 37 个（62%）**
+**总计：60 个工具，已完成 43 个（72%）**
 
 ---
 
@@ -97,18 +97,23 @@
 
 ---
 
-### 6. tx - 税务筹划 ⏳
+### 6. tx - 税务筹划 ✅
 
-**状态：待开发 | 优先级：P1**
+**状态：已完成 | 优先级：P1**
 
 | 工具 | 描述 | 状态 |
 |------|------|------|
-| `vat_calc` | 增值税计算 | ⏳ |
-| `cit_calc` | 企业所得税计算 | ⏳ |
-| `iit_calc` | 个人所得税计算 | ⏳ |
-| `bonus_optimize` | 年终奖最优拆分 | ⏳ |
-| `rd_deduction` | 研发加计扣除 | ⏳ |
-| `tax_burden` | 综合税负分析 | ⏳ |
+| `vat_calc` | 增值税计算 | ✅ |
+| `cit_calc` | 企业所得税计算 | ✅ |
+| `iit_calc` | 个人所得税计算 | ✅ |
+| `bonus_optimize` | 年终奖最优拆分 | ✅ |
+| `rd_deduction` | 研发加计扣除 | ✅ |
+| `tax_burden` | 综合税负分析 | ✅ |
+
+**文件：**
+- `fin_tools/tools/tax_tools.py` - 工具函数
+- `tx.py` - CLI 入口
+- `tests/test_tax_tools.py` - 测试用例（25个）
 
 ---
 
@@ -196,3 +201,4 @@ Phase 3 (P2)
 | 2025-12-03 | fm 模块30个工具已完成 |
 | 2025-12-03 | fa 模块4个工具已完成（variance_analysis, flex_budget, rolling_forecast, trend_analysis） |
 | 2025-12-03 | cf 模块3个工具已完成（cash_forecast_13w, working_capital_cycle, cash_drivers） |
+| 2025-12-03 | tx 模块6个工具已完成（vat_calc, cit_calc, iit_calc, bonus_optimize, rd_deduction, tax_burden） |

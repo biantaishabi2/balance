@@ -50,7 +50,7 @@
       "name": "Tax",
       "description": "税务筹划工具",
       "priority": "P1",
-      "status": "pending",
+      "status": "completed",
       "cli": "tx.py",
       "tools_file": "fin_tools/tools/tax_tools.py"
     },
@@ -278,8 +278,8 @@
         "进项大于销项",
         "零税率出口"
       ],
-      "status": "pending",
-      "completed_date": null
+      "status": "completed",
+      "completed_date": "2025-12-03"
     },
     {
       "id": "tx_002",
@@ -304,8 +304,8 @@
         "高新技术15%",
         "亏损结转"
       ],
-      "status": "pending",
-      "completed_date": null
+      "status": "completed",
+      "completed_date": "2025-12-03"
     },
     {
       "id": "tx_003",
@@ -332,8 +332,8 @@
         "年末累计",
         "有专项扣除"
       ],
-      "status": "pending",
-      "completed_date": null
+      "status": "completed",
+      "completed_date": "2025-12-03"
     },
     {
       "id": "tx_004",
@@ -359,8 +359,8 @@
         "年终奖30万",
         "年终奖100万"
       ],
-      "status": "pending",
-      "completed_date": null
+      "status": "completed",
+      "completed_date": "2025-12-03"
     },
     {
       "id": "tx_005",
@@ -383,8 +383,8 @@
         "部分不符合条件",
         "委外研发"
       ],
-      "status": "pending",
-      "completed_date": null
+      "status": "completed",
+      "completed_date": "2025-12-03"
     },
     {
       "id": "tx_006",
@@ -410,8 +410,8 @@
         "零售业",
         "高新技术"
       ],
-      "status": "pending",
-      "completed_date": null
+      "status": "completed",
+      "completed_date": "2025-12-03"
     },
     {
       "id": "ma_001",
