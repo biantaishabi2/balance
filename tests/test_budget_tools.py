@@ -365,3 +365,134 @@ class TestTrendAnalysis:
         """数据不足"""
         result = trend_analysis([{"period": "2024", "revenue": 1000}])
         assert "error" in result
+
+
+# ============================================================
+# 边界情况测试补充
+# ============================================================
+
+class TestVarianceAnalysisEdgeCases:
+    """预算差异分析边界测试"""
+
+    def test_empty_budget(self):
+        """空预算"""
+        result = variance_analysis(budget={}, actual={"收入": 1000})
+
+        assert len(result["variances"]) == 1
+        # 空预算时，实际有值应显示差异
+        revenue = result["variances"][0]
+        assert revenue["budget"] == 0
+        assert revenue["actual"] == 1000
+
+    def test_empty_actual(self):
+        """空实际"""
+        result = variance_analysis(budget={"收入": 1000}, actual={})
+
+        assert len(result["variances"]) == 1
+        revenue = result["variances"][0]
+        assert revenue["budget"] == 1000
+        assert revenue["actual"] == 0
+
+    def test_zero_budget_division(self):
+        """零预算除零处理"""
+        result = variance_analysis(
+            budget={"收入": 0, "成本": 100},
+            actual={"收入": 100, "成本": 100}
+        )
+
+        # 零预算时，差异百分比应为None或inf处理
+        revenue = next(v for v in result["variances"] if v["account"] == "收入")
+        # 预算为0但实际有值，variance_pct应为None（代表无穷大）
+        assert revenue["variance_pct"] is None or revenue["is_significant"] is True
+
+    def test_both_empty(self):
+        """预算和实际都为空"""
+        result = variance_analysis(budget={}, actual={})
+
+        assert result["variances"] == []
+        assert result["summary"]["total_budget"] == 0
+        assert result["summary"]["total_actual"] == 0
+
+
+class TestFlexBudgetEdgeCases:
+    """弹性预算边界测试"""
+
+    def test_zero_budget_volume(self):
+        """零预算业务量"""
+        result = flex_budget(
+            original_budget={"材料": 100},
+            budget_volume=0,
+            actual_volume=1000,
+            cost_behavior={"材料": "variable"}
+        )
+
+        # 零预算业务量时，volume_ratio应为1（防止除零）
+        assert result["volume_ratio"] == 1
+        assert result["flexed_budget"]["材料"] == 100
+
+    def test_empty_budget_dict(self):
+        """空预算字典"""
+        result = flex_budget(
+            original_budget={},
+            budget_volume=1000,
+            actual_volume=1200,
+            cost_behavior={}
+        )
+
+        assert result["flexed_budget"] == {}
+        assert result["total_original"] == 0
+        assert result["total_flexed"] == 0
+
+
+class TestTrendAnalysisEdgeCases:
+    """趋势分析边界测试"""
+
+    def test_zero_base_period(self):
+        """零值基期"""
+        result = trend_analysis([
+            {"period": "2022", "revenue": 0},
+            {"period": "2023", "revenue": 100},
+            {"period": "2024", "revenue": 200}
+        ])
+
+        revenue = result["analysis"]["revenue"]
+        # 基期为0时，indexed全为0
+        assert revenue["indexed"][0] == 0
+
+    def test_negative_growth_cagr(self):
+        """负增长CAGR"""
+        result = trend_analysis([
+            {"period": "2022", "revenue": 1000},
+            {"period": "2023", "revenue": 900},
+            {"period": "2024", "revenue": 810}
+        ])
+
+        revenue = result["analysis"]["revenue"]
+        # CAGR应为负数
+        assert revenue["cagr"] is not None
+        assert revenue["cagr"] < 0
+
+    def test_all_zero_data(self):
+        """全零数据"""
+        result = trend_analysis([
+            {"period": "2022", "value": 0},
+            {"period": "2023", "value": 0},
+            {"period": "2024", "value": 0}
+        ])
+
+        value = result["analysis"]["value"]
+        assert value["cagr"] is None  # 0/0无法计算CAGR
+        assert value["indexed"] == [0, 0, 0]
+
+    def test_yoy_growth_with_zero_previous(self):
+        """前期为零的同比增长"""
+        result = trend_analysis([
+            {"period": "2022", "revenue": 0},
+            {"period": "2023", "revenue": 100},
+            {"period": "2024", "revenue": 150}
+        ])
+
+        revenue = result["analysis"]["revenue"]
+        # 第一期为0，第二期同比应为None
+        assert revenue["yoy_growth"][0] is None
+        assert revenue["yoy_growth"][1] is None  # 0无法计算增长率

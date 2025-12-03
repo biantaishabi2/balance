@@ -336,3 +336,225 @@ class TestTaxBurden:
         assert "composition" in result
         total_composition = sum(result["composition"].values())
         assert total_composition == pytest.approx(1.0, rel=0.01)
+
+
+# ============================================================
+# 边界情况测试补充
+# ============================================================
+
+class TestVatCalcEdgeCases:
+    """增值税计算边界测试"""
+
+    def test_empty_sales_list(self):
+        """空销售列表"""
+        result = vat_calc(
+            sales=[],
+            purchases=[{"amount": 56500, "rate": 0.13}]
+        )
+
+        assert result["output_tax"] == 0
+        assert result["tax_payable"] == 0
+
+    def test_input_greater_than_output(self):
+        """进项大于销项（留抵）"""
+        result = vat_calc(
+            sales=[{"amount": 113000, "rate": 0.13}],
+            purchases=[{"amount": 226000, "rate": 0.13}]  # 进项是销项两倍
+        )
+
+        # 进项13000 > 销项6500，应纳税额为0（留抵）
+        assert result["input_tax"] > result["output_tax"]
+        assert result["tax_payable"] == 0  # max(0, output - input)
+
+    def test_zero_rate_exempt(self):
+        """零税率/免税"""
+        result = vat_calc(
+            sales=[{"amount": 100000, "rate": 0}],  # 零税率
+            purchases=[{"amount": 50000, "rate": 0.13}]
+        )
+
+        assert result["output_tax"] == 0
+        # 零税率销售，进项仍可抵扣
+        assert result["input_tax"] > 0
+
+    def test_empty_purchases(self):
+        """空采购列表"""
+        result = vat_calc(
+            sales=[{"amount": 113000, "rate": 0.13}],
+            purchases=[]
+        )
+
+        assert result["input_tax"] == 0
+        assert result["tax_payable"] == pytest.approx(13000, rel=0.01)
+
+
+class TestCitCalcEdgeCases:
+    """企业所得税计算边界测试"""
+
+    def test_zero_profit(self):
+        """零利润"""
+        result = cit_calc(accounting_profit=0)
+
+        assert result["taxable_income"] == 0
+        assert result["tax_payable"] == 0
+
+    def test_negative_profit(self):
+        """负利润（亏损）"""
+        result = cit_calc(accounting_profit=-500000)
+
+        assert result["taxable_income"] == 0
+        assert result["tax_payable"] == 0
+
+    def test_loss_exceeds_profit(self):
+        """亏损弥补超过利润"""
+        result = cit_calc(
+            accounting_profit=100000,
+            prior_year_loss=200000  # 亏损超过利润
+        )
+
+        assert result["taxable_income"] == 0
+        assert result["tax_payable"] == 0
+
+    def test_small_micro_above_3m(self):
+        """小微企业超过300万"""
+        result = cit_calc(
+            accounting_profit=5000000,
+            preference="small_low_profit"
+        )
+
+        # 超过300万不适用5%优惠，改用25%
+        assert result["tax_rate"] == 0.25
+        assert result["tax_payable"] == 1250000
+
+    def test_high_adjustments(self):
+        """大额纳税调整"""
+        result = cit_calc(
+            accounting_profit=1000000,
+            adjustments={
+                "add": {"不可扣除费用": 500000},
+                "subtract": {"加计扣除": 1600000}  # 调减超过调增+利润
+            }
+        )
+
+        # 调整后为负，应纳税所得额为0
+        assert result["taxable_income"] == 0
+        assert result["tax_payable"] == 0
+
+
+class TestIitCalcEdgeCases:
+    """个人所得税计算边界测试"""
+
+    def test_very_high_income_45_percent(self):
+        """超高收入（45%档）"""
+        result = iit_calc(annual_salary=2000000)  # 200万年薪
+
+        # 应纳税所得额 = 2000000 - 60000 = 1940000
+        # 1940000 > 960000，适用45%税率
+        assert result["taxable_income"] == 1940000
+        assert result["tax_rate"] == 0.45
+
+    def test_bracket_boundary_36000(self):
+        """税率档位边界值 - 36000"""
+        # 正好36000
+        result1 = iit_calc(annual_salary=96000)  # 96000 - 60000 = 36000
+        assert result1["taxable_income"] == 36000
+        assert result1["tax_rate"] == 0.03
+
+        # 超过36000
+        result2 = iit_calc(annual_salary=96001)
+        assert result2["taxable_income"] == 36001
+        assert result2["tax_rate"] == 0.10
+
+    def test_bracket_boundary_144000(self):
+        """税率档位边界值 - 144000"""
+        result = iit_calc(annual_salary=204000)  # 204000 - 60000 = 144000
+        assert result["taxable_income"] == 144000
+        assert result["tax_rate"] == 0.10
+
+    def test_below_threshold(self):
+        """收入低于起征点"""
+        result = iit_calc(annual_salary=50000)  # 低于6万
+
+        assert result["taxable_income"] == 0
+        assert result["tax_payable"] == 0
+
+
+class TestRdDeductionEdgeCases:
+    """研发加计扣除边界测试"""
+
+    def test_empty_rd_expenses(self):
+        """空研发费用"""
+        result = rd_deduction(rd_expenses={})
+
+        assert result["total_rd_expense"] == 0
+        assert result["additional_deduction"] == 0
+        assert result["tax_saving_25"] == 0
+
+    def test_only_other_expenses(self):
+        """只有其他费用"""
+        result = rd_deduction(
+            rd_expenses={"other": 100000}  # 只有其他费用，无主体费用
+        )
+
+        # 其他费用限额 = 0 * 10% / 90% = 0
+        # 所以eligible_expense应该也受限
+        assert result["eligible_expense"] < result["total_rd_expense"]
+
+    def test_other_expenses_within_limit(self):
+        """其他费用在限额内"""
+        result = rd_deduction(
+            rd_expenses={
+                "personnel": 900000,
+                "other": 50000  # 50000 < 900000 * 10% / 90% = 100000
+            }
+        )
+
+        # 其他费用在限额内，全额可加计
+        assert result["eligible_expense"] == result["total_rd_expense"]
+
+
+class TestTaxBurdenEdgeCases:
+    """综合税负分析边界测试"""
+
+    def test_zero_revenue(self):
+        """零收入"""
+        result = tax_burden(
+            revenue=0,
+            vat_payable=0,
+            cit_payable=0
+        )
+
+        assert result["burden_rate"] == 0
+        assert result["total_tax"] == 0
+
+    def test_zero_tax(self):
+        """零税额"""
+        result = tax_burden(
+            revenue=10000000,
+            vat_payable=0,
+            cit_payable=0
+        )
+
+        # 只有附加税（基于增值税0）
+        assert result["vat_burden_rate"] == 0
+        assert result["cit_burden_rate"] == 0
+
+    def test_all_tax_types(self):
+        """包含所有税种"""
+        result = tax_burden(
+            revenue=10000000,
+            vat_payable=300000,
+            cit_payable=200000,
+            other_taxes={
+                "stamp_tax": 5000,
+                "property_tax": 10000,
+                "land_use_tax": 8000,
+                "other": 2000
+            }
+        )
+
+        # 验证所有税种都计入
+        assert result["breakdown"]["印花税"] == 5000
+        assert result["breakdown"]["房产税"] == 10000
+        assert result["breakdown"]["土地使用税"] == 8000
+        assert result["breakdown"]["其他"] == 2000

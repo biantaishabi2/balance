@@ -49,7 +49,7 @@
 **文件：**
 - `fin_tools/tools/budget_tools.py` - 工具函数
 - `fa.py` - CLI 入口
-- `tests/test_budget_tools.py` - 测试用例（25个）
+- `tests/test_budget_tools.py` - 测试用例（35个）
 
 ---
 
@@ -98,7 +98,7 @@
 **文件：**
 - `fin_tools/tools/cash_tools.py` - 工具函数
 - `cf.py` - CLI 入口
-- `tests/test_cash_tools.py` - 测试用例（18个）
+- `tests/test_cash_tools.py` - 测试用例（27个）
 
 ---
 
@@ -118,7 +118,7 @@
 **文件：**
 - `fin_tools/tools/tax_tools.py` - 工具函数
 - `tx.py` - CLI 入口
-- `tests/test_tax_tools.py` - 测试用例（25个）
+- `tests/test_tax_tools.py` - 测试用例（44个）
 
 ---
 
@@ -209,34 +209,4 @@ Phase 3 (P2)
 | 2025-12-03 | tx 模块6个工具已完成（vat_calc, cit_calc, iit_calc, bonus_optimize, rd_deduction, tax_burden） |
 | 2025-12-03 | ma 模块5个工具已完成（dept_pnl, product_profitability, cost_allocation, cvp_analysis, breakeven） |
 | 2025-12-03 | ma 模块测试补全（26→45个），增加边界情况测试 |
-
----
-
-## 测试覆盖待补充
-
-以下模块的测试需要补充边界情况（零值、负值、空数据、除零保护等）：
-
-### fa - 财务分析 (当前25个测试，需补充约8个)
-
-| 函数 | 缺失场景 |
-|------|----------|
-| `variance_analysis` | 空预算/空实际、零预算除零处理 |
-| `flex_budget` | 零业务量、空预算字典 |
-| `trend_analysis` | 零值基期、负增长CAGR、全零数据 |
-
-### cf - 资金管理 (当前18个测试，需补充约6个)
-
-| 函数 | 缺失场景 |
-|------|----------|
-| `cash_forecast_13w` | 负期初现金、超出周范围的收付款忽略 |
-| `working_capital_cycle` | 零收入/零成本的除零保护 |
-
-### tx - 税务筹划 (当前25个测试，需补充约12个)
-
-| 函数 | 缺失场景 |
-|------|----------|
-| `vat_calc` | 空销售列表、进项大于销项（留抵）、免税/零税率 |
-| `cit_calc` | 零/负利润、亏损超过利润、小微超300万 |
-| `iit_calc` | 超高收入(45%档)、各档位边界值 |
-| `rd_deduction` | 空研发费用、只有其他费用 |
-| `tax_burden` | 零收入、零税额 |
+| 2025-12-03 | fa/cf/tx 模块边界测试补全（fa: 25→35, cf: 18→27, tx: 25→44） |

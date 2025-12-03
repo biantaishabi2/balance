@@ -317,3 +317,150 @@ class TestCashDrivers:
 
         assert result["changes"]["total"] == 0
         assert "稳定" in result["analysis"]
+
+
+# ============================================================
+# 边界情况测试补充
+# ============================================================
+
+class TestCashForecast13wEdgeCases:
+    """13周现金流预测边界测试"""
+
+    def test_negative_opening_cash(self):
+        """负期初现金"""
+        result = cash_forecast_13w(
+            opening_cash=-500,
+            receivables_schedule=[{"week": 1, "amount": 1000}],
+            payables_schedule=[{"week": 2, "amount": 200}],
+            weeks=4
+        )
+
+        # 负期初应正常处理
+        assert result["summary"]["opening_cash"] == -500
+        assert result["weekly_forecast"][0]["opening_balance"] == -500
+        # 第1周收到1000后，余额应为500
+        assert result["weekly_forecast"][0]["ending_balance"] == 500
+
+    def test_out_of_range_receivables(self):
+        """超出周范围的收款应被忽略"""
+        result = cash_forecast_13w(
+            opening_cash=1000,
+            receivables_schedule=[
+                {"week": 1, "amount": 500},
+                {"week": 20, "amount": 1000}  # 超出13周范围
+            ],
+            payables_schedule=[],
+            weeks=4
+        )
+
+        # 只有第1周的500被计入
+        assert result["summary"]["total_inflows"] == 500
+
+    def test_out_of_range_payables(self):
+        """超出周范围的付款应被忽略"""
+        result = cash_forecast_13w(
+            opening_cash=1000,
+            receivables_schedule=[],
+            payables_schedule=[
+                {"week": 1, "amount": 100},
+                {"week": 50, "amount": 5000}  # 超出范围
+            ],
+            weeks=4
+        )
+
+        # 只有第1周的100被计入
+        assert result["summary"]["total_outflows"] == 100
+
+    def test_week_zero_items(self):
+        """周数为0的项目"""
+        result = cash_forecast_13w(
+            opening_cash=1000,
+            receivables_schedule=[{"week": 0, "amount": 500}],  # 无效周
+            payables_schedule=[{"week": 1, "amount": 200}],
+            weeks=4
+        )
+
+        # 周0的项目应被忽略
+        assert result["summary"]["total_inflows"] == 0
+        assert result["summary"]["total_outflows"] == 200
+
+
+class TestWorkingCapitalCycleEdgeCases:
+    """营运资金周期边界测试"""
+
+    def test_zero_revenue(self):
+        """零收入除零保护"""
+        result = working_capital_cycle(
+            accounts_receivable=1000,
+            inventory=500,
+            accounts_payable=600,
+            revenue=0,
+            cogs=5000
+        )
+
+        # DSO应为0（因为日均收入为0）
+        assert result["dso"] == 0
+
+    def test_zero_cogs(self):
+        """零成本除零保护"""
+        result = working_capital_cycle(
+            accounts_receivable=1000,
+            inventory=500,
+            accounts_payable=600,
+            revenue=10000,
+            cogs=0
+        )
+
+        # DIO和DPO应为0
+        assert result["dio"] == 0
+        assert result["dpo"] == 0
+
+    def test_zero_all_balances(self):
+        """全零余额"""
+        result = working_capital_cycle(
+            accounts_receivable=0,
+            inventory=0,
+            accounts_payable=0,
+            revenue=0,
+            cogs=0
+        )
+
+        assert result["dso"] == 0
+        assert result["dio"] == 0
+        assert result["dpo"] == 0
+        assert result["ccc"] == 0
+        assert result["working_capital"] == 0
+
+
+class TestCashDriversEdgeCases:
+    """现金流驱动因素边界测试"""
+
+    def test_zero_values(self):
+        """全零现金流"""
+        result = cash_drivers(
+            period1={
+                "cash_flow_operating": 0,
+                "cash_flow_investing": 0,
+                "cash_flow_financing": 0
+            },
+            period2={
+                "cash_flow_operating": 0,
+                "cash_flow_investing": 0,
+                "cash_flow_financing": 0
+            }
+        )
+
+        assert result["changes"]["total"] == 0
+        assert "稳定" in result["analysis"]
+
+    def test_missing_fields(self):
+        """缺少字段"""
+        result = cash_drivers(
+            period1={"cash_flow_operating": 1000},
+            period2={"cash_flow_operating": 1200}
+        )
+
+        # 缺少的字段应默认为0
+        assert result["changes"]["operating"] == 200
+        assert result["changes"]["investing"] == 0
+        assert result["changes"]["financing"] == 0
