@@ -764,6 +764,62 @@ def cmd_ratio_trend(args):
 
 
 # ============================================================
+# Prepare 命令
+# ============================================================
+
+def cmd_prepare_lbo(args):
+    """准备LBO数据"""
+    from financial_model.tools import prepare_lbo_data
+
+    data = read_json_input()
+
+    # 兼容不同字段名
+    transaction = data.get("transaction") or data.get("transaction_assumptions", {})
+
+    result = prepare_lbo_data(
+        income_statement=data.get("income_statement", {}),
+        balance_sheet=data.get("balance_sheet", {}),
+        transaction=transaction,
+        debt_structure=data.get("debt_structure"),
+        operating_assumptions=data.get("operating_assumptions")
+    )
+
+    print_json(result, args.compact)
+
+
+def cmd_prepare_ma(args):
+    """准备MA数据"""
+    from financial_model.tools import prepare_ma_data
+
+    data = read_json_input()
+
+    result = prepare_ma_data(
+        acquirer=data.get("acquirer", {}),
+        target=data.get("target", {}),
+        deal_terms=data.get("deal_terms"),
+        synergies=data.get("synergies")
+    )
+
+    print_json(result, args.compact)
+
+
+def cmd_prepare_dcf(args):
+    """准备DCF数据"""
+    from financial_model.tools import prepare_dcf_data
+
+    data = read_json_input()
+
+    result = prepare_dcf_data(
+        income_statement=data.get("income_statement", {}),
+        balance_sheet=data.get("balance_sheet", {}),
+        projections=data.get("projections"),
+        valuation=data.get("valuation")
+    )
+
+    print_json(result, args.compact)
+
+
+# ============================================================
 # Tool 命令
 # ============================================================
 
@@ -817,6 +873,10 @@ TOOL_REGISTRY = {
     "calc_valuation": ("financial_model.tools.ratio_tools", "估值分析"),
     "calc_dupont": ("financial_model.tools.ratio_tools", "杜邦分析"),
     "calc_all_ratios": ("financial_model.tools.ratio_tools", "全部比率分析"),
+    # Prepare (数据准备)
+    "prepare_lbo_data": ("financial_model.tools.prepare_tools", "LBO数据准备"),
+    "prepare_ma_data": ("financial_model.tools.prepare_tools", "MA数据准备"),
+    "prepare_dcf_data": ("financial_model.tools.prepare_tools", "DCF数据准备"),
 }
 
 
@@ -906,6 +966,8 @@ def main():
   fm dcf calc --wacc 0.09 < projections.json
   fm ratio calc --type all < financial.json
   fm ratio dupont --levels 5 < financial.json
+  fm prepare lbo < financial.json | fm lbo calc
+  fm prepare dcf < financial.json | fm dcf calc
   fm tool list
   fm tool run calc_irr < cashflows.json
 
@@ -1050,6 +1112,25 @@ def main():
     ratio_trend.add_argument("--compact", action="store_true", help="紧凑输出")
     ratio_trend.set_defaults(func=cmd_ratio_trend)
 
+    # ===== Prepare =====
+    prepare_parser = subparsers.add_parser("prepare", help="数据准备")
+    prepare_sub = prepare_parser.add_subparsers(dest="subcommand")
+
+    # prepare lbo
+    prepare_lbo = prepare_sub.add_parser("lbo", help="准备LBO数据")
+    prepare_lbo.add_argument("--compact", action="store_true", help="紧凑输出")
+    prepare_lbo.set_defaults(func=cmd_prepare_lbo)
+
+    # prepare ma
+    prepare_ma = prepare_sub.add_parser("ma", help="准备MA数据")
+    prepare_ma.add_argument("--compact", action="store_true", help="紧凑输出")
+    prepare_ma.set_defaults(func=cmd_prepare_ma)
+
+    # prepare dcf
+    prepare_dcf = prepare_sub.add_parser("dcf", help="准备DCF数据")
+    prepare_dcf.add_argument("--compact", action="store_true", help="紧凑输出")
+    prepare_dcf.set_defaults(func=cmd_prepare_dcf)
+
     # ===== Tool =====
     tool_parser = subparsers.add_parser("tool", help="原子工具")
     tool_sub = tool_parser.add_subparsers(dest="subcommand")
@@ -1092,6 +1173,8 @@ def main():
             three_parser.print_help()
         elif args.command == "ratio":
             ratio_parser.print_help()
+        elif args.command == "prepare":
+            prepare_parser.print_help()
         elif args.command == "tool":
             tool_parser.print_help()
 

@@ -9,7 +9,8 @@
 - dcf_tools: DCF原子工具（9个）
 - three_statement_tools: 三表模型原子工具（11个）
 - ma_tools: M&A原子工具（8个）
-- ratio_tools: 财务比率分析工具（6个）
+- ratio_tools: 财务比率分析工具（7个）
+- prepare_tools: 数据准备工具（3个）
 """
 
 # LBO 原子工具
@@ -76,6 +77,13 @@ from .ratio_tools import (
     calc_all_ratios,
 )
 
+# 数据准备工具
+from .prepare_tools import (
+    prepare_lbo_data,
+    prepare_ma_data,
+    prepare_dcf_data,
+)
+
 __all__ = [
     # LBO 工具
     "calc_purchase_price",
@@ -126,4 +134,8 @@ __all__ = [
     "calc_valuation",
     "calc_dupont",
     "calc_all_ratios",
+    # 数据准备工具
+    "prepare_lbo_data",
+    "prepare_ma_data",
+    "prepare_dcf_data",
 ]

@@ -1,0 +1,78 @@
+{
+  "_meta": {
+    "case_name": "Apollo-Calpine LBO",
+    "description": "Apollo以165亿美元收购Calpine电力公司LBO测试案例",
+    "data_source": "基于公开信息估算",
+    "currency": "USD",
+    "unit": "million"
+  },
+
+  "income_statement": {
+    "revenue": 13700,
+    "cogs": 8900,
+    "gross_profit": 4800,
+    "opex": 1400,
+    "ebitda": 3400,
+    "depreciation": 1360,
+    "ebit": 2040,
+    "interest_expense": 760,
+    "ebt": 1280,
+    "tax": 320,
+    "net_income": 960
+  },
+
+  "balance_sheet": {
+    "cash": 800,
+    "accounts_receivable": 1200,
+    "inventory": 400,
+    "current_assets": 2400,
+    "ppe_net": 18000,
+    "total_assets": 22000,
+    "accounts_payable": 900,
+    "current_liabilities": 1500,
+    "long_term_debt": 12700,
+    "total_liabilities": 14200,
+    "total_equity": 7800
+  },
+
+  "transaction_assumptions": {
+    "purchase_price_equity": 16500,
+    "entry_multiple": 7.9,
+    "transaction_fees": 200,
+    "financing_fees": 150
+  },
+
+  "debt_structure": {
+    "senior_debt": {
+      "amount": 9000,
+      "rate": 0.065,
+      "term_years": 7
+    },
+    "subordinated_debt": {
+      "amount": 4000,
+      "rate": 0.085,
+      "term_years": 8
+    },
+    "equity_contribution": 3850
+  },
+
+  "operating_assumptions": {
+    "revenue_growth": [0.03, 0.035, 0.04, 0.035, 0.03],
+    "ebitda_margin": [0.248, 0.250, 0.255, 0.258, 0.260],
+    "capex_percent_revenue": 0.08,
+    "nwc_percent_revenue": 0.05,
+    "tax_rate": 0.25,
+    "depreciation_percent_ppe": 0.075
+  },
+
+  "exit_assumptions": {
+    "holding_period": 5,
+    "exit_multiple_base": 8.0,
+    "exit_multiple_range": [7.0, 7.5, 8.0, 8.5, 9.0]
+  },
+
+  "sensitivity_config": {
+    "entry_multiple_range": [7.0, 7.5, 8.0, 8.5, 9.0],
+    "exit_multiple_range": [7.0, 7.5, 8.0, 8.5, 9.0]
+  }
+}
