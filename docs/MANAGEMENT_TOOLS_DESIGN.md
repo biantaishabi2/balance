@@ -498,35 +498,131 @@ analyze_*       分析类工具
 forecast_*      预测类工具
 ```
 
-## CLI 命令规划
+---
 
+## CLI 命令架构
+
+按角色拆分为 5 个独立命令：
+
+| 命令 | 全称 | 角色 | 功能 |
+|------|------|------|------|
+| `fm` | Financial Model | 投行/PE | LBO、M&A、DCF、估值建模 |
+| `fa` | Financial Analysis | 财务分析 | 预算差异、滚动预测、比率分析 |
+| `mr` | Management Report | 管理会计 | 部门损益、产品盈利、成本分摊 |
+| `ac` | Accounting | 会计/审计 | 试算平衡、调整分录、审计抽样 |
+| `cf` | Cash Flow | 资金管理 | 现金流预测、营运资金周期 |
+
+### 命令详细设计
+
+#### 1. fm - 投行建模（已实现）
 ```bash
-# 管理报表
-fm management pnl < dept_data.json
-fm management product-profit < product_data.json
-
-# 预算
-fm budget variance < actual_vs_budget.json
-fm budget flex < volume_data.json
-fm budget forecast --months 12 < historical.json
-
-# 现金流
-fm cash forecast-13week < cash_data.json
-fm cash cycle < working_capital.json
-
-# 审计
-fm audit trial-balance < journal.json
-fm audit materiality --benchmark revenue < financials.json
-fm audit sample --method mus < population.json
-
-# 合并
-fm consolidation eliminate < group_data.json
+fm lbo calc < input.json              # LBO 分析
+fm lbo sensitivity < input.json       # LBO 敏感性
+fm ma calc < deal.json                # M&A 分析
+fm ma accretion < deal.json           # 增厚稀释
+fm dcf calc < projections.json        # DCF 估值
+fm dcf sensitivity < projections.json # DCF 敏感性
+fm three forecast < financials.json   # 三表预测
+fm ratio calc < financials.json       # 比率分析
+fm export lbo,sensitivity -o out.xlsx # 导出 Excel
 ```
+
+#### 2. fa - 财务分析（待实现）
+```bash
+fa variance < actual_vs_budget.json           # 预算差异分析
+fa variance --yoy < multi_period.json         # 含同比分析
+fa flex < volume_data.json                    # 弹性预算
+fa forecast --months 12 < historical.json     # 滚动预测
+fa forecast --method seasonal < historical.json
+fa trend < multi_period.json                  # 趋势分析
+fa export variance -o report.xlsx             # 导出报告
+```
+
+#### 3. mr - 管理报表（待实现）
+```bash
+mr dept-pnl < dept_data.json                  # 部门损益
+mr dept-pnl --allocation revenue < data.json  # 指定分摊方法
+mr product-profit < product_data.json         # 产品盈利分析
+mr customer-profit < customer_data.json       # 客户盈利分析
+mr cost-allocation < cost_pool.json           # 成本分摊
+mr cost-allocation --method step_down < data.json
+mr breakeven < product_data.json              # 盈亏平衡分析
+mr export dept-pnl -o management.xlsx         # 导出管理报表
+```
+
+#### 4. ac - 会计/审计（待实现）
+```bash
+ac trial-balance < journal.json               # 试算平衡表
+ac adjust --type accrual < adjustment.json    # 生成调整分录
+ac adjust --type reclassify < adjustment.json
+ac materiality --benchmark revenue < fin.json # 重要性水平
+ac materiality --risk high < fin.json
+ac sample --method mus < population.json      # 审计抽样
+ac sample --method stratified < population.json
+ac reconcile < account_data.json              # 账户调节
+ac export trial-balance -o audit.xlsx         # 导出审计底稿
+```
+
+#### 5. cf - 资金管理（待实现）
+```bash
+cf forecast-13week < cash_data.json           # 13周现金流预测
+cf forecast-13week --alert 500000 < data.json # 设置预警线
+cf cycle < working_capital.json               # 营运资金周期
+cf drivers < period_comparison.json           # 现金流驱动因素
+cf dso-dpo-dio < working_capital.json         # 周转天数分析
+cf export forecast -o cash_report.xlsx        # 导出资金报告
+```
+
+---
+
+## 文件结构规划
+
+```
+balance/
+├── fm.py                    # 投行建模 CLI（已实现）
+├── fa.py                    # 财务分析 CLI（待实现）
+├── mr.py                    # 管理报表 CLI（待实现）
+├── ac.py                    # 会计审计 CLI（待实现）
+├── cf.py                    # 资金管理 CLI（待实现）
+│
+├── financial_model/
+│   ├── tools/
+│   │   ├── lbo_tools.py           # LBO 原子工具
+│   │   ├── ma_tools.py            # M&A 原子工具
+│   │   ├── dcf_tools.py           # DCF 原子工具
+│   │   ├── three_statement_tools.py  # 三表原子工具
+│   │   ├── ratio_tools.py         # 比率分析工具
+│   │   ├── prepare_tools.py       # 数据准备工具
+│   │   │
+│   │   ├── budget_tools.py        # 预算分析工具（待实现）
+│   │   ├── management_tools.py    # 管理报表工具（待实现）
+│   │   ├── audit_tools.py         # 审计工具（待实现）
+│   │   ├── cash_tools.py          # 资金管理工具（待实现）
+│   │   └── consolidation_tools.py # 合并报表工具（待实现）
+│   │
+│   ├── io/
+│   │   └── excel_writer.py        # Excel 导出（扩展新报表格式）
+```
+
+---
+
+## 实施优先级
+
+| 优先级 | CLI | 工具文件 | 工具数 | 理由 |
+|--------|-----|----------|--------|------|
+| P0 | `fa` | budget_tools.py | 3 | CFO 最常用，月度必做 |
+| P0 | `cf` | cash_tools.py | 3 | 资金管理核心需求 |
+| P1 | `mr` | management_tools.py | 4 | 管理决策支持 |
+| P2 | `ac` | audit_tools.py | 4 | 审计场景专用 |
+| P2 | - | consolidation_tools.py | 2 | 集团企业专用 |
+
+---
 
 ## 下一步
 
 1. 确认优先级和需求范围
-2. 设计详细的输入输出格式
-3. 实现 P0 工具（预算差异 + 现金流预测）
+2. 实现 P0：`fa.py` + `budget_tools.py`（预算差异、弹性预算、滚动预测）
+3. 实现 P0：`cf.py` + `cash_tools.py`（13周预测、营运资金周期、现金流驱动因素）
 4. 编写测试用例
-5. 集成到 fm CLI
+5. 扩展 `ExcelWriter` 支持新报表格式
+6. 实现 P1/P2 工具
