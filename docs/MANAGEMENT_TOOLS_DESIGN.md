@@ -804,12 +804,295 @@ cf forecast-13week < cash.json
 
 ---
 
+## 六、税务工具 (TAX)
+
+面向税务筹划与合规，在税法边缘合法优化。
+
+### 6.1 增值税计算
+```python
+def calc_vat(
+    sales_amount: float,                     # 销售额
+    input_tax: float,                        # 进项税额
+    tax_rate: float = 0.13,                  # 税率 13%/9%/6%
+    exempt_sales: float = 0                  # 免税销售额
+) -> Dict:
+    """
+    计算增值税及税负率
+
+    Returns:
+        {
+            "output_tax": 130000,            # 销项税额
+            "input_tax": 80000,              # 进项税额
+            "vat_payable": 50000,            # 应纳增值税
+            "tax_burden_rate": 0.05,         # 税负率
+            "effective_rate": 0.038          # 实际税负
+        }
+    """
+```
+
+### 6.2 企业所得税计算
+```python
+def calc_corporate_tax(
+    revenue: float,                          # 营业收入
+    costs: float,                            # 成本费用
+    adjustments: Dict[str, float],           # 纳税调整项
+    preferences: List[str] = None            # 优惠政策
+) -> Dict:
+    """
+    计算企业所得税（含纳税调整）
+
+    Args:
+        adjustments: {
+            "entertainment_excess": 50000,   # 业务招待费超支
+            "ad_excess": 0,                  # 广告费超支
+            "donation_excess": 0,            # 捐赠超支
+            "fine_penalty": 10000,           # 罚款不可扣
+            "rd_extra_deduction": -100000    # 研发加计扣除（负数）
+        }
+        preferences: ["small_micro", "high_tech", "west_region"]
+
+    Returns:
+        {
+            "accounting_profit": 1000000,
+            "taxable_income": 960000,
+            "tax_rate": 0.25,
+            "tax_payable": 240000,
+            "effective_rate": 0.24,
+            "adjustments_detail": {...}
+        }
+    """
+```
+
+### 6.3 个人所得税计算
+```python
+def calc_individual_tax(
+    monthly_salary: float,                   # 月薪
+    annual_bonus: float = 0,                 # 年终奖
+    social_insurance: float = 0,             # 社保
+    housing_fund: float = 0,                 # 公积金
+    special_deductions: Dict = None          # 专项附加扣除
+) -> Dict:
+    """
+    计算个人所得税（综合所得+年终奖）
+
+    Returns:
+        {
+            "monthly_tax": 2000,
+            "annual_salary_tax": 24000,
+            "bonus_tax": 15000,
+            "total_tax": 39000,
+            "effective_rate": 0.08
+        }
+    """
+```
+
+### 6.4 年终奖优化
+```python
+def optimize_bonus(
+    total_income: float,                     # 年度总收入
+    current_salary: float,                   # 当前月薪
+    deductions: float = 60000                # 扣除项合计
+) -> Dict:
+    """
+    年终奖与工资拆分优化（避开临界点）
+
+    Returns:
+        {
+            "optimal_split": {
+                "annual_salary": 300000,
+                "bonus": 200000
+            },
+            "tax_saved": 15000,
+            "warning_zones": [36000, 144000, 300000, ...],
+            "comparison": [
+                {"salary": 250000, "bonus": 250000, "total_tax": 55000},
+                {"salary": 300000, "bonus": 200000, "total_tax": 40000},
+                ...
+            ]
+        }
+    """
+```
+
+### 6.5 研发费用加计扣除
+```python
+def calc_rd_deduction(
+    rd_expense: float,                       # 研发费用
+    deduction_rate: float = 1.0,             # 加计扣除比例 75%/100%
+    capitalized_ratio: float = 0             # 资本化比例
+) -> Dict:
+    """
+    计算研发费用加计扣除
+
+    Returns:
+        {
+            "expensed_rd": 800000,
+            "capitalized_rd": 200000,
+            "extra_deduction": 800000,       # 加计扣除金额
+            "tax_saving": 200000,            # 节税金额
+            "amortization_deduction": 50000  # 资本化摊销加计
+        }
+    """
+```
+
+### 6.6 小微企业优惠
+```python
+def calc_sme_benefit(
+    taxable_income: float,                   # 应纳税所得额
+    employee_count: int,                     # 员工人数
+    total_assets: float                      # 资产总额
+) -> Dict:
+    """
+    计算小微企业所得税优惠
+
+    符合条件：年应纳税所得额≤300万，从业人数≤300，资产≤5000万
+
+    Returns:
+        {
+            "is_qualified": True,
+            "taxable_income": 2800000,
+            "normal_tax": 700000,            # 正常税额 25%
+            "preferential_tax": 70000,       # 优惠税额
+            "tax_saving": 630000,
+            "effective_rate": 0.025,
+            "breakdown": {
+                "first_1m": {"income": 1000000, "rate": 0.025, "tax": 25000},
+                "1m_to_3m": {"income": 1800000, "rate": 0.05, "tax": 45000}
+            }
+        }
+    """
+```
+
+### 6.7 综合税负分析
+```python
+def calc_tax_burden(
+    vat: float,
+    corporate_tax: float,
+    stamp_duty: float,
+    other_taxes: Dict[str, float],
+    revenue: float
+) -> Dict:
+    """
+    综合税负分析
+
+    Returns:
+        {
+            "total_tax": 500000,
+            "tax_burden_rate": 0.05,
+            "breakdown": {
+                "vat": {"amount": 300000, "percent": 0.60},
+                "corporate_tax": {"amount": 150000, "percent": 0.30},
+                "stamp_duty": {"amount": 10000, "percent": 0.02},
+                ...
+            },
+            "industry_benchmark": 0.045,
+            "status": "slightly_above_average"
+        }
+    """
+```
+
+### 6.8 转让定价
+```python
+def calc_transfer_pricing(
+    transaction_type: str,                   # goods/service/royalty/interest
+    transaction_amount: float,
+    comparable_data: List[Dict],             # 可比数据
+    method: str = "tnmm"                     # cup/rpm/cpm/tnmm/psm
+) -> Dict:
+    """
+    关联交易转让定价分析
+
+    Returns:
+        {
+            "arm_length_range": {
+                "min": 4500000,
+                "median": 5000000,
+                "max": 5500000
+            },
+            "current_price": 5200000,
+            "is_compliant": True,
+            "adjustment_needed": 0,
+            "documentation_required": True
+        }
+    """
+```
+
+---
+
+## CLI 命令架构（更新）
+
+| 命令 | 全称 | 角色 | 功能 |
+|------|------|------|------|
+| `fm` | Financial Model | 投行/PE | LBO、Merger、DCF、估值建模 |
+| `fa` | Financial Analysis | 财务分析 | 预算差异、滚动预测、比率分析 |
+| `ma` | Management Accounting | 管理会计 | 部门损益、产品盈利、成本分摊 |
+| `ac` | Accounting | 会计/审计 | 试算平衡、调整分录、审计抽样 |
+| `cf` | Cash Flow | 资金管理 | 现金流预测、营运资金周期 |
+| `tx` | Tax | 税务筹划 | 增值税、所得税、年终奖优化 |
+
+### tx - 税务工具（待实现）
+```bash
+tx vat < sales_data.json                     # 增值税计算
+tx cit < income_data.json                    # 企业所得税
+tx cit --preference small_micro < data.json  # 小微企业优惠
+tx iit < salary_data.json                    # 个人所得税
+tx optimize-bonus --total 500000             # 年终奖优化
+tx rd-deduction --expense 1000000            # 研发加计扣除
+tx burden < tax_data.json                    # 综合税负分析
+tx transfer-pricing < related_party.json    # 转让定价
+```
+
+---
+
+## 文件结构规划（更新）
+
+```
+balance/
+├── fm.py                    # 投行建模 CLI（已实现）
+├── fa.py                    # 财务分析 CLI（待实现）
+├── ma.py                    # 管理会计 CLI（待实现）
+├── ac.py                    # 会计审计 CLI（待实现）
+├── cf.py                    # 资金管理 CLI（待实现）
+├── tx.py                    # 税务筹划 CLI（待实现）
+│
+├── fin_tools/
+│   ├── tools/
+│   │   ├── lbo_tools.py
+│   │   ├── ma_tools.py            # M&A 并购工具
+│   │   ├── dcf_tools.py
+│   │   ├── three_statement_tools.py
+│   │   ├── ratio_tools.py
+│   │   ├── prepare_tools.py
+│   │   │
+│   │   ├── budget_tools.py        # 预算分析（待实现）
+│   │   ├── management_tools.py    # 管理报表（待实现）
+│   │   ├── audit_tools.py         # 审计工具（待实现）
+│   │   ├── cash_tools.py          # 资金管理（待实现）
+│   │   ├── tax_tools.py           # 税务工具（待实现）
+│   │   └── consolidation_tools.py # 合并报表（待实现）
+```
+
+---
+
+## 实施优先级（更新）
+
+| 优先级 | CLI | 工具文件 | 工具数 | 理由 |
+|--------|-----|----------|--------|------|
+| P0 | `fa` | budget_tools.py | 3 | CFO 最常用，月度必做 |
+| P0 | `cf` | cash_tools.py | 3 | 资金管理核心需求 |
+| P1 | `ma` | management_tools.py | 4 | 管理决策支持 |
+| P1 | `tx` | tax_tools.py | 8 | 税务筹划高频需求 |
+| P2 | `ac` | audit_tools.py | 4 | 审计场景专用 |
+| P2 | - | consolidation_tools.py | 2 | 集团企业专用 |
+
+---
+
 ## 下一步
 
 1. 确认优先级和需求范围
 2. 实现通用 Excel 解析器（支持金蝶/用友/SAP 列名映射）
 3. 实现 P0：`fa.py` + `budget_tools.py`（预算差异、弹性预算、滚动预测）
 4. 实现 P0：`cf.py` + `cash_tools.py`（13周预测、营运资金周期、现金流驱动因素）
-5. 编写测试用例
-6. 扩展 `ExcelWriter` 支持新报表格式
-7. 实现 P1/P2 工具
+5. 实现 P1：`tx.py` + `tax_tools.py`（增值税、所得税、年终奖优化）
+6. 编写测试用例
+7. 扩展 `ExcelWriter` 支持新报表格式
+8. 实现 P2 工具
