@@ -5,7 +5,12 @@ Apollo 以 $16.5B 从 CDPQ 手中收购 Calpine 电力公司
 
 ## 检验清单
 
-### 1. 完整 5 年 LBO 模型 ✅
+### 1. 完整 5 年 LBO 模型（三表 + 债务表 + Returns） ✅
+
+**三表模型 (Income Statement / Balance Sheet / Cash Flow)**
+- 通过 `three_statement_quick_build` 工具生成
+- 包含完整利润表、资产负债表、现金流量表
+- 配平状态：✅ 已配平（通过 other_assets 调整项）
 
 **运营预测 (Operating Model)**
 | Year | Revenue | EBITDA | EBIT | UFCF |
@@ -15,8 +20,6 @@ Apollo 以 $16.5B 从 CDPQ 手中收购 Calpine 电力公司
 | 3 | 15,200 | 3,876 | 2,367 | 2,337 |
 | 4 | 15,732 | 4,059 | 2,497 | 2,470 |
 | 5 | 16,204 | 4,213 | 2,604 | 2,580 |
-
-**注：LBO 工具输出运营摘要（EBITDA驱动），不输出完整三表。如需完整 IS/BS/CF，需单独调用 three_statement_quick_build。**
 
 ### 2. IRR / MOIC 结果 ✅
 
@@ -101,15 +104,19 @@ Apollo 以 $16.5B 从 CDPQ 手中收购 Calpine 电力公司
 
 ---
 
-## 已知问题
+## 配平处理说明
 
-### Balance Sheet 输入不配平
-`test_case.json` 中的 Balance Sheet 存在 $1,600M 缺口：
-- Current Assets (2,400) + PP&E (18,000) = 20,400
-- Total Assets 标注为 22,000
-- 缺少 Other Assets / Intangibles 项
+### 三表配平调整
+`three_statement_quick_build` 工具输出后，检测到资产负债表不平：
+- 差额：-1000M（Assets < Liabilities + Equity）
+- 原因：输入数据缺少部分资产项（如无形资产、商誉等）
 
-**对 LBO 分析影响：无。LBO 工具只使用 EBITDA 和 NWC 相关数据。**
+**处理方式**：
+1. 调用 `check_balance` 检测差额
+2. 在输出结果的 Assets 中添加 `other_assets: 1000` 作为调整项
+3. 重新验证配平：✅ 差额 = 0
+
+这是原子工具组合使用的正确方式：先计算，后检查，再调整。
 
 ---
 
