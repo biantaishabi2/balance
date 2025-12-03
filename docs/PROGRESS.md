@@ -6,14 +6,14 @@
 |------|------|------|--------|--------|
 | 投行建模 | `fm` | ✅ 已完成 | 30 | 30 |
 | 财务分析 | `fa` | ✅ 已完成 | 4 | 4 |
-| 管理会计 | `ma` | ⏳ 待开发 | 5 | 0 |
+| 管理会计 | `ma` | ✅ 已完成 | 5 | 5 |
 | 会计审计 | `ac` | ⏳ 待开发 | 4 | 0 |
 | 资金管理 | `cf` | ✅ 已完成 | 3 | 3 |
 | 税务筹划 | `tx` | ✅ 已完成 | 6 | 6 |
 | 风险管理 | `ri` | ⏳ 待开发 | 4 | 0 |
 | 绩效考核 | `kp` | ⏳ 待开发 | 4 | 0 |
 
-**总计：60 个工具，已完成 43 个（72%）**
+**总计：60 个工具，已完成 48 个（80%）**
 
 ---
 
@@ -53,17 +53,22 @@
 
 ---
 
-### 3. ma - 管理会计 ⏳
+### 3. ma - 管理会计 ✅
 
-**状态：待开发 | 优先级：P1**
+**状态：已完成 | 优先级：P1**
 
 | 工具 | 描述 | 状态 |
 |------|------|------|
-| `dept_pnl` | 部门损益表 | ⏳ |
-| `product_profitability` | 产品盈利分析 | ⏳ |
-| `cost_allocation` | 成本分摊（直接/阶梯/ABC） | ⏳ |
-| `cvp_analysis` | 本量利分析 | ⏳ |
-| `breakeven` | 盈亏平衡点计算 | ⏳ |
+| `dept_pnl` | 部门损益表 | ✅ |
+| `product_profitability` | 产品盈利分析 | ✅ |
+| `cost_allocation` | 成本分摊（直接/阶梯/ABC） | ✅ |
+| `cvp_analysis` | 本量利分析 | ✅ |
+| `breakeven` | 盈亏平衡点计算 | ✅ |
+
+**文件：**
+- `fin_tools/tools/management_tools.py` - 工具函数
+- `ma.py` - CLI 入口
+- `tests/test_management_tools.py` - 测试用例（45个）
 
 ---
 
@@ -202,3 +207,36 @@ Phase 3 (P2)
 | 2025-12-03 | fa 模块4个工具已完成（variance_analysis, flex_budget, rolling_forecast, trend_analysis） |
 | 2025-12-03 | cf 模块3个工具已完成（cash_forecast_13w, working_capital_cycle, cash_drivers） |
 | 2025-12-03 | tx 模块6个工具已完成（vat_calc, cit_calc, iit_calc, bonus_optimize, rd_deduction, tax_burden） |
+| 2025-12-03 | ma 模块5个工具已完成（dept_pnl, product_profitability, cost_allocation, cvp_analysis, breakeven） |
+| 2025-12-03 | ma 模块测试补全（26→45个），增加边界情况测试 |
+
+---
+
+## 测试覆盖待补充
+
+以下模块的测试需要补充边界情况（零值、负值、空数据、除零保护等）：
+
+### fa - 财务分析 (当前25个测试，需补充约8个)
+
+| 函数 | 缺失场景 |
+|------|----------|
+| `variance_analysis` | 空预算/空实际、零预算除零处理 |
+| `flex_budget` | 零业务量、空预算字典 |
+| `trend_analysis` | 零值基期、负增长CAGR、全零数据 |
+
+### cf - 资金管理 (当前18个测试，需补充约6个)
+
+| 函数 | 缺失场景 |
+|------|----------|
+| `cash_forecast_13w` | 负期初现金、超出周范围的收付款忽略 |
+| `working_capital_cycle` | 零收入/零成本的除零保护 |
+
+### tx - 税务筹划 (当前25个测试，需补充约12个)
+
+| 函数 | 缺失场景 |
+|------|----------|
+| `vat_calc` | 空销售列表、进项大于销项（留抵）、免税/零税率 |
+| `cit_calc` | 零/负利润、亏损超过利润、小微超300万 |
+| `iit_calc` | 超高收入(45%档)、各档位边界值 |
+| `rd_deduction` | 空研发费用、只有其他费用 |
+| `tax_burden` | 零收入、零税额 |

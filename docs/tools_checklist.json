@@ -26,7 +26,7 @@
       "name": "Management Accounting",
       "description": "管理会计工具",
       "priority": "P1",
-      "status": "pending",
+      "status": "completed",
       "cli": "ma.py",
       "tools_file": "fin_tools/tools/management_tools.py"
     },
@@ -437,8 +437,8 @@
         "混合分摊",
         "有亏损部门"
       ],
-      "status": "pending",
-      "completed_date": null
+      "status": "completed",
+      "completed_date": "2025-12-03"
     },
     {
       "id": "ma_002",
@@ -464,8 +464,8 @@
         "多产品组合",
         "单一产品"
       ],
-      "status": "pending",
-      "completed_date": null
+      "status": "completed",
+      "completed_date": "2025-12-03"
     },
     {
       "id": "ma_003",
@@ -490,8 +490,8 @@
         "交互分摊法",
         "作业成本法"
       ],
-      "status": "pending",
-      "completed_date": null
+      "status": "completed",
+      "completed_date": "2025-12-03"
     },
     {
       "id": "ma_004",
@@ -518,8 +518,8 @@
         "高固定成本",
         "低边际贡献"
       ],
-      "status": "pending",
-      "completed_date": null
+      "status": "completed",
+      "completed_date": "2025-12-03"
     },
     {
       "id": "ma_005",
@@ -545,8 +545,8 @@
         "销售结构变化",
         "单一产品"
       ],
-      "status": "pending",
-      "completed_date": null
+      "status": "completed",
+      "completed_date": "2025-12-03"
     },
     {
       "id": "ri_001",
