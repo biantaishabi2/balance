@@ -977,8 +977,8 @@ def main():
 示例:
   fm lbo calc < input.json
   fm lbo sensitivity --entry 7,8,9 --exit 7,8,9 < input.json
-  fm ma calc < deal.json
-  fm ma breakeven < deal.json
+  fm merger calc < deal.json
+  fm merger breakeven < deal.json
   fm dcf calc --wacc 0.09 < projections.json
   fm ratio calc --type all < financial.json
   fm ratio dupont --levels 5 < financial.json
@@ -1020,32 +1020,32 @@ def main():
     lbo_sens.set_defaults(func=cmd_lbo_sensitivity)
 
 
-    # ===== M&A =====
-    ma_parser = subparsers.add_parser("ma", help="并购分析")
-    ma_sub = ma_parser.add_subparsers(dest="subcommand")
+    # ===== Merger (M&A) =====
+    merger_parser = subparsers.add_parser("merger", help="并购分析")
+    merger_sub = merger_parser.add_subparsers(dest="subcommand")
 
-    # ma calc
-    ma_calc = ma_sub.add_parser("calc", help="M&A计算")
-    ma_calc.add_argument("--premium", type=float, help="溢价比例")
-    ma_calc.add_argument("--cash-percent", type=float, help="现金支付比例")
-    ma_calc.add_argument("--stock-percent", type=float, help="股票支付比例")
-    ma_calc.add_argument("--synergies", type=float, help="协同效应金额")
-    ma_calc.add_argument("--detail", action="store_true", help="输出完整详情")
-    ma_calc.add_argument("--compact", action="store_true", help="紧凑输出")
-    ma_calc.set_defaults(func=cmd_ma_calc)
+    # merger calc
+    merger_calc = merger_sub.add_parser("calc", help="并购计算")
+    merger_calc.add_argument("--premium", type=float, help="溢价比例")
+    merger_calc.add_argument("--cash-percent", type=float, help="现金支付比例")
+    merger_calc.add_argument("--stock-percent", type=float, help="股票支付比例")
+    merger_calc.add_argument("--synergies", type=float, help="协同效应金额")
+    merger_calc.add_argument("--detail", action="store_true", help="输出完整详情")
+    merger_calc.add_argument("--compact", action="store_true", help="紧凑输出")
+    merger_calc.set_defaults(func=cmd_ma_calc)
 
-    # ma accretion
-    ma_accr = ma_sub.add_parser("accretion", help="增厚/稀释敏感性")
-    ma_accr.add_argument("--premium", help="溢价范围(逗号分隔)")
-    ma_accr.add_argument("--stock", help="股票比例范围(逗号分隔)")
-    ma_accr.add_argument("--format", choices=["json", "table"], default="table", help="输出格式")
-    ma_accr.add_argument("--compact", action="store_true", help="紧凑输出")
-    ma_accr.set_defaults(func=cmd_ma_accretion)
+    # merger accretion
+    merger_accr = merger_sub.add_parser("accretion", help="增厚/稀释敏感性")
+    merger_accr.add_argument("--premium", help="溢价范围(逗号分隔)")
+    merger_accr.add_argument("--stock", help="股票比例范围(逗号分隔)")
+    merger_accr.add_argument("--format", choices=["json", "table"], default="table", help="输出格式")
+    merger_accr.add_argument("--compact", action="store_true", help="紧凑输出")
+    merger_accr.set_defaults(func=cmd_ma_accretion)
 
-    # ma breakeven
-    ma_be = ma_sub.add_parser("breakeven", help="盈亏平衡分析")
-    ma_be.add_argument("--compact", action="store_true", help="紧凑输出")
-    ma_be.set_defaults(func=cmd_ma_breakeven)
+    # merger breakeven
+    merger_be = merger_sub.add_parser("breakeven", help="盈亏平衡分析")
+    merger_be.add_argument("--compact", action="store_true", help="紧凑输出")
+    merger_be.set_defaults(func=cmd_ma_breakeven)
 
 
     # ===== DCF =====
@@ -1131,10 +1131,10 @@ def main():
     prepare_lbo.add_argument("--compact", action="store_true", help="紧凑输出")
     prepare_lbo.set_defaults(func=cmd_prepare_lbo)
 
-    # prepare ma
-    prepare_ma = prepare_sub.add_parser("ma", help="准备MA数据")
-    prepare_ma.add_argument("--compact", action="store_true", help="紧凑输出")
-    prepare_ma.set_defaults(func=cmd_prepare_ma)
+    # prepare merger
+    prepare_merger = prepare_sub.add_parser("merger", help="准备并购数据")
+    prepare_merger.add_argument("--compact", action="store_true", help="紧凑输出")
+    prepare_merger.set_defaults(func=cmd_prepare_ma)
 
     # prepare dcf
     prepare_dcf = prepare_sub.add_parser("dcf", help="准备DCF数据")
@@ -1183,8 +1183,8 @@ def main():
         # 子命令未指定
         if args.command == "lbo":
             lbo_parser.print_help()
-        elif args.command == "ma":
-            ma_parser.print_help()
+        elif args.command == "merger":
+            merger_parser.print_help()
         elif args.command == "dcf":
             dcf_parser.print_help()
         elif args.command == "three":

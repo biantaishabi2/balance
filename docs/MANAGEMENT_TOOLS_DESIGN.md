@@ -518,8 +518,8 @@ forecast_*      预测类工具
 ```bash
 fm lbo calc < input.json              # LBO 分析
 fm lbo sensitivity < input.json       # LBO 敏感性
-fm ma calc < deal.json                # M&A 分析
-fm ma accretion < deal.json           # 增厚稀释
+fm merger calc < deal.json                # M&A 分析
+fm merger accretion < deal.json           # 增厚稀释
 fm dcf calc < projections.json        # DCF 估值
 fm dcf sensitivity < projections.json # DCF 敏感性
 fm three forecast < financials.json   # 三表预测
