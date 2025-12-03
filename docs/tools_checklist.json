@@ -18,7 +18,7 @@
       "name": "Financial Analysis",
       "description": "财务分析工具",
       "priority": "P0",
-      "status": "pending",
+      "status": "completed",
       "cli": "fa.py",
       "tools_file": "fin_tools/tools/budget_tools.py"
     },
@@ -78,6 +78,8 @@
       "module": "fa",
       "name": "variance_analysis",
       "description": "预算 vs 实际差异分析",
+      "status": "completed",
+      "completed_date": "2025-12-03",
       "goal": "对比预算与实际数据，计算差异金额和百分比，标记重大差异",
       "input": {
         "budget": "预算数据 (按科目)",
@@ -94,9 +96,7 @@
         "无差异情况",
         "全部超阈值",
         "部分科目缺失"
-      ],
-      "status": "pending",
-      "completed_date": null
+      ]
     },
     {
       "id": "fa_002",
@@ -121,8 +121,8 @@
         "混合成本处理",
         "零业务量"
       ],
-      "status": "pending",
-      "completed_date": null
+      "status": "completed",
+      "completed_date": "2025-12-03"
     },
     {
       "id": "fa_003",
@@ -146,8 +146,8 @@
         "平稳趋势",
         "季节性数据"
       ],
-      "status": "pending",
-      "completed_date": null
+      "status": "completed",
+      "completed_date": "2025-12-03"
     },
     {
       "id": "fa_004",
@@ -171,8 +171,8 @@
         "波动趋势",
         "单期数据"
       ],
-      "status": "pending",
-      "completed_date": null
+      "status": "completed",
+      "completed_date": "2025-12-03"
     },
     {
       "id": "cf_001",
