@@ -1,0 +1,28 @@
+{
+  "base_data": {
+    "last_revenue": 13700,
+    "closing_cash": 800,
+    "closing_receivable": 1200,
+    "closing_inventory": 400,
+    "closing_payable": 900,
+    "closing_debt": 12700,
+    "closing_equity": 7800,
+    "fixed_asset_gross": 24000,
+    "fixed_asset_life": 15,
+    "accum_depreciation": 6000,
+    "company": "Calpine",
+    "period": "LBO Year 0"
+  },
+  "assumptions": {
+    "growth_rate": 0.03,
+    "gross_margin": 0.35,
+    "opex_ratio": 0.10,
+    "ar_days": 32,
+    "ap_days": 24,
+    "inv_days": 11,
+    "capex_ratio": 0.08,
+    "interest_rate": 0.07,
+    "tax_rate": 0.25,
+    "dividend_ratio": 0
+  }
+}

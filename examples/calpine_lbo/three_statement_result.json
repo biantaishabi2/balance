@@ -1,0 +1,200 @@
+{
+  "_meta": {
+    "model_type": "three_statement",
+    "company": "Calpine",
+    "base_period": "LBO Year 0",
+    "built_with": "atomic_tools"
+  },
+  "income_statement": {
+    "revenue": {
+      "value": 14111.0,
+      "formula": "last_revenue × (1 + growth_rate)",
+      "inputs": {
+        "last_revenue": 13700,
+        "growth_rate": 0.03
+      },
+      "source": "tool"
+    },
+    "cost": {
+      "value": 9172.15,
+      "formula": "revenue × (1 - gross_margin)",
+      "inputs": {
+        "revenue": 14111.0,
+        "gross_margin": 0.35
+      },
+      "source": "tool"
+    },
+    "gross_profit": {
+      "value": 4938.85,
+      "formula": "revenue - cost",
+      "source": "tool"
+    },
+    "opex": {
+      "value": 1411.1000000000001,
+      "formula": "revenue × opex_ratio",
+      "inputs": {
+        "revenue": 14111.0,
+        "opex_ratio": 0.1
+      },
+      "source": "tool"
+    },
+    "ebit": {
+      "value": 3527.75,
+      "formula": "gross_profit - opex",
+      "source": "tool"
+    },
+    "interest": {
+      "value": 889.0000000000001,
+      "formula": "opening_debt × interest_rate",
+      "source": "tool"
+    },
+    "ebt": {
+      "value": 2638.75,
+      "formula": "ebit - interest",
+      "source": "tool"
+    },
+    "tax": {
+      "value": 659.6875,
+      "formula": "max(ebt, 0) × tax_rate",
+      "source": "tool"
+    },
+    "net_income": {
+      "value": 1979.0625,
+      "formula": "ebt - tax",
+      "source": "tool"
+    }
+  },
+  "balance_sheet": {
+    "assets": {
+      "cash": {
+        "value": 3114.991714611872,
+        "formula": "opening_cash + net_cash_change"
+      },
+      "receivable": {
+        "value": 1237.1287671232876,
+        "formula": "revenue / 365 × ar_days"
+      },
+      "inventory": {
+        "value": 276.42095890410957,
+        "formula": "cost / 365 × inv_days"
+      },
+      "fixed_assets_net": {
+        "value": 17453.621333333336,
+        "formula": "fixed_assets_gross + capex - accum_depreciation"
+      },
+      "total_assets": {
+        "value": 22082.162773972603
+      }
+    },
+    "liabilities": {
+      "payable": {
+        "value": 603.1002739726027,
+        "formula": "cost / 365 × ap_days"
+      },
+      "debt": {
+        "value": 12700
+      },
+      "total_liabilities": {
+        "value": 13303.100273972603
+      }
+    },
+    "equity": {
+      "opening_equity": {
+        "value": 7800
+      },
+      "retained_change": {
+        "value": 1979.0625,
+        "formula": "net_income - dividend"
+      },
+      "total_equity": {
+        "value": 9779.0625
+      }
+    }
+  },
+  "cash_flow": {
+    "operating": {
+      "value": 3443.871714611872,
+      "formula": "net_income + depreciation - ΔNWC",
+      "details": {
+        "net_income": 1979.0625,
+        "add_depreciation": 1675.2586666666668,
+        "less_delta_ar": -37.128767123287616,
+        "less_delta_inv": 123.57904109589043,
+        "add_delta_ap": -296.89972602739726,
+        "delta_nwc": 210.44945205479445,
+        "total": 3443.871714611872
+      }
+    },
+    "investing": {
+      "value": -1128.88,
+      "formula": "-capex",
+      "details": {
+        "capex": -1128.88,
+        "total": -1128.88
+      }
+    },
+    "financing": {
+      "value": 0.0,
+      "formula": "-interest - dividend + Δdebt",
+      "details": {
+        "dividend_paid": -0.0,
+        "debt_change": 0,
+        "total": 0.0
+      }
+    },
+    "net_change": {
+      "value": 2314.991714611872,
+      "formula": "OCF + ICF + FCF"
+    },
+    "closing_cash": {
+      "value": 3114.991714611872
+    }
+  },
+  "validation": {
+    "is_balanced": false,
+    "difference": -1000.0,
+    "details": {
+      "total_assets": 22082.162773972603,
+      "total_liabilities": 13303.100273972603,
+      "total_equity": 9779.0625,
+      "liabilities_plus_equity": 23082.162773972603
+    },
+    "source": "tool"
+  },
+  "working_capital": {
+    "receivable": 1237.1287671232876,
+    "payable": 603.1002739726027,
+    "inventory": 276.42095890410957,
+    "net_working_capital": 910.4494520547944,
+    "delta_ar": 37.128767123287616,
+    "delta_inv": -123.57904109589043,
+    "delta_ap": -296.89972602739726,
+    "delta_nwc": 210.44945205479445
+  },
+  "fixed_assets": {
+    "opening_gross": 24000,
+    "capex": {
+      "value": 1128.88,
+      "formula": "revenue × capex_ratio",
+      "inputs": {
+        "revenue": 14111.0,
+        "capex_ratio": 0.08
+      },
+      "source": "tool"
+    },
+    "closing_gross": 25128.88,
+    "depreciation": {
+      "value": 1675.2586666666668,
+      "formula": "(fixed_assets - salvage) / useful_life",
+      "inputs": {
+        "fixed_assets": 25128.88,
+        "salvage": 0,
+        "useful_life": 15
+      },
+      "source": "tool"
+    },
+    "opening_accum_dep": 6000,
+    "closing_accum_dep": 7675.258666666667,
+    "closing_net": 17453.621333333336
+  }
+}
