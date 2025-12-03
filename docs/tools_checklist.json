@@ -42,7 +42,7 @@
       "name": "Cash Flow",
       "description": "资金管理工具",
       "priority": "P0",
-      "status": "pending",
+      "status": "completed",
       "cli": "cf.py",
       "tools_file": "fin_tools/tools/cash_tools.py"
     },
@@ -198,8 +198,8 @@
         "全部为正",
         "季节性波动"
       ],
-      "status": "pending",
-      "completed_date": null
+      "status": "completed",
+      "completed_date": "2025-12-03"
     },
     {
       "id": "cf_002",
@@ -227,8 +227,8 @@
         "零存货",
         "周转率极低"
       ],
-      "status": "pending",
-      "completed_date": null
+      "status": "completed",
+      "completed_date": "2025-12-03"
     },
     {
       "id": "cf_003",
@@ -252,8 +252,8 @@
         "偿债导致",
         "综合变动"
       ],
-      "status": "pending",
-      "completed_date": null
+      "status": "completed",
+      "completed_date": "2025-12-03"
     },
     {
       "id": "tx_001",
