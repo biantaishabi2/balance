@@ -151,6 +151,36 @@ Phase 3 (P2)
 
 ---
 
+## 如何更新进度
+
+完成一个工具后，需要同步更新两个文件：
+
+### 1. 更新本文件 (PROGRESS.md)
+- 修改对应工具的状态：`⏳` → `✅`
+- 更新模块的"完成数"
+- 更新总览表的统计
+- 在更新日志添加记录
+
+### 2. 更新 tools_checklist.json
+- 找到对应工具的 `id`
+- 修改 `status`: `"pending"` → `"completed"`
+- 填写 `completed_date`: `"2025-12-03"`
+- 如果是新模块的第一个工具，同时更新 `modules` 里的状态
+
+**示例：完成 `variance_analysis` 工具后**
+
+```json
+// tools_checklist.json
+{
+  "id": "fa_001",
+  "name": "variance_analysis",
+  "status": "completed",        // 改这里
+  "completed_date": "2025-12-03" // 填日期
+}
+```
+
+---
+
 ## 更新日志
 
 | 日期 | 更新内容 |
