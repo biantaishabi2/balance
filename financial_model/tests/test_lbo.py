@@ -150,7 +150,7 @@ class TestLBOModel:
         assert result["transaction"]["purchase_price"]["value"] == 800_000_000
 
         # 验证持有期
-        assert len(result["operating_model"]) == 5
+        assert len(result["operating_model"]["projections"]) == 5
 
         # 验证IRR在合理范围（15%-25%）
         irr = result["returns"]["irr"]["value"]
@@ -312,7 +312,7 @@ class TestEdgeCases:
         }
 
         result = lbo.build(inputs)
-        assert len(result["operating_model"]) == 1
+        assert len(result["operating_model"]["projections"]) == 1
 
     def test_no_growth(self):
         """测试零增长场景"""

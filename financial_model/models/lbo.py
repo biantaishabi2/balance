@@ -615,7 +615,6 @@ class LBOModel(FinancialModel):
         result["returns"]["irr"] = to_model_result_dict(result["returns"]["irr"])
         result["returns"]["moic"] = to_model_result_dict(result["returns"]["moic"])
 
-        # 转换 operating_model 格式
-        result["operating_model"] = result["operating_model"]["projections"]
+        # operating_model 保持原子工具的格式 {"projections": [...], "summary": {...}}
 
         return result

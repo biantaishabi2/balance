@@ -185,45 +185,6 @@ def cmd_lbo_sensitivity(args):
         print_table(headers, rows, f"{metric.upper()} Sensitivity (Entry vs Exit Multiple)")
 
 
-def cmd_lbo_export(args):
-    """LBO导出Excel"""
-    from financial_model.models import LBOModel
-
-    data = read_json_input()
-
-    lbo = LBOModel()
-
-    # 如果输入是完整结果，直接导出；否则先计算
-    if "_meta" in data and data["_meta"].get("model_type") == "lbo":
-        result = data
-    else:
-        result = lbo.build(data)
-
-    # 导出（需要实现to_excel方法）
-    output_file = args.output or "lbo_model.xlsx"
-
-    try:
-        # 简单导出逻辑
-        import openpyxl
-        wb = openpyxl.Workbook()
-        ws = wb.active
-        ws.title = "LBO Summary"
-
-        ws["A1"] = "LBO Analysis"
-        ws["A3"] = "IRR"
-        ws["B3"] = result["returns"]["irr"]["value"]
-        ws["A4"] = "MOIC"
-        ws["B4"] = result["returns"]["moic"]["value"]
-        ws["A5"] = "Equity Invested"
-        ws["B5"] = result["transaction"]["equity_invested"]
-        ws["A6"] = "Equity Proceeds"
-        ws["B6"] = result["exit_analysis"]["equity_proceeds"]["value"]
-
-        wb.save(output_file)
-        print(f"已导出到 {output_file}", file=sys.stderr)
-    except ImportError:
-        print("错误: 需要安装 openpyxl (pip install openpyxl)", file=sys.stderr)
-        sys.exit(1)
 
 
 # ============================================================
@@ -330,22 +291,6 @@ def cmd_ma_breakeven(args):
     print_json(output, args.compact)
 
 
-def cmd_ma_export(args):
-    """M&A导出Excel"""
-    from financial_model.models import MAModel
-
-    data = read_json_input()
-
-    ma = MAModel()
-
-    if "_meta" in data and data["_meta"].get("model_type") == "ma":
-        result = data
-    else:
-        result = ma.build(data)
-
-    output_file = args.output or "ma_model.xlsx"
-    ma.to_excel(result, output_file)
-    print(f"已导出到 {output_file}", file=sys.stderr)
 
 
 # ============================================================
@@ -820,6 +765,77 @@ def cmd_prepare_dcf(args):
 
 
 # ============================================================
+# Export 命令
+# ============================================================
+
+def cmd_export(args):
+    """统一导出Excel"""
+    from financial_model.io import ExcelWriter
+    from financial_model.tools import lbo_quick_build, ma_quick_build, dcf_quick_valuate
+
+    data = read_json_input()
+    modules = [m.strip() for m in args.modules.split(",")]
+
+    writer = ExcelWriter()
+
+    for module in modules:
+        if module == "lbo":
+            # 如果输入已经是LBO结果，直接用；否则计算
+            if "_meta" in data and data["_meta"].get("model_type") == "lbo":
+                result = data
+            else:
+                result = lbo_quick_build(data)
+            writer.write_lbo(result)
+
+        elif module == "lbo-sensitivity" or module == "sensitivity":
+            # 敏感性分析需要先跑LBO
+            entry_range = parse_float_list(args.entry) if args.entry else [7.0, 7.5, 8.0, 8.5, 9.0]
+            exit_range = parse_float_list(args.exit) if args.exit else [7.0, 7.5, 8.0, 8.5, 9.0]
+
+            # 构建IRR敏感性矩阵
+            irr_data = []
+            moic_data = []
+            for entry in entry_range:
+                irr_row = {"entry_multiple": entry}
+                moic_row = {"entry_multiple": entry}
+                for exit_mult in exit_range:
+                    inputs = data.copy()
+                    inputs["entry_multiple"] = entry
+                    inputs["exit_multiple"] = exit_mult
+                    result = lbo_quick_build(inputs)
+                    irr_row[f"{exit_mult:.1f}x"] = f"{result['returns']['irr']['value']:.1%}"
+                    moic_row[f"{exit_mult:.1f}x"] = f"{result['returns']['moic']['value']:.2f}x"
+                irr_data.append(irr_row)
+                moic_data.append(moic_row)
+
+            sens_result = {
+                "irr_sensitivity": {"data": irr_data},
+                "moic_sensitivity": {"data": moic_data}
+            }
+            writer.write_lbo_sensitivity(sens_result)
+
+        elif module == "dcf":
+            if "_meta" in data and data["_meta"].get("model_type") == "dcf":
+                result = data
+            else:
+                result = dcf_quick_valuate(data)
+            writer.write_dcf(result)
+
+        elif module == "three":
+            # 三表模型直接写入
+            writer.write_three_statement(data)
+
+        elif module == "three-formula":
+            writer.write_three_statement_formula(data)
+
+        else:
+            print(f"警告: 未知模块 '{module}'，跳过", file=sys.stderr)
+
+    output_file = args.output or "financial_model.xlsx"
+    writer.save(output_file)
+
+
+# ============================================================
 # Tool 命令
 # ============================================================
 
@@ -970,6 +986,8 @@ def main():
   fm prepare dcf < financial.json | fm dcf calc
   fm tool list
   fm tool run calc_irr < cashflows.json
+  fm export lbo,lbo-sensitivity -o output.xlsx < lbo_input.json
+  fm export dcf,three -o valuation.xlsx < combined.json
 
 更多帮助:
   fm <command> --help
@@ -1001,10 +1019,6 @@ def main():
     lbo_sens.add_argument("--compact", action="store_true", help="紧凑输出")
     lbo_sens.set_defaults(func=cmd_lbo_sensitivity)
 
-    # lbo export
-    lbo_export = lbo_sub.add_parser("export", help="导出Excel")
-    lbo_export.add_argument("-o", "--output", help="输出文件")
-    lbo_export.set_defaults(func=cmd_lbo_export)
 
     # ===== M&A =====
     ma_parser = subparsers.add_parser("ma", help="并购分析")
@@ -1033,10 +1047,6 @@ def main():
     ma_be.add_argument("--compact", action="store_true", help="紧凑输出")
     ma_be.set_defaults(func=cmd_ma_breakeven)
 
-    # ma export
-    ma_export = ma_sub.add_parser("export", help="导出Excel")
-    ma_export.add_argument("-o", "--output", help="输出文件")
-    ma_export.set_defaults(func=cmd_ma_export)
 
     # ===== DCF =====
     dcf_parser = subparsers.add_parser("dcf", help="DCF估值")
@@ -1152,6 +1162,14 @@ def main():
     tool_help.add_argument("tool_name", help="工具名称")
     tool_help.set_defaults(func=cmd_tool_help)
 
+    # ===== Export =====
+    export_parser = subparsers.add_parser("export", help="导出Excel")
+    export_parser.add_argument("modules", help="要导出的模块(逗号分隔): lbo,lbo-sensitivity,dcf,three,three-formula")
+    export_parser.add_argument("-o", "--output", help="输出文件(默认 financial_model.xlsx)")
+    export_parser.add_argument("--entry", help="入场倍数范围(用于敏感性分析，逗号分隔)")
+    export_parser.add_argument("--exit", help="退出倍数范围(用于敏感性分析，逗号分隔)")
+    export_parser.set_defaults(func=cmd_export)
+
     # 解析参数
     args = parser.parse_args()
 
@@ -1177,6 +1195,8 @@ def main():
             prepare_parser.print_help()
         elif args.command == "tool":
             tool_parser.print_help()
+        elif args.command == "export":
+            export_parser.print_help()
 
 
 if __name__ == "__main__":

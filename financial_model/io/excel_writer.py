@@ -732,7 +732,8 @@ class ExcelWriter:
         # ===== 运营预测 =====
         row = self._write_title(ws, row, "运营预测")
 
-        operations = result.get("operating_model", [])
+        operating_model = result.get("operating_model", {})
+        operations = operating_model.get("projections", [])
         if operations:
             headers = ["指标"] + [f"Year {op['year']}" for op in operations]
             row = self._write_header_row(ws, row, headers)
