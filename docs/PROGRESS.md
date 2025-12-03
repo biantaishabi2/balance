@@ -7,13 +7,13 @@
 | 投行建模 | `fm` | ✅ 已完成 | 30 | 30 |
 | 财务分析 | `fa` | ✅ 已完成 | 4 | 4 |
 | 管理会计 | `ma` | ✅ 已完成 | 5 | 5 |
-| 会计审计 | `ac` | ⏳ 待开发 | 4 | 0 |
+| 会计审计 | `ac` | ✅ 已完成 | 4 | 4 |
 | 资金管理 | `cf` | ✅ 已完成 | 3 | 3 |
 | 税务筹划 | `tx` | ✅ 已完成 | 6 | 6 |
 | 风险管理 | `ri` | ✅ 已完成 | 4 | 4 |
 | 绩效考核 | `kp` | ✅ 已完成 | 4 | 4 |
 
-**总计：60 个工具，已完成 56 个（93%）**
+**总计：60 个工具，已完成 60 个（100%）**
 
 ---
 
@@ -72,16 +72,21 @@
 
 ---
 
-### 4. ac - 会计审计 ⏳
+### 4. ac - 会计审计 ✅
 
-**状态：待开发 | 优先级：P2**
+**状态：已完成 | 优先级：P2**
 
 | 工具 | 描述 | 状态 |
 |------|------|------|
-| `trial_balance` | 试算平衡检查 | ⏳ |
-| `adjusting_entries` | 调整分录建议 | ⏳ |
-| `audit_sampling` | 审计抽样（MUS/随机） | ⏳ |
-| `consolidation` | 合并报表抵消 | ⏳ |
+| `trial_balance` | 试算平衡检查 | ✅ |
+| `adjusting_entries` | 调整分录建议 | ✅ |
+| `audit_sampling` | 审计抽样（MUS/随机/系统/分层） | ✅ |
+| `consolidation` | 合并报表抵消 | ✅ |
+
+**文件：**
+- `fin_tools/tools/audit_tools.py` - 工具函数
+- `ac.py` - CLI 入口
+- `tests/test_audit_tools.py` - 测试用例（50个）
 
 ---
 
@@ -222,3 +227,5 @@ Phase 3 (P2)
 | 2025-12-03 | fa/cf/tx 模块边界测试补全（fa: 25→35, cf: 18→27, tx: 25→44） |
 | 2025-12-03 | ri 模块4个工具已完成（credit_score, ar_aging, bad_debt_provision, fx_exposure） |
 | 2025-12-03 | kp 模块4个工具已完成（kpi_dashboard, eva_calc, balanced_scorecard, okr_progress） |
+| 2025-12-03 | ac 模块4个工具已完成（trial_balance, adjusting_entries, audit_sampling, consolidation） |
+| 2025-12-03 | **全部60个工具开发完成！** |
