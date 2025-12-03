@@ -1,0 +1,434 @@
+{
+  "_meta": {
+    "model_type": "lbo",
+    "holding_period": 5,
+    "built_with": "atomic_tools"
+  },
+  "transaction": {
+    "purchase_price": {
+      "value": 26860.0,
+      "formula": "EBITDA × Entry Multiple",
+      "inputs": {
+        "ebitda": 3400,
+        "multiple": 7.9
+      },
+      "source": "tool"
+    },
+    "sources_uses": {
+      "equity_required": 14527.2,
+      "uses": {
+        "purchase_price": 26860.0,
+        "transaction_fees": 537.2,
+        "financing_fees": 130.0,
+        "total_uses": 27527.2
+      },
+      "sources": {
+        "debt_senior": 9000.0,
+        "debt_subordinated": 4000.0,
+        "total_debt": 13000.0,
+        "existing_cash": 0,
+        "equity": 14527.2,
+        "total_sources": 27527.2
+      },
+      "formula": "Equity = Total Uses - Total Debt - Existing Cash",
+      "inputs": {
+        "purchase_price": 26860.0,
+        "debt_amounts": {
+          "senior": 9000.0,
+          "subordinated": 4000.0
+        },
+        "transaction_fee_rate": 0.02,
+        "financing_fee_rate": 0.01,
+        "existing_cash": 0
+      },
+      "source": "tool"
+    },
+    "equity_invested": 14527.2
+  },
+  "operating_model": {
+    "projections": [
+      {
+        "year": 1,
+        "revenue": 14120.967741935485,
+        "ebitda": 3502.0,
+        "depreciation": 1401.7894984695079,
+        "ebit": 2100.2105015304924,
+        "capex": 1401.7894984695079,
+        "nwc": 721.509300682835,
+        "delta_nwc": 21.014834000470955,
+        "ufcf": 2079.1956675300216,
+        "tax_rate": 0.25
+      },
+      {
+        "year": 2,
+        "revenue": 14615.201612903225,
+        "ebitda": 3653.8004032258063,
+        "depreciation": 1450.8521309159405,
+        "ebit": 2202.948272309866,
+        "capex": 1450.8521309159405,
+        "nwc": 746.7621262067341,
+        "delta_nwc": 25.252825523899105,
+        "ufcf": 2177.695446785967,
+        "tax_rate": 0.25
+      },
+      {
+        "year": 3,
+        "revenue": 15199.809677419355,
+        "ebitda": 3875.9514677419356,
+        "depreciation": 1508.8862161525783,
+        "ebit": 2367.065251589357,
+        "capex": 1508.8862161525783,
+        "nwc": 776.6326112550036,
+        "delta_nwc": 29.870485048269416,
+        "ufcf": 2337.1947665410876,
+        "tax_rate": 0.25
+      },
+      {
+        "year": 4,
+        "revenue": 15731.80301612903,
+        "ebitda": 4058.80517816129,
+        "depreciation": 1561.6972337179182,
+        "ebit": 2497.1079444433717,
+        "capex": 1561.6972337179182,
+        "nwc": 803.8147526489286,
+        "delta_nwc": 27.182141393925008,
+        "ufcf": 2469.9258030494466,
+        "tax_rate": 0.25
+      },
+      {
+        "year": 5,
+        "revenue": 16203.7571066129,
+        "ebitda": 4212.976847719354,
+        "depreciation": 1608.5481507294558,
+        "ebit": 2604.428696989898,
+        "capex": 1608.5481507294558,
+        "nwc": 827.9291952283963,
+        "delta_nwc": 24.114442579467777,
+        "ufcf": 2580.3142544104303,
+        "tax_rate": 0.25
+      }
+    ],
+    "summary": {
+      "entry_revenue": 13709.677419354839,
+      "exit_revenue": 16203.7571066129,
+      "exit_ebitda": 4212.976847719354,
+      "total_ufcf": 11644.325938316953
+    },
+    "inputs": {
+      "base_revenue": 13709.677419354839,
+      "years": 5,
+      "revenue_growth": [
+        0.03,
+        0.035,
+        0.04,
+        0.035,
+        0.03
+      ],
+      "ebitda_margin": [
+        0.248,
+        0.25,
+        0.255,
+        0.258,
+        0.26
+      ],
+      "capex_percent": 0.09927007299270073,
+      "nwc_percent": 0.051094890510948905,
+      "tax_rate": 0.25,
+      "da_percent": 0.09927007299270073
+    },
+    "source": "tool"
+  },
+  "debt_schedule": {
+    "schedule": {
+      "senior": [
+        {
+          "year": 1,
+          "opening_balance": 9000.0,
+          "cash_interest": 585.0,
+          "pik_interest": 0.0,
+          "mandatory_amort": 0.0,
+          "cash_sweep": 645.2947816105489,
+          "total_principal_payment": 645.2947816105489,
+          "closing_balance": 8354.705218389452
+        },
+        {
+          "year": 2,
+          "opening_balance": 8354.705218389452,
+          "cash_interest": 543.0558391953144,
+          "pik_interest": 0.0,
+          "mandatory_amort": 0.0,
+          "cash_sweep": 723.4998744840109,
+          "total_principal_payment": 723.4998744840109,
+          "closing_balance": 7631.205343905442
+        },
+        {
+          "year": 3,
+          "opening_balance": 7631.205343905442,
+          "cash_interest": 496.02834735385375,
+          "pik_interest": 0.0,
+          "mandatory_amort": 0.0,
+          "cash_sweep": 838.8053948462684,
+          "total_principal_payment": 838.8053948462684,
+          "closing_balance": 6792.399949059173
+        },
+        {
+          "year": 4,
+          "opening_balance": 6792.399949059173,
+          "cash_interest": 441.50599668884627,
+          "pik_interest": 0.0,
+          "mandatory_amort": 0.0,
+          "cash_sweep": 944.6394895664769,
+          "total_principal_payment": 944.6394895664769,
+          "closing_balance": 5847.760459492696
+        },
+        {
+          "year": 5,
+          "opening_balance": 5847.760459492696,
+          "cash_interest": 380.10442986702526,
+          "pik_interest": 0.0,
+          "mandatory_amort": 0.0,
+          "cash_sweep": 1041.8465683220152,
+          "total_principal_payment": 1041.8465683220152,
+          "closing_balance": 4805.913891170681
+        }
+      ],
+      "subordinated": [
+        {
+          "year": 1,
+          "opening_balance": 4000.0,
+          "cash_interest": 340.0,
+          "pik_interest": 0.0,
+          "mandatory_amort": 0.0,
+          "cash_sweep": 0.0,
+          "total_principal_payment": 0.0,
+          "closing_balance": 4000.0
+        },
+        {
+          "year": 2,
+          "opening_balance": 4000.0,
+          "cash_interest": 340.0,
+          "pik_interest": 0.0,
+          "mandatory_amort": 0.0,
+          "cash_sweep": 0.0,
+          "total_principal_payment": 0.0,
+          "closing_balance": 4000.0
+        },
+        {
+          "year": 3,
+          "opening_balance": 4000.0,
+          "cash_interest": 340.0,
+          "pik_interest": 0.0,
+          "mandatory_amort": 0.0,
+          "cash_sweep": 0.0,
+          "total_principal_payment": 0.0,
+          "closing_balance": 4000.0
+        },
+        {
+          "year": 4,
+          "opening_balance": 4000.0,
+          "cash_interest": 340.0,
+          "pik_interest": 0.0,
+          "mandatory_amort": 0.0,
+          "cash_sweep": 0.0,
+          "total_principal_payment": 0.0,
+          "closing_balance": 4000.0
+        },
+        {
+          "year": 5,
+          "opening_balance": 4000.0,
+          "cash_interest": 340.0,
+          "pik_interest": 0.0,
+          "mandatory_amort": 0.0,
+          "cash_sweep": 0.0,
+          "total_principal_payment": 0.0,
+          "closing_balance": 4000.0
+        }
+      ]
+    },
+    "annual_summary": [
+      {
+        "year": 1,
+        "ufcf": 2079.1956675300216,
+        "total_interest": 925.0,
+        "taxes": 293.8026253826231,
+        "net_income": 881.4078761478693,
+        "cash_for_debt": 860.3930421473985,
+        "mandatory_amort": 0.0,
+        "cash_sweep": 645.2947816105489,
+        "total_debt_paydown": 645.2947816105489,
+        "ending_debt": 12354.705218389452,
+        "fcf_to_equity": 215.0982605368497
+      },
+      {
+        "year": 2,
+        "ufcf": 2177.695446785967,
+        "total_interest": 883.0558391953144,
+        "taxes": 329.9731082786378,
+        "net_income": 989.9193248359135,
+        "cash_for_debt": 964.6664993120145,
+        "mandatory_amort": 0.0,
+        "cash_sweep": 723.4998744840109,
+        "total_debt_paydown": 723.4998744840109,
+        "ending_debt": 11631.205343905442,
+        "fcf_to_equity": 241.1666248280036
+      },
+      {
+        "year": 3,
+        "ufcf": 2337.1947665410876,
+        "total_interest": 836.0283473538537,
+        "taxes": 382.7592260588758,
+        "net_income": 1148.2776781766274,
+        "cash_for_debt": 1118.407193128358,
+        "mandatory_amort": 0.0,
+        "cash_sweep": 838.8053948462684,
+        "total_debt_paydown": 838.8053948462684,
+        "ending_debt": 10792.399949059174,
+        "fcf_to_equity": 279.6017982820895
+      },
+      {
+        "year": 4,
+        "ufcf": 2469.9258030494466,
+        "total_interest": 781.5059966888463,
+        "taxes": 428.9004869386314,
+        "net_income": 1286.7014608158943,
+        "cash_for_debt": 1259.5193194219692,
+        "mandatory_amort": 0.0,
+        "cash_sweep": 944.6394895664769,
+        "total_debt_paydown": 944.6394895664769,
+        "ending_debt": 9847.760459492696,
+        "fcf_to_equity": 314.8798298554923
+      },
+      {
+        "year": 5,
+        "ufcf": 2580.3142544104303,
+        "total_interest": 720.1044298670253,
+        "taxes": 471.0810667807182,
+        "net_income": 1413.2432003421545,
+        "cash_for_debt": 1389.1287577626867,
+        "mandatory_amort": 0.0,
+        "cash_sweep": 1041.8465683220152,
+        "total_debt_paydown": 1041.8465683220152,
+        "ending_debt": 8805.913891170681,
+        "fcf_to_equity": 347.2821894406716
+      }
+    ],
+    "final_debt": 8805.913891170681,
+    "total_interest_paid": 4145.69461310504,
+    "inputs": {
+      "debt_tranches": [
+        {
+          "name": "senior",
+          "amount": 9000.0,
+          "interest_rate": 0.065,
+          "amortization_rate": 0,
+          "pik_rate": 0,
+          "priority": 1
+        },
+        {
+          "name": "subordinated",
+          "amount": 4000.0,
+          "interest_rate": 0.085,
+          "amortization_rate": 0,
+          "pik_rate": 0,
+          "priority": 1
+        }
+      ],
+      "sweep_percent": 0.75,
+      "min_cash": 0
+    },
+    "source": "tool"
+  },
+  "exit_analysis": {
+    "exit_ebitda": 4212.976847719354,
+    "exit_value": {
+      "value": 33282.5170969829,
+      "formula": "Exit EBITDA × Exit Multiple",
+      "inputs": {
+        "exit_ebitda": 4212.976847719354,
+        "exit_multiple": 7.9
+      },
+      "source": "tool"
+    },
+    "ending_debt": 8805.913891170681,
+    "equity_proceeds": {
+      "value": 24476.603205812215,
+      "net_debt": 8805.913891170681,
+      "formula": "Exit Value - Net Debt",
+      "inputs": {
+        "exit_value": 33282.5170969829,
+        "ending_debt": 8805.913891170681,
+        "ending_cash": 0
+      },
+      "source": "tool"
+    }
+  },
+  "returns": {
+    "irr": {
+      "value": 0.10997665898762833,
+      "formula": "IRR(Cash Flows)",
+      "inputs": {
+        "cash_flows": [
+          -14527.2,
+          0,
+          0,
+          0,
+          0,
+          24476.603205812215
+        ],
+        "years": 5
+      },
+      "source": "tool"
+    },
+    "moic": {
+      "value": 1.684880996049632,
+      "formula": "(Exit Proceeds + Distributions) / Equity Invested",
+      "inputs": {
+        "equity_invested": 14527.2,
+        "equity_proceeds": 24476.603205812215,
+        "interim_distributions": 0,
+        "total_return": 24476.603205812215
+      },
+      "source": "tool"
+    },
+    "cash_flows": [
+      -14527.2,
+      0,
+      0,
+      0,
+      0,
+      24476.603205812215
+    ]
+  },
+  "credit_stats": [
+    {
+      "year": 1,
+      "debt_to_ebitda": 3.53,
+      "interest_coverage": 3.79,
+      "debt_paydown": 645.2947816105489
+    },
+    {
+      "year": 2,
+      "debt_to_ebitda": 3.18,
+      "interest_coverage": 4.14,
+      "debt_paydown": 723.4998744840109
+    },
+    {
+      "year": 3,
+      "debt_to_ebitda": 2.78,
+      "interest_coverage": 4.64,
+      "debt_paydown": 838.8053948462684
+    },
+    {
+      "year": 4,
+      "debt_to_ebitda": 2.43,
+      "interest_coverage": 5.19,
+      "debt_paydown": 944.6394895664769
+    },
+    {
+      "year": 5,
+      "debt_to_ebitda": 2.09,
+      "interest_coverage": 5.85,
+      "debt_paydown": 1041.8465683220152
+    }
+  ]
+}

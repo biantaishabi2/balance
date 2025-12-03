@@ -710,11 +710,10 @@ class ExcelWriter:
             pp.get("formula", "")
         ])
 
-        # 资金来源
+        # 资金来源与用途
         su = transaction.get("sources_uses", {})
-        su_inputs = su.get("inputs", {})
-        sources = su_inputs.get("sources", {})
-        uses = su_inputs.get("uses", {})
+        uses = su.get("uses", {})
+        sources = su.get("sources", {})
 
         row = self._write_data_row(ws, row, ["交易费用", uses.get("transaction_fees", 0), ""])
         row = self._write_data_row(ws, row, ["融资费用", uses.get("financing_fees", 0), ""])
