@@ -15,7 +15,7 @@ from datetime import datetime
 # 添加父目录到路径
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
-from financial_model.models import (
+from fin_tools.models import (
     ThreeStatementModel,
     DCFModel,
     DeferredTax,
@@ -23,7 +23,7 @@ from financial_model.models import (
     LeaseCapitalization,
     ScenarioManager
 )
-from financial_model.io import ExcelWriter
+from fin_tools.io import ExcelWriter
 
 # 路径配置
 SCRIPT_DIR = Path(__file__).parent

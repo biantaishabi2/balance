@@ -4,7 +4,7 @@
 """
 
 import pytest
-from financial_model.tools.ratio_tools import (
+from fin_tools.tools.ratio_tools import (
     calc_profitability,
     calc_liquidity,
     calc_solvency,

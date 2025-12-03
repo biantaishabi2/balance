@@ -38,7 +38,7 @@
 **职责**：记录每个变量写入的单元格位置，供后续公式引用。
 
 ```python
-# financial_model/io/cell_tracker.py
+# fin_tools/io/cell_tracker.py
 
 from typing import Dict, Optional
 from openpyxl.utils import get_column_letter
@@ -139,7 +139,7 @@ class CellTracker:
 **职责**：根据计算逻辑和单元格引用，生成 Excel 公式字符串。
 
 ```python
-# financial_model/io/formula_builder.py
+# fin_tools/io/formula_builder.py
 
 from typing import Dict, List, Optional
 from .cell_tracker import CellTracker
@@ -309,7 +309,7 @@ class FormulaBuilder:
 ### 2.1 双模式支持
 
 ```python
-# financial_model/io/excel_writer.py (增强版)
+# fin_tools/io/excel_writer.py (增强版)
 
 class ExcelWriter:
     """
@@ -499,7 +499,7 @@ writer.save("output_formula.xlsx")
 ### 3.3 使用示例
 
 ```python
-from financial_model import ThreeStatementModel, ExcelWriter
+from fin_tools import ThreeStatementModel, ExcelWriter
 
 # 构建模型
 model = ThreeStatementModel(base_data)

@@ -585,7 +585,7 @@ balance/
 ├── ac.py                    # 会计审计 CLI（待实现）
 ├── cf.py                    # 资金管理 CLI（待实现）
 │
-├── financial_model/
+├── fin_tools/
 │   ├── tools/
 │   │   ├── lbo_tools.py           # LBO 原子工具
 │   │   ├── ma_tools.py            # M&A 原子工具

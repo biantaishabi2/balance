@@ -11,7 +11,7 @@ M&A 原子工具测试
 """
 
 import pytest
-from financial_model.tools.ma_tools import (
+from fin_tools.tools.ma_tools import (
     calc_offer_price,
     calc_funding_mix,
     calc_goodwill,
@@ -691,7 +691,7 @@ class TestTracability:
 # MAModel 类测试
 # ============================================
 
-from financial_model.models.ma import MAModel
+from fin_tools.models.ma import MAModel
 
 
 class TestMAModelClass:

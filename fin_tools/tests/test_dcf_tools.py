@@ -4,7 +4,7 @@ DCF 原子工具测试
 """
 
 import pytest
-from financial_model.tools.dcf_tools import (
+from fin_tools.tools.dcf_tools import (
     calc_capm,
     calc_wacc,
     calc_fcff,

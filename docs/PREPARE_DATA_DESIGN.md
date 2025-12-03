@@ -248,9 +248,9 @@ TOOL_REGISTRY = {
     # ... 现有工具 ...
 
     # Prepare 工具
-    "prepare_lbo_data": ("financial_model.tools.prepare_tools", "LBO数据准备"),
-    "prepare_ma_data": ("financial_model.tools.prepare_tools", "MA数据准备"),
-    "prepare_dcf_data": ("financial_model.tools.prepare_tools", "DCF数据准备"),
+    "prepare_lbo_data": ("fin_tools.tools.prepare_tools", "LBO数据准备"),
+    "prepare_ma_data": ("fin_tools.tools.prepare_tools", "MA数据准备"),
+    "prepare_dcf_data": ("fin_tools.tools.prepare_tools", "DCF数据准备"),
 }
 ```
 
@@ -274,7 +274,7 @@ LLM 调用:
 ## 实现架构
 
 ```
-financial_model/tools/
+fin_tools/tools/
 ├── lbo_tools.py           # 现有
 ├── ma_tools.py            # 现有
 ├── dcf_tools.py           # 现有

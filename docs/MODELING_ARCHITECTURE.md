@@ -315,7 +315,7 @@ net_income = ModelCell(
 ### 目录结构
 
 ```
-financial_model/
+fin_tools/
 │
 ├── core/                          # 核心模块
 │   ├── __init__.py
@@ -488,7 +488,7 @@ class FinancialModel:
                              │
                              ▼
 ┌─────────────────────────────────────────────────────────────┐
-│                    financial_model                          │
+│                    fin_tools                          │
 │                    (新建模工具)                              │
 │                                                             │
 │  输入 → 计算(带追溯) → 输出JSON                              │

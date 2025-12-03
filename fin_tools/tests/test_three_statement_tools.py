@@ -4,7 +4,7 @@
 """
 
 import pytest
-from financial_model.tools.three_statement_tools import (
+from fin_tools.tools.three_statement_tools import (
     forecast_revenue,
     forecast_cost,
     forecast_opex,

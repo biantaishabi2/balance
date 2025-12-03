@@ -7,7 +7,7 @@ M&A 模型（并购分析）
 本模块提供两种使用方式:
 
 1. 原子工具（推荐LLM使用）:
-   from financial_model.tools import calc_offer_price, calc_accretion_dilution, ...
+   from fin_tools.tools import calc_offer_price, calc_accretion_dilution, ...
    每个工具独立运行，可自由组合
 
 2. MAModel类（封装接口）:

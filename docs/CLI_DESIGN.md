@@ -675,7 +675,7 @@ balance/
 │   │   ├── table_fmt.py
 │   │   └── csv_fmt.py
 │   └── utils.py
-└── financial_model/         # 现有模型库（不变）
+└── fin_tools/         # 现有模型库（不变）
     ├── models/
     └── tools/
 ```

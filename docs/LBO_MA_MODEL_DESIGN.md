@@ -910,7 +910,7 @@ def calc_synergy_value(
 ## 3.1 目录结构
 
 ```
-financial_model/
+fin_tools/
 ├── models/
 │   ├── three_statement.py      # 现有
 │   ├── dcf.py                  # 现有
@@ -952,7 +952,7 @@ financial_model/
 ```python
 # 统一的模型接口
 
-from financial_model import LBOModel, MAModel
+from fin_tools import LBOModel, MAModel
 
 # LBO 模型
 lbo = LBOModel()
@@ -1913,7 +1913,7 @@ result = three_statement_quick_build(base_data, assumptions)
 ## 7.1 文件组织
 
 ```
-financial_model/
+fin_tools/
 ├── tools/
 │   ├── __init__.py              # 统一导出
 │   ├── lbo_tools.py             # ✅ 已完成 (9个工具)
@@ -1941,7 +1941,7 @@ financial_model/
 
 ```python
 # 方式1: 直接使用原子工具（LLM推荐）
-from financial_model.tools import (
+from fin_tools.tools import (
     calc_purchase_price,
     calc_wacc,
     forecast_revenue,
@@ -1954,7 +1954,7 @@ revenue = forecast_revenue(last_revenue=500_000_000, growth_rate=0.09)
 fcff = calc_fcff(ebit=70_000_000, tax_rate=0.25, ...)
 
 # 方式2: 使用Model类（快捷入口）
-from financial_model import LBOModel, DCFModel, ThreeStatementModel
+from fin_tools import LBOModel, DCFModel, ThreeStatementModel
 
 lbo = LBOModel()
 result = lbo.build(inputs)  # 内部调用原子工具

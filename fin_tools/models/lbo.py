@@ -7,7 +7,7 @@ LBO 模型（杠杆收购）
 本模块提供两种使用方式:
 
 1. 原子工具（推荐LLM使用）:
-   from financial_model.tools import calc_purchase_price, calc_sources_uses, ...
+   from fin_tools.tools import calc_purchase_price, calc_sources_uses, ...
    每个工具独立运行，可自由组合
 
 2. LBOModel类（封装接口）:

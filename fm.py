@@ -108,7 +108,7 @@ def parse_float_list(value: str) -> List[float]:
 
 def cmd_lbo_calc(args):
     """LBO计算"""
-    from financial_model.tools import lbo_quick_build
+    from fin_tools.tools import lbo_quick_build
 
     data = read_json_input()
 
@@ -143,7 +143,7 @@ def cmd_lbo_calc(args):
 
 def cmd_lbo_sensitivity(args):
     """LBO敏感性分析"""
-    from financial_model.tools import lbo_quick_build
+    from fin_tools.tools import lbo_quick_build
 
     data = read_json_input()
 
@@ -193,7 +193,7 @@ def cmd_lbo_sensitivity(args):
 
 def cmd_ma_calc(args):
     """M&A计算"""
-    from financial_model.tools import ma_quick_build
+    from fin_tools.tools import ma_quick_build
 
     data = read_json_input()
 
@@ -236,7 +236,7 @@ def cmd_ma_calc(args):
 
 def cmd_ma_accretion(args):
     """M&A增厚/稀释敏感性"""
-    from financial_model.tools import ma_quick_build
+    from fin_tools.tools import ma_quick_build
 
     data = read_json_input()
 
@@ -274,7 +274,7 @@ def cmd_ma_accretion(args):
 
 def cmd_ma_breakeven(args):
     """M&A盈亏平衡"""
-    from financial_model.tools import ma_quick_build
+    from fin_tools.tools import ma_quick_build
 
     data = read_json_input()
     result = ma_quick_build(data)
@@ -299,7 +299,7 @@ def cmd_ma_breakeven(args):
 
 def cmd_dcf_calc(args):
     """DCF计算"""
-    from financial_model.tools import (
+    from fin_tools.tools import (
         calc_wacc, calc_terminal_value, calc_enterprise_value,
         calc_equity_value, calc_per_share_value, dcf_quick_valuate
     )
@@ -368,7 +368,7 @@ def cmd_dcf_calc(args):
 
 def cmd_dcf_sensitivity(args):
     """DCF敏感性分析"""
-    from financial_model.tools import dcf_sensitivity
+    from fin_tools.tools import dcf_sensitivity
 
     data = read_json_input()
 
@@ -410,7 +410,7 @@ def cmd_dcf_sensitivity(args):
 
 def cmd_dcf_wacc(args):
     """WACC计算器"""
-    from financial_model.tools import calc_capm, calc_wacc
+    from fin_tools.tools import calc_capm, calc_wacc
 
     # CAPM
     cost_of_equity = calc_capm(
@@ -452,7 +452,7 @@ def cmd_dcf_wacc(args):
 
 def cmd_three_forecast(args):
     """三表预测"""
-    from financial_model.tools import three_statement_quick_build
+    from fin_tools.tools import three_statement_quick_build
 
     data = read_json_input()
 
@@ -467,7 +467,7 @@ def cmd_three_forecast(args):
 
 def cmd_three_check(args):
     """三表配平检验"""
-    from financial_model.tools import check_balance
+    from fin_tools.tools import check_balance
 
     data = read_json_input()
 
@@ -491,7 +491,7 @@ def cmd_three_check(args):
 
 def cmd_ratio_calc(args):
     """比率计算"""
-    from financial_model.tools import (
+    from fin_tools.tools import (
         calc_profitability, calc_liquidity, calc_solvency,
         calc_efficiency, calc_valuation, calc_all_ratios
     )
@@ -574,7 +574,7 @@ def cmd_ratio_calc(args):
 
 def cmd_ratio_dupont(args):
     """杜邦分析"""
-    from financial_model.tools import calc_dupont
+    from fin_tools.tools import calc_dupont
 
     data = read_json_input()
 
@@ -604,7 +604,7 @@ def cmd_ratio_compare(args):
     companies = data.get("companies", [])
     metrics = args.metrics.split(",") if args.metrics else ["roe", "net_margin", "roic"]
 
-    from financial_model.tools import calc_profitability, calc_solvency
+    from fin_tools.tools import calc_profitability, calc_solvency
 
     comparison = {"metrics": {}}
 
@@ -652,7 +652,7 @@ def cmd_ratio_compare(args):
 
 def cmd_ratio_trend(args):
     """趋势分析"""
-    from financial_model.tools import calc_profitability
+    from fin_tools.tools import calc_profitability
 
     data = read_json_input()
 
@@ -714,7 +714,7 @@ def cmd_ratio_trend(args):
 
 def cmd_prepare_lbo(args):
     """准备LBO数据"""
-    from financial_model.tools import prepare_lbo_data
+    from fin_tools.tools import prepare_lbo_data
 
     data = read_json_input()
 
@@ -734,7 +734,7 @@ def cmd_prepare_lbo(args):
 
 def cmd_prepare_ma(args):
     """准备MA数据"""
-    from financial_model.tools import prepare_ma_data
+    from fin_tools.tools import prepare_ma_data
 
     data = read_json_input()
 
@@ -750,7 +750,7 @@ def cmd_prepare_ma(args):
 
 def cmd_prepare_dcf(args):
     """准备DCF数据"""
-    from financial_model.tools import prepare_dcf_data
+    from fin_tools.tools import prepare_dcf_data
 
     data = read_json_input()
 
@@ -770,8 +770,8 @@ def cmd_prepare_dcf(args):
 
 def cmd_export(args):
     """统一导出Excel"""
-    from financial_model.io import ExcelWriter
-    from financial_model.tools import lbo_quick_build, ma_quick_build, dcf_quick_valuate
+    from fin_tools.io import ExcelWriter
+    from fin_tools.tools import lbo_quick_build, ma_quick_build, dcf_quick_valuate
 
     data = read_json_input()
     modules = [m.strip() for m in args.modules.split(",")]
@@ -831,7 +831,7 @@ def cmd_export(args):
         else:
             print(f"警告: 未知模块 '{module}'，跳过", file=sys.stderr)
 
-    output_file = args.output or "financial_model.xlsx"
+    output_file = args.output or "fin_tools.xlsx"
     writer.save(output_file)
 
 
@@ -841,58 +841,58 @@ def cmd_export(args):
 
 TOOL_REGISTRY = {
     # LBO
-    "calc_purchase_price": ("financial_model.tools.lbo_tools", "计算收购价格"),
-    "calc_sources_uses": ("financial_model.tools.lbo_tools", "资金来源与用途"),
-    "project_operations": ("financial_model.tools.lbo_tools", "预测运营数据"),
-    "calc_debt_schedule": ("financial_model.tools.lbo_tools", "债务计划表"),
-    "calc_exit_value": ("financial_model.tools.lbo_tools", "退出价值"),
-    "calc_equity_proceeds": ("financial_model.tools.lbo_tools", "股权所得"),
-    "calc_irr": ("financial_model.tools.lbo_tools", "内部收益率"),
-    "calc_moic": ("financial_model.tools.lbo_tools", "投资倍数"),
-    "lbo_quick_build": ("financial_model.tools.lbo_tools", "LBO快捷构建"),
+    "calc_purchase_price": ("fin_tools.tools.lbo_tools", "计算收购价格"),
+    "calc_sources_uses": ("fin_tools.tools.lbo_tools", "资金来源与用途"),
+    "project_operations": ("fin_tools.tools.lbo_tools", "预测运营数据"),
+    "calc_debt_schedule": ("fin_tools.tools.lbo_tools", "债务计划表"),
+    "calc_exit_value": ("fin_tools.tools.lbo_tools", "退出价值"),
+    "calc_equity_proceeds": ("fin_tools.tools.lbo_tools", "股权所得"),
+    "calc_irr": ("fin_tools.tools.lbo_tools", "内部收益率"),
+    "calc_moic": ("fin_tools.tools.lbo_tools", "投资倍数"),
+    "lbo_quick_build": ("fin_tools.tools.lbo_tools", "LBO快捷构建"),
     # M&A
-    "calc_offer_price": ("financial_model.tools.ma_tools", "收购报价"),
-    "calc_funding_mix": ("financial_model.tools.ma_tools", "融资结构"),
-    "calc_goodwill": ("financial_model.tools.ma_tools", "商誉计算"),
-    "calc_pro_forma": ("financial_model.tools.ma_tools", "合并报表"),
-    "calc_accretion_dilution": ("financial_model.tools.ma_tools", "增厚/稀释"),
-    "calc_synergies": ("financial_model.tools.ma_tools", "协同效应"),
-    "calc_breakeven": ("financial_model.tools.ma_tools", "盈亏平衡"),
-    "ma_quick_build": ("financial_model.tools.ma_tools", "M&A快捷构建"),
+    "calc_offer_price": ("fin_tools.tools.ma_tools", "收购报价"),
+    "calc_funding_mix": ("fin_tools.tools.ma_tools", "融资结构"),
+    "calc_goodwill": ("fin_tools.tools.ma_tools", "商誉计算"),
+    "calc_pro_forma": ("fin_tools.tools.ma_tools", "合并报表"),
+    "calc_accretion_dilution": ("fin_tools.tools.ma_tools", "增厚/稀释"),
+    "calc_synergies": ("fin_tools.tools.ma_tools", "协同效应"),
+    "calc_breakeven": ("fin_tools.tools.ma_tools", "盈亏平衡"),
+    "ma_quick_build": ("fin_tools.tools.ma_tools", "M&A快捷构建"),
     # DCF
-    "calc_capm": ("financial_model.tools.dcf_tools", "CAPM股权成本"),
-    "calc_wacc": ("financial_model.tools.dcf_tools", "加权平均资本成本"),
-    "calc_fcff": ("financial_model.tools.dcf_tools", "企业自由现金流"),
-    "calc_terminal_value": ("financial_model.tools.dcf_tools", "终值计算"),
-    "calc_enterprise_value": ("financial_model.tools.dcf_tools", "企业价值"),
-    "calc_equity_value": ("financial_model.tools.dcf_tools", "股权价值"),
-    "calc_per_share_value": ("financial_model.tools.dcf_tools", "每股价值"),
-    "dcf_sensitivity": ("financial_model.tools.dcf_tools", "DCF敏感性分析"),
-    "dcf_quick_valuate": ("financial_model.tools.dcf_tools", "DCF快捷估值"),
+    "calc_capm": ("fin_tools.tools.dcf_tools", "CAPM股权成本"),
+    "calc_wacc": ("fin_tools.tools.dcf_tools", "加权平均资本成本"),
+    "calc_fcff": ("fin_tools.tools.dcf_tools", "企业自由现金流"),
+    "calc_terminal_value": ("fin_tools.tools.dcf_tools", "终值计算"),
+    "calc_enterprise_value": ("fin_tools.tools.dcf_tools", "企业价值"),
+    "calc_equity_value": ("fin_tools.tools.dcf_tools", "股权价值"),
+    "calc_per_share_value": ("fin_tools.tools.dcf_tools", "每股价值"),
+    "dcf_sensitivity": ("fin_tools.tools.dcf_tools", "DCF敏感性分析"),
+    "dcf_quick_valuate": ("fin_tools.tools.dcf_tools", "DCF快捷估值"),
     # Three Statement
-    "forecast_revenue": ("financial_model.tools.three_statement_tools", "收入预测"),
-    "forecast_cost": ("financial_model.tools.three_statement_tools", "成本预测"),
-    "forecast_opex": ("financial_model.tools.three_statement_tools", "费用预测"),
-    "calc_income_statement": ("financial_model.tools.three_statement_tools", "利润表计算"),
-    "calc_working_capital": ("financial_model.tools.three_statement_tools", "营运资本"),
-    "calc_depreciation": ("financial_model.tools.three_statement_tools", "折旧计算"),
-    "calc_capex": ("financial_model.tools.three_statement_tools", "资本支出"),
-    "calc_operating_cash_flow": ("financial_model.tools.three_statement_tools", "经营现金流"),
-    "calc_cash_flow_statement": ("financial_model.tools.three_statement_tools", "现金流量表"),
-    "check_balance": ("financial_model.tools.three_statement_tools", "配平检验"),
-    "three_statement_quick_build": ("financial_model.tools.three_statement_tools", "三表快捷构建"),
+    "forecast_revenue": ("fin_tools.tools.three_statement_tools", "收入预测"),
+    "forecast_cost": ("fin_tools.tools.three_statement_tools", "成本预测"),
+    "forecast_opex": ("fin_tools.tools.three_statement_tools", "费用预测"),
+    "calc_income_statement": ("fin_tools.tools.three_statement_tools", "利润表计算"),
+    "calc_working_capital": ("fin_tools.tools.three_statement_tools", "营运资本"),
+    "calc_depreciation": ("fin_tools.tools.three_statement_tools", "折旧计算"),
+    "calc_capex": ("fin_tools.tools.three_statement_tools", "资本支出"),
+    "calc_operating_cash_flow": ("fin_tools.tools.three_statement_tools", "经营现金流"),
+    "calc_cash_flow_statement": ("fin_tools.tools.three_statement_tools", "现金流量表"),
+    "check_balance": ("fin_tools.tools.three_statement_tools", "配平检验"),
+    "three_statement_quick_build": ("fin_tools.tools.three_statement_tools", "三表快捷构建"),
     # Ratio Analysis
-    "calc_profitability": ("financial_model.tools.ratio_tools", "盈利能力分析"),
-    "calc_liquidity": ("financial_model.tools.ratio_tools", "流动性分析"),
-    "calc_solvency": ("financial_model.tools.ratio_tools", "偿债能力分析"),
-    "calc_efficiency": ("financial_model.tools.ratio_tools", "运营效率分析"),
-    "calc_valuation": ("financial_model.tools.ratio_tools", "估值分析"),
-    "calc_dupont": ("financial_model.tools.ratio_tools", "杜邦分析"),
-    "calc_all_ratios": ("financial_model.tools.ratio_tools", "全部比率分析"),
+    "calc_profitability": ("fin_tools.tools.ratio_tools", "盈利能力分析"),
+    "calc_liquidity": ("fin_tools.tools.ratio_tools", "流动性分析"),
+    "calc_solvency": ("fin_tools.tools.ratio_tools", "偿债能力分析"),
+    "calc_efficiency": ("fin_tools.tools.ratio_tools", "运营效率分析"),
+    "calc_valuation": ("fin_tools.tools.ratio_tools", "估值分析"),
+    "calc_dupont": ("fin_tools.tools.ratio_tools", "杜邦分析"),
+    "calc_all_ratios": ("fin_tools.tools.ratio_tools", "全部比率分析"),
     # Prepare (数据准备)
-    "prepare_lbo_data": ("financial_model.tools.prepare_tools", "LBO数据准备"),
-    "prepare_ma_data": ("financial_model.tools.prepare_tools", "MA数据准备"),
-    "prepare_dcf_data": ("financial_model.tools.prepare_tools", "DCF数据准备"),
+    "prepare_lbo_data": ("fin_tools.tools.prepare_tools", "LBO数据准备"),
+    "prepare_ma_data": ("fin_tools.tools.prepare_tools", "MA数据准备"),
+    "prepare_dcf_data": ("fin_tools.tools.prepare_tools", "DCF数据准备"),
 }
 
 
@@ -1165,7 +1165,7 @@ def main():
     # ===== Export =====
     export_parser = subparsers.add_parser("export", help="导出Excel")
     export_parser.add_argument("modules", help="要导出的模块(逗号分隔): lbo,lbo-sensitivity,dcf,three,three-formula")
-    export_parser.add_argument("-o", "--output", help="输出文件(默认 financial_model.xlsx)")
+    export_parser.add_argument("-o", "--output", help="输出文件(默认 fin_tools.xlsx)")
     export_parser.add_argument("--entry", help="入场倍数范围(用于敏感性分析，逗号分隔)")
     export_parser.add_argument("--exit", help="退出倍数范围(用于敏感性分析，逗号分隔)")
     export_parser.set_defaults(func=cmd_export)

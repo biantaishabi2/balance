@@ -13,7 +13,7 @@
 每个计算都带追溯信息，支持完整的依赖链追溯。
 
 使用示例:
-    from financial_model import ThreeStatementModel, DCFModel, LBOModel
+    from fin_tools import ThreeStatementModel, DCFModel, LBOModel
 
     # 三表模型
     model = ThreeStatementModel(base_data)
@@ -28,7 +28,7 @@
     result = lbo.build(inputs)
 
     # 原子工具（推荐LLM使用）
-    from financial_model.tools import calc_purchase_price, calc_irr
+    from fin_tools.tools import calc_purchase_price, calc_irr
     purchase = calc_purchase_price(100_000_000, 8.0)
     irr = calc_irr([-344_000_000, 0, 0, 0, 0, 880_000_000])
 """

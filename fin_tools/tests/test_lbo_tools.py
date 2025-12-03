@@ -6,7 +6,7 @@ LBO 原子工具测试
 """
 
 import pytest
-from financial_model.tools import (
+from fin_tools.tools import (
     calc_purchase_price,
     calc_sources_uses,
     project_operations,

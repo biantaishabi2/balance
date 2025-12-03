@@ -10,7 +10,7 @@ from pathlib import Path
 # 添加父目录到路径
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
-from financial_model.models import DeferredTax, Impairment, LeaseCapitalization
+from fin_tools.models import DeferredTax, Impairment, LeaseCapitalization
 
 
 class TestDeferredTax(unittest.TestCase):

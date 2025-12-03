@@ -13,7 +13,7 @@ import json
 import sys
 sys.path.insert(0, '/home/wangbo/document/balance')
 
-from financial_model.tools import lbo_quick_build
+from fin_tools.tools import lbo_quick_build
 
 
 def load_case():
