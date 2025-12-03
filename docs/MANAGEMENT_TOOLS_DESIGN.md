@@ -618,11 +618,198 @@ balance/
 
 ---
 
+## 数据来源与接口设计
+
+### 现实中的工作流程
+
+| 角色 | 常用工具 | 数据来源 |
+|------|----------|----------|
+| 会计 | 金蝶、用友、SAP | ERP 系统记账 |
+| 财务分析 | Excel | 从 ERP 导出，手工分析 |
+| 管理会计 | Excel | 从 ERP 导出 + 手工整理 |
+| 投行 | Excel | 公开财报 + 尽调数据 |
+| 审计 | Excel + 审计软件 | 从客户 ERP 导出 |
+
+### 数据流设计
+
+```
+ERP系统 (金蝶/用友/SAP)
+    ↓ 导出 Excel/CSV
+通用解析器 (excel2json)
+    ↓ 转换为标准 JSON
+原子工具 (fa/ma/ac/cf)
+    ↓ 计算分析
+Excel 报表输出
+```
+
+### 中国会计准则标准格式
+
+所有 ERP 系统导出的底层格式是统一的，因为都要符合国家会计准则（财会字[2019]6号）。
+
+#### 科目余额表（标准格式）
+```
+科目编码 | 科目名称 | 期初借方 | 期初贷方 | 本期借方 | 本期贷方 | 期末借方 | 期末贷方
+1001    | 库存现金  | 10000   | 0       | 50000   | 45000   | 15000   | 0
+1002    | 银行存款  | 500000  | 0       | 800000  | 750000  | 550000  | 0
+1122    | 应收账款  | 200000  | 0       | 300000  | 280000  | 220000  | 0
+2202    | 应付账款  | 0       | 150000  | 120000  | 180000  | 0       | 210000
+...
+```
+
+#### 标准科目编码体系
+```
+1xxx - 资产类
+2xxx - 负债类
+3xxx - 权益类
+4xxx - 成本类
+5xxx - 损益类
+```
+
+#### 三大报表
+- **资产负债表** - 财会字[2019]6号 规定格式
+- **利润表** - 财会字[2019]6号 规定格式
+- **现金流量表** - 财会字[2019]6号 规定格式
+
+### 不同 ERP 的差异
+
+| 相同点 | 不同点 |
+|--------|--------|
+| 科目编码体系 | Excel 导出的列名略有差异 |
+| 报表项目结构 | 文件格式（xls/xlsx/csv） |
+| 借贷方向规则 | 多余的辅助列 |
+
+### 通用解析器设计
+
+通过列名映射处理不同 ERP 的导出格式：
+
+```python
+# 列名映射配置
+COLUMN_MAPPING = {
+    # 科目编码
+    "科目代码": "account_code",      # 金蝶
+    "会计科目": "account_code",      # 用友
+    "科目编码": "account_code",      # 通用
+    "GL Account": "account_code",    # SAP
+
+    # 科目名称
+    "科目名称": "account_name",      # 金蝶/用友
+    "科目": "account_name",          # 简写
+    "Description": "account_name",   # SAP
+
+    # 期初余额
+    "期初借方": "opening_debit",
+    "期初贷方": "opening_credit",
+    "Beginning Debit": "opening_debit",
+    "Beginning Credit": "opening_credit",
+
+    # 本期发生
+    "本期借方": "period_debit",
+    "本期贷方": "period_credit",
+    "Debit": "period_debit",
+    "Credit": "period_credit",
+
+    # 期末余额
+    "期末借方": "closing_debit",
+    "期末贷方": "closing_credit",
+    "Ending Debit": "closing_debit",
+    "Ending Credit": "closing_credit",
+}
+```
+
+### 标准输入模板
+
+#### 1. 科目余额表输入 (trial_balance_input.json)
+```json
+{
+  "period": "2025-11",
+  "company": "示例公司",
+  "accounts": [
+    {
+      "code": "1001",
+      "name": "库存现金",
+      "opening_debit": 10000,
+      "opening_credit": 0,
+      "period_debit": 50000,
+      "period_credit": 45000,
+      "closing_debit": 15000,
+      "closing_credit": 0
+    },
+    ...
+  ]
+}
+```
+
+#### 2. 预算对比输入 (budget_variance_input.json)
+```json
+{
+  "period": "2025-11",
+  "company": "示例公司",
+  "line_items": [
+    {
+      "account": "营业收入",
+      "actual": 1000000,
+      "budget": 1100000,
+      "prior_year": 900000
+    },
+    {
+      "account": "营业成本",
+      "actual": 650000,
+      "budget": 700000,
+      "prior_year": 600000
+    },
+    ...
+  ]
+}
+```
+
+#### 3. 现金流预测输入 (cash_forecast_input.json)
+```json
+{
+  "as_of_date": "2025-12-01",
+  "opening_cash": 1000000,
+  "ar_aging": {
+    "0-30": 500000,
+    "31-60": 200000,
+    "61-90": 100000,
+    "90+": 50000
+  },
+  "ap_aging": {
+    "0-30": 300000,
+    "31-60": 150000,
+    "61-90": 50000
+  },
+  "recurring_inflows": [
+    {"description": "月度销售回款", "amount": 800000, "frequency": "weekly"}
+  ],
+  "recurring_outflows": [
+    {"description": "工资", "amount": 200000, "frequency": "monthly", "day": 15},
+    {"description": "房租", "amount": 50000, "frequency": "monthly", "day": 1}
+  ]
+}
+```
+
+### CLI 数据导入命令
+
+```bash
+# 从金蝶/用友导出的 Excel 转换为标准 JSON
+python excel2json.py --template trial_balance < 金蝶科目余额表.xlsx > trial_balance.json
+python excel2json.py --template budget < 预算表.xlsx > budget.json
+python excel2json.py --template cash < 现金流数据.xlsx > cash.json
+
+# 然后进行分析
+ac trial-balance < trial_balance.json
+fa variance < budget.json
+cf forecast-13week < cash.json
+```
+
+---
+
 ## 下一步
 
 1. 确认优先级和需求范围
-2. 实现 P0：`fa.py` + `budget_tools.py`（预算差异、弹性预算、滚动预测）
-3. 实现 P0：`cf.py` + `cash_tools.py`（13周预测、营运资金周期、现金流驱动因素）
-4. 编写测试用例
-5. 扩展 `ExcelWriter` 支持新报表格式
-6. 实现 P1/P2 工具
+2. 实现通用 Excel 解析器（支持金蝶/用友/SAP 列名映射）
+3. 实现 P0：`fa.py` + `budget_tools.py`（预算差异、弹性预算、滚动预测）
+4. 实现 P0：`cf.py` + `cash_tools.py`（13周预测、营运资金周期、现金流驱动因素）
+5. 编写测试用例
+6. 扩展 `ExcelWriter` 支持新报表格式
+7. 实现 P1/P2 工具
