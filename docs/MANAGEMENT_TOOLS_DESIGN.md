@@ -502,28 +502,47 @@ forecast_*      预测类工具
 
 ## CLI 命令架构
 
-按角色拆分为 5 个独立命令：
+按角色拆分为 8 个独立命令：
 
 | 命令 | 全称 | 角色 | 功能 |
 |------|------|------|------|
-| `fm` | Financial Model | 投行/PE | LBO、M&A、DCF、估值建模 |
+| `fm` | Financial Model | 投行/投资 | LBO、M&A、DCF、项目投资决策 |
 | `fa` | Financial Analysis | 财务分析 | 预算差异、滚动预测、比率分析 |
-| `mr` | Management Report | 管理会计 | 部门损益、产品盈利、成本分摊 |
-| `ac` | Accounting | 会计/审计 | 试算平衡、调整分录、审计抽样 |
-| `cf` | Cash Flow | 资金管理 | 现金流预测、营运资金周期 |
+| `ma` | Management Accounting | 管理会计 | 部门损益、产品盈利、成本分摊、CVP |
+| `ac` | Accounting | 会计/审计 | 试算平衡、调整分录、审计抽样、合并报表 |
+| `cf` | Cash Flow | 资金管理 | 现金流预测、融资方案、营运资金 |
+| `tx` | Tax | 税务筹划 | 增值税、所得税、年终奖优化 |
+| `ri` | Risk | 风控 | 信用评估、汇率风险、坏账准备 |
+| `kp` | KPI | 绩效考核 | KPI仪表盘、EVA、平衡计分卡 |
 
 ### 命令详细设计
 
-#### 1. fm - 投行建模（已实现）
+#### 1. fm - 投行/投资建模（已实现+待扩展）
 ```bash
+# LBO 分析（已实现）
 fm lbo calc < input.json              # LBO 分析
 fm lbo sensitivity < input.json       # LBO 敏感性
-fm merger calc < deal.json                # M&A 分析
-fm merger accretion < deal.json           # 增厚稀释
+
+# M&A 分析（已实现）
+fm merger calc < deal.json            # 并购分析
+fm merger accretion < deal.json       # 增厚稀释
+
+# DCF 估值（已实现）
 fm dcf calc < projections.json        # DCF 估值
 fm dcf sensitivity < projections.json # DCF 敏感性
+
+# 三表模型（已实现）
 fm three forecast < financials.json   # 三表预测
 fm ratio calc < financials.json       # 比率分析
+
+# 项目投资决策（待实现）
+fm project npv < cashflows.json       # 净现值分析
+fm project irr < cashflows.json       # 内部收益率
+fm project payback < cashflows.json   # 回收期分析
+fm project compare < projects.json    # 多项目对比
+fm project lease-vs-buy < options.json # 租赁vs购买决策
+
+# 导出
 fm export lbo,sensitivity -o out.xlsx # 导出 Excel
 ```
 
@@ -538,16 +557,18 @@ fa trend < multi_period.json                  # 趋势分析
 fa export variance -o report.xlsx             # 导出报告
 ```
 
-#### 3. mr - 管理报表（待实现）
+#### 3. ma - 管理会计（待实现）
 ```bash
-mr dept-pnl < dept_data.json                  # 部门损益
-mr dept-pnl --allocation revenue < data.json  # 指定分摊方法
-mr product-profit < product_data.json         # 产品盈利分析
-mr customer-profit < customer_data.json       # 客户盈利分析
-mr cost-allocation < cost_pool.json           # 成本分摊
-mr cost-allocation --method step_down < data.json
-mr breakeven < product_data.json              # 盈亏平衡分析
-mr export dept-pnl -o management.xlsx         # 导出管理报表
+ma dept-pnl < dept_data.json                  # 部门损益
+ma dept-pnl --allocation revenue < data.json  # 指定分摊方法
+ma product-profit < product_data.json         # 产品盈利分析
+ma customer-profit < customer_data.json       # 客户盈利分析
+ma cost-allocation < cost_pool.json           # 成本分摊
+ma cost-allocation --method step_down < data.json
+ma cvp < cost_volume.json                     # 本量利分析
+ma breakeven < product_data.json              # 盈亏平衡分析
+ma std-cost-variance < standard_cost.json     # 标准成本差异分析
+ma export dept-pnl -o management.xlsx         # 导出管理报表
 ```
 
 #### 4. ac - 会计/审计（待实现）
@@ -560,6 +581,8 @@ ac materiality --risk high < fin.json
 ac sample --method mus < population.json      # 审计抽样
 ac sample --method stratified < population.json
 ac reconcile < account_data.json              # 账户调节
+ac consolidate < group_data.json              # 合并报表
+ac eliminate < intercompany.json              # 内部交易抵消
 ac export trial-balance -o audit.xlsx         # 导出审计底稿
 ```
 
@@ -570,7 +593,43 @@ cf forecast-13week --alert 500000 < data.json # 设置预警线
 cf cycle < working_capital.json               # 营运资金周期
 cf drivers < period_comparison.json           # 现金流驱动因素
 cf dso-dpo-dio < working_capital.json         # 周转天数分析
+cf financing-compare < loan_options.json      # 融资方案对比
+cf loan-schedule < loan_terms.json            # 贷款还款计划
 cf export forecast -o cash_report.xlsx        # 导出资金报告
+```
+
+#### 6. tx - 税务筹划（待实现）
+```bash
+tx vat < sales_data.json                      # 增值税计算
+tx cit < income_data.json                     # 企业所得税
+tx cit --preference small_micro < data.json   # 小微企业优惠
+tx iit < salary_data.json                     # 个人所得税
+tx optimize-bonus --total 500000              # 年终奖优化
+tx rd-deduction --expense 1000000             # 研发加计扣除
+tx burden < tax_data.json                     # 综合税负分析
+tx transfer-pricing < related_party.json     # 转让定价
+```
+
+#### 7. ri - 风控（待实现）
+```bash
+ri credit-score < customer_data.json          # 客户信用评分
+ri ar-aging < receivables.json                # 应收账龄分析
+ri bad-debt < ar_aging.json                   # 坏账准备计提
+ri fx-exposure < currency_data.json           # 汇率风险敞口
+ri interest-sensitivity < debt_data.json      # 利率敏感性分析
+ri concentration < customer_revenue.json      # 客户集中度风险
+ri export ar-aging -o risk_report.xlsx        # 导出风险报告
+```
+
+#### 8. kp - 绩效考核（待实现）
+```bash
+kp dashboard < kpi_data.json                  # KPI 仪表盘
+kp eva < financial_data.json                  # 经济增加值 EVA
+kp roic < financial_data.json                 # 投入资本回报率
+kp bsc < balanced_scorecard.json              # 平衡计分卡
+kp dept-roi < dept_data.json                  # 部门 ROI
+kp trend --metrics revenue,margin < hist.json # 指标趋势分析
+kp export dashboard -o kpi_report.xlsx        # 导出绩效报告
 ```
 
 ---
@@ -579,25 +638,32 @@ cf export forecast -o cash_report.xlsx        # 导出资金报告
 
 ```
 balance/
-├── fm.py                    # 投行建模 CLI（已实现）
+├── fm.py                    # 投行/投资建模 CLI（已实现）
 ├── fa.py                    # 财务分析 CLI（待实现）
-├── mr.py                    # 管理报表 CLI（待实现）
+├── ma.py                    # 管理会计 CLI（待实现）
 ├── ac.py                    # 会计审计 CLI（待实现）
 ├── cf.py                    # 资金管理 CLI（待实现）
+├── tx.py                    # 税务筹划 CLI（待实现）
+├── ri.py                    # 风控 CLI（待实现）
+├── kp.py                    # 绩效考核 CLI（待实现）
 │
 ├── fin_tools/
 │   ├── tools/
 │   │   ├── lbo_tools.py           # LBO 原子工具
-│   │   ├── ma_tools.py            # M&A 原子工具
+│   │   ├── merger_tools.py        # M&A 并购工具（原 ma_tools.py）
 │   │   ├── dcf_tools.py           # DCF 原子工具
+│   │   ├── project_tools.py       # 项目投资决策工具（待实现）
 │   │   ├── three_statement_tools.py  # 三表原子工具
 │   │   ├── ratio_tools.py         # 比率分析工具
 │   │   ├── prepare_tools.py       # 数据准备工具
 │   │   │
 │   │   ├── budget_tools.py        # 预算分析工具（待实现）
-│   │   ├── management_tools.py    # 管理报表工具（待实现）
+│   │   ├── management_tools.py    # 管理会计工具（待实现）
 │   │   ├── audit_tools.py         # 审计工具（待实现）
 │   │   ├── cash_tools.py          # 资金管理工具（待实现）
+│   │   ├── tax_tools.py           # 税务工具（待实现）
+│   │   ├── risk_tools.py          # 风控工具（待实现）
+│   │   ├── kpi_tools.py           # 绩效考核工具（待实现）
 │   │   └── consolidation_tools.py # 合并报表工具（待实现）
 │   │
 │   ├── io/
@@ -610,10 +676,14 @@ balance/
 
 | 优先级 | CLI | 工具文件 | 工具数 | 理由 |
 |--------|-----|----------|--------|------|
+| P0 | `fm` (扩展) | project_tools.py | 5 | 项目投资决策常用 |
 | P0 | `fa` | budget_tools.py | 3 | CFO 最常用，月度必做 |
-| P0 | `cf` | cash_tools.py | 3 | 资金管理核心需求 |
-| P1 | `mr` | management_tools.py | 4 | 管理决策支持 |
-| P2 | `ac` | audit_tools.py | 4 | 审计场景专用 |
+| P0 | `cf` | cash_tools.py | 5 | 资金管理核心需求 |
+| P1 | `ma` | management_tools.py | 5 | 管理决策支持 |
+| P1 | `tx` | tax_tools.py | 8 | 税务筹划高频需求 |
+| P1 | `ri` | risk_tools.py | 6 | 风控合规必备 |
+| P2 | `ac` | audit_tools.py | 6 | 审计场景专用 |
+| P2 | `kp` | kpi_tools.py | 6 | 绩效考核 |
 | P2 | - | consolidation_tools.py | 2 | 集团企业专用 |
 
 ---
@@ -1018,81 +1088,15 @@ def calc_transfer_pricing(
 
 ---
 
-## CLI 命令架构（更新）
-
-| 命令 | 全称 | 角色 | 功能 |
-|------|------|------|------|
-| `fm` | Financial Model | 投行/PE | LBO、Merger、DCF、估值建模 |
-| `fa` | Financial Analysis | 财务分析 | 预算差异、滚动预测、比率分析 |
-| `ma` | Management Accounting | 管理会计 | 部门损益、产品盈利、成本分摊 |
-| `ac` | Accounting | 会计/审计 | 试算平衡、调整分录、审计抽样 |
-| `cf` | Cash Flow | 资金管理 | 现金流预测、营运资金周期 |
-| `tx` | Tax | 税务筹划 | 增值税、所得税、年终奖优化 |
-
-### tx - 税务工具（待实现）
-```bash
-tx vat < sales_data.json                     # 增值税计算
-tx cit < income_data.json                    # 企业所得税
-tx cit --preference small_micro < data.json  # 小微企业优惠
-tx iit < salary_data.json                    # 个人所得税
-tx optimize-bonus --total 500000             # 年终奖优化
-tx rd-deduction --expense 1000000            # 研发加计扣除
-tx burden < tax_data.json                    # 综合税负分析
-tx transfer-pricing < related_party.json    # 转让定价
-```
-
----
-
-## 文件结构规划（更新）
-
-```
-balance/
-├── fm.py                    # 投行建模 CLI（已实现）
-├── fa.py                    # 财务分析 CLI（待实现）
-├── ma.py                    # 管理会计 CLI（待实现）
-├── ac.py                    # 会计审计 CLI（待实现）
-├── cf.py                    # 资金管理 CLI（待实现）
-├── tx.py                    # 税务筹划 CLI（待实现）
-│
-├── fin_tools/
-│   ├── tools/
-│   │   ├── lbo_tools.py
-│   │   ├── ma_tools.py            # M&A 并购工具
-│   │   ├── dcf_tools.py
-│   │   ├── three_statement_tools.py
-│   │   ├── ratio_tools.py
-│   │   ├── prepare_tools.py
-│   │   │
-│   │   ├── budget_tools.py        # 预算分析（待实现）
-│   │   ├── management_tools.py    # 管理报表（待实现）
-│   │   ├── audit_tools.py         # 审计工具（待实现）
-│   │   ├── cash_tools.py          # 资金管理（待实现）
-│   │   ├── tax_tools.py           # 税务工具（待实现）
-│   │   └── consolidation_tools.py # 合并报表（待实现）
-```
-
----
-
-## 实施优先级（更新）
-
-| 优先级 | CLI | 工具文件 | 工具数 | 理由 |
-|--------|-----|----------|--------|------|
-| P0 | `fa` | budget_tools.py | 3 | CFO 最常用，月度必做 |
-| P0 | `cf` | cash_tools.py | 3 | 资金管理核心需求 |
-| P1 | `ma` | management_tools.py | 4 | 管理决策支持 |
-| P1 | `tx` | tax_tools.py | 8 | 税务筹划高频需求 |
-| P2 | `ac` | audit_tools.py | 4 | 审计场景专用 |
-| P2 | - | consolidation_tools.py | 2 | 集团企业专用 |
-
----
-
 ## 下一步
 
 1. 确认优先级和需求范围
 2. 实现通用 Excel 解析器（支持金蝶/用友/SAP 列名映射）
 3. 实现 P0：`fa.py` + `budget_tools.py`（预算差异、弹性预算、滚动预测）
 4. 实现 P0：`cf.py` + `cash_tools.py`（13周预测、营运资金周期、现金流驱动因素）
-5. 实现 P1：`tx.py` + `tax_tools.py`（增值税、所得税、年终奖优化）
-6. 编写测试用例
-7. 扩展 `ExcelWriter` 支持新报表格式
-8. 实现 P2 工具
+5. 实现 P1：`ma.py` + `management_tools.py`（部门损益、成本分摊）
+6. 实现 P1：`tx.py` + `tax_tools.py`（增值税、所得税、年终奖优化）
+7. 实现 P1：`ri.py` + `risk_tools.py`（信用评估、VAR、汇率风险）
+8. 实现 P2：`kp.py` + `kpi_tools.py`（OKR进度、绩效考核）
+9. 实现 P2：`ac.py` + `audit_tools.py`（审计场景专用）
+10. 编写测试用例，扩展 `ExcelWriter` 支持新报表格式
