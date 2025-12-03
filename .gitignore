@@ -3,4 +3,4 @@ __pycache__/
 *.pyo
 .DS_Store
 *.xlsx
-!examples/*.xlsx
+!examples/**/*.xlsx
