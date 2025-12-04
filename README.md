@@ -1,6 +1,6 @@
-# 财务三表配平工具
+# Balance 财务工具集
 
-自动配平财务三张报表：**资产负债表**、**损益表**、**现金流量表**。
+命令行财务工具合集，覆盖 **三表配平、财务建模、会计审计、预算/现金流、税务、风险、绩效** 等场景。核心依赖 `fin_tools` 库，所有工具可串联使用。
 
 ## 安装
 
@@ -10,16 +10,24 @@ cd balance
 ./install.sh
 ```
 
-## 工具列表
+## 工具总览
 
-| 工具 | 作用 |
-|------|------|
-| `excel_inspect` | 查看 Excel 结构 |
-| `excel2json` | 从 Excel 提取数据 |
-| `balance` | 配平计算（含多个子命令） |
-| `json2excel` | 将结果写回 Excel |
+| CLI | 主用途 | 典型子命令 |
+|-----|--------|-----------|
+| `balance` | 三表配平/诊断/场景 | `calc` `check` `diagnose` `scenario` `explain` |
+| `excel_inspect` | 查看 Excel 结构 | - |
+| `excel2json` | Excel/CSV → 标准 JSON | `--template tb/budget/ar/ap/voucher/cash` |
+| `json2excel` | 将结果写回 Excel | - |
+| `fm` | 综合财务模型 | `lbo` `ma` `dcf` `three` |
+| `ac` | 会计/审计 | `tb` `adj` `sample` `consol` |
+| `fa` | 财务分析/预算 | `variance` `flex` `forecast` `trend` |
+| `cf` | 现金流/营运资金 | `forecast` `wcc` `drivers` |
+| `ma` | 管理会计 | `dept` `product` `allocate` `cvp` `breakeven` |
+| `ri` | 风险管理 | `credit` `aging` `provision` `fx` |
+| `tx` | 税务筹划 | `vat` `cit` `iit` `bonus` `rd` `burden` |
+| `kp` | KPI/绩效 | `kpi` `eva` `bsc` `okr` |
 
-## 快速开始
+## 快速开始：三表配平
 
 ```bash
 # 一行完成配平
@@ -55,6 +63,19 @@ cat input.json | balance scenario --vary "interest_rate:0.05,0.08,0.12"
 cat output.json | balance explain --field net_income
 ```
 
+## 更多 CLI 示例
+
+```bash
+# 13周现金流预测
+cf forecast < cash_plan.json
+
+# LBO 快算
+fm lbo calc < lbo_input.json
+
+# 预算差异分析
+fa variance < budget_vs_actual.json
+```
+
 ## 计算流程
 
 ```
@@ -72,21 +93,18 @@ cat output.json | balance explain --field net_income
 
 ```
 balance/
-├── README.md               # 本文档（给人看）
-├── skills.md               # AI 技能说明（给 AI 看）
-├── requirements.txt        # Python 依赖
-├── install.sh              # 安装脚本
-├── balance.py              # 主工具（5个子命令）
-├── excel_inspect.py        # 查看 Excel 结构
-├── excel2json.py           # Excel → JSON
-├── json2excel.py           # JSON → Excel
-└── examples/
-    ├── input.json          # 示例输入
-    ├── output.json         # 示例输出
-    ├── sample.xlsx         # 示例 Excel
-    ├── mapping_template.json   # 字段映射模板
-    ├── report_template.md  # 报告模板
-    └── report_sample.md    # 报告示例
+├── README.md / skills.md       # 文档（人/AI）
+├── requirements.txt / install.sh
+├── balance.py                  # 三表配平 CLI
+├── excel_inspect.py / excel2json.py / json2excel.py
+├── fm.py / ac.py / fa.py / cf.py / ma.py / ri.py / tx.py / kp.py   # 其他 CLI
+├── fin_tools/                  # 核心库：模型、工具、ERP 解析、测试
+└── examples/                   # 示例输入输出、报告与 Excel 模板
+    ├── input.json / output.json
+    ├── sample.xlsx
+    ├── mapping_template.json
+    ├── report_template.md
+    └── report_sample.md
 ```
 
 ## 输入字段
