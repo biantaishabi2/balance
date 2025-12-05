@@ -17,6 +17,7 @@
 - 桥接与样例：`docs/AI_IO_GUIDE.md` 列出模板→CLI 对齐和可运行样例，`skills.md` 引用。
 - 质量标注：`docs/MODEL_ASSUMPTIONS.md` 说明模型假设；新增 `CHANGELOG.md`。
 - Smoke：`scripts/smoke.sh` 最小回归脚本；CI 工作流触发。
+- 测试计划：`docs/BALANCE_TEST_PLAN.md` 描述配平增强的单元/集成/CI 测试思路。
 
 ## 接下来要做
 - 示例与桥接：补充 ma/ri/kp 的 Excel 模板示意，降低输入门槛。
