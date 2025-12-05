@@ -21,6 +21,8 @@ import argparse
 def step_finance(data: dict) -> dict:
     """融资现金流：利息、新增借款、期末现金"""
     opening_debt = data.get("opening_debt", 0)
+    # 迭代时允许用包含新增借款的基数计算利息
+    interest_base = data.get("_interest_base", opening_debt)
     opening_cash = data.get("opening_cash", 0)
     interest_rate = data.get("interest_rate", 0.05)
     min_cash = data.get("min_cash", 0)
@@ -32,7 +34,7 @@ def step_finance(data: dict) -> dict:
     delta_receivable = data.get("delta_receivable", 0)
     delta_payable = data.get("delta_payable", 0)
 
-    interest = opening_debt * interest_rate
+    interest = interest_base * interest_rate
 
     estimated_depreciation = data.get("estimated_depreciation", 0)
     tax_rate = data.get("tax_rate", 0.25)
@@ -182,13 +184,38 @@ CALC_STEPS = {
 CALC_STEP_ORDER = ["finance", "depreciation", "profit", "equity", "reconcile"]
 
 
-def run_calc(data: dict, step: str = None) -> dict:
-    """执行配平计算"""
+def run_calc(data: dict, step: str = None, iterations: int = 1, tolerance: float = 0.01) -> dict:
+    """执行配平计算（支持融资/利息迭代）"""
     if step:
         return CALC_STEPS[step](data)
-    for step_name in CALC_STEP_ORDER:
-        data = CALC_STEPS[step_name](data)
-    return data
+
+    iterations = max(1, int(iterations or 1))
+    data_work = data.copy()
+    interest_base = data_work.get("opening_debt", 0)
+    prev_new_borrowing = None
+    converged = False
+
+    for i in range(iterations):
+        data_work["_interest_base"] = interest_base
+        for step_name in CALC_STEP_ORDER:
+            data_work = CALC_STEPS[step_name](data_work)
+
+        new_borrowing = data_work.get("new_borrowing", 0)
+        if prev_new_borrowing is not None and abs(new_borrowing - prev_new_borrowing) < tolerance:
+            converged = True
+            data_work["iteration_converged"] = True
+            data_work["iterations_run"] = i + 1
+            break
+
+        prev_new_borrowing = new_borrowing
+        interest_base = data_work.get("opening_debt", 0) + new_borrowing
+
+    data_work.pop("_interest_base", None)
+    if not converged and iterations > 1:
+        data_work["iteration_converged"] = False
+        data_work["iterations_run"] = iterations
+
+    return data_work
 
 
 # ============================================================
@@ -525,6 +552,7 @@ def main():
   balance diagnose < output.json
   balance scenario --vary "interest_rate:0.05,0.08,0.10" < input.json
   balance explain --field net_income < output.json
+  balance calc --iterations 3 < input.json
         """
     )
 
@@ -534,6 +562,7 @@ def main():
     calc_parser = subparsers.add_parser("calc", help="计算配平")
     calc_parser.add_argument("--step", "-s", choices=CALC_STEP_ORDER, help="只执行指定步骤")
     calc_parser.add_argument("--compact", "-c", action="store_true", help="紧凑输出")
+    calc_parser.add_argument("--iterations", "-n", type=int, default=1, help="融资/利息迭代次数（默认1）")
 
     # check 子命令
     check_parser = subparsers.add_parser("check", help="校验输入数据")
@@ -570,7 +599,7 @@ def main():
 
     # 执行对应命令
     if args.command == "calc":
-        result = run_calc(data, getattr(args, 'step', None))
+        result = run_calc(data, getattr(args, 'step', None), getattr(args, 'iterations', 1))
     elif args.command == "check":
         result = run_check(data)
     elif args.command == "diagnose":
