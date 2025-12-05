@@ -17,24 +17,20 @@ echo "  ✓ openpyxl"
 # 创建目录
 mkdir -p "$INSTALL_DIR"
 
-# 安装三个工具
+# 安装 CLI 工具
 echo "安装工具..."
+TOOLS=(balance excel2json json2excel excel_inspect fm ac fa cf ma ri tx kp)
 
-cp "$SCRIPT_DIR/balance.py" "$INSTALL_DIR/balance"
-chmod +x "$INSTALL_DIR/balance"
-echo "  ✓ balance"
-
-cp "$SCRIPT_DIR/excel2json.py" "$INSTALL_DIR/excel2json"
-chmod +x "$INSTALL_DIR/excel2json"
-echo "  ✓ excel2json"
-
-cp "$SCRIPT_DIR/json2excel.py" "$INSTALL_DIR/json2excel"
-chmod +x "$INSTALL_DIR/json2excel"
-echo "  ✓ json2excel"
-
-cp "$SCRIPT_DIR/excel_inspect.py" "$INSTALL_DIR/excel_inspect"
-chmod +x "$INSTALL_DIR/excel_inspect"
-echo "  ✓ excel_inspect"
+for tool in "${TOOLS[@]}"; do
+    src="$SCRIPT_DIR/${tool}.py"
+    if [[ -f "$src" ]]; then
+        cp "$src" "$INSTALL_DIR/$tool"
+        chmod +x "$INSTALL_DIR/$tool"
+        echo "  ✓ $tool"
+    else
+        echo "  ✗ 缺少 $src" 1>&2
+    fi
+done
 
 # 检查 PATH
 if [[ ":$PATH:" != *":$INSTALL_DIR:"* ]]; then
@@ -48,8 +44,16 @@ else
     echo "可用命令:"
     echo "  excel_inspect  - 查看 Excel 结构"
     echo "  excel2json     - 从 Excel 提取数据"
-    echo "  balance        - 配平计算"
     echo "  json2excel     - 将结果写回 Excel"
+    echo "  balance        - 三表配平"
+    echo "  fm             - 财务建模 (LBO/MA/DCF/三表/比率)"
+    echo "  ac             - 会计审计 (试算平衡/调整分录/抽样/合并)"
+    echo "  fa             - 财务分析 (预算差异/弹性预算/预测/趋势)"
+    echo "  cf             - 现金流 (13周预测/营运资金/驱动因素)"
+    echo "  ma             - 管理会计 (成本分摊/CVP/盈亏平衡 等)"
+    echo "  ri             - 风险管理 (信用/账龄/减值/汇率)"
+    echo "  tx             - 税务 (增值税/企税/个税/年终奖/加计扣除)"
+    echo "  kp             - 绩效 (KPI/EVA/BSC/OKR)"
     echo ""
     echo "完整流程:"
     echo "  1. excel_inspect 报表.xlsx          # 先看结构"
