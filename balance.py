@@ -564,6 +564,10 @@ def main():
         print(f"错误: 无效的 JSON 输入 - {e}", file=sys.stderr)
         sys.exit(1)
 
+    if not isinstance(data, dict):
+        print("错误: 输入必须是 JSON 对象（键值对）", file=sys.stderr)
+        sys.exit(1)
+
     # 执行对应命令
     if args.command == "calc":
         result = run_calc(data, getattr(args, 'step', None))

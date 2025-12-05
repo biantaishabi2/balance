@@ -10,6 +10,7 @@
 - cash → `cf forecast`（13 周现金流）
 - 经营/产品数据（自定义表）→ `ma cvp`/`ma breakeven`/`ma allocate`（本量利、盈亏平衡、成本分摊）
 - KPI/绩效（自定义表）→ `kp kpi`/`kp eva`/`kp bsc`/`kp okr`
+- 投资模型（自定义表）→ `fm lbo`/`fm dcf`/`fm three`/`fm ratio`
 
 > 推荐用 `excel2json --template ...` 先提取标准 JSON；若字段不直接匹配，调用层按下方示例字段重塑后再喂给目标 CLI。
 
@@ -67,6 +68,34 @@ JSON
 ```
 cat <<'JSON' | kp kpi --json
 [{"name":"收入","target":1000000,"actual":950000,"direction":"higher_better","weight":0.3},{"name":"成本率","target":0.6,"actual":0.55,"direction":"lower_better","weight":0.2}]
+JSON
+```
+
+### LBO 快算（fm lbo calc）
+```
+cat <<'JSON' | fm lbo calc --compact
+{"entry_multiple":8,"exit_multiple":9,"ebitda":100,"revenue_growth":0.05,"ebitda_margin":0.25,"capex_percent":0.03,"tax_rate":0.25,"debt":300,"cash":20}
+JSON
+```
+
+### DCF 估值（fm dcf calc）
+```
+cat <<'JSON' | fm dcf calc --compact
+{"fcf_list":[50,55,60,65,70],"wacc":0.09,"terminal_growth":0.02,"net_debt":100,"shares_outstanding":10}
+JSON
+```
+
+### 三表预测（fm three forecast）
+```
+cat <<'JSON' | fm three forecast --compact
+{"assumptions":{"years":3,"revenue_growth":0.08},"income_statement":{"revenue":100,"gross_profit":40},"balance_sheet":{"total_assets":200,"total_equity":80}}
+JSON
+```
+
+### 比率分析（fm ratio calc）
+```
+cat <<'JSON' | fm ratio calc --compact
+{"income_statement":{"revenue":100,"gross_profit":40,"net_income":15},"balance_sheet":{"total_assets":120,"total_equity":60,"cash":20},"market_data":{"market_cap":200}}
 JSON
 ```
 

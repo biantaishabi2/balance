@@ -89,12 +89,18 @@ def print_table(headers: List[str], rows: List[List[str]], title: str = None):
 
 
 def read_json_input() -> Dict:
-    """从stdin读取JSON"""
+    """从stdin读取JSON并做基础校验"""
     try:
-        return json.load(sys.stdin)
+        data = json.load(sys.stdin)
     except json.JSONDecodeError as e:
         print(f"错误: 无效的JSON输入 - {e}", file=sys.stderr)
         sys.exit(1)
+
+    if not isinstance(data, dict):
+        print("错误: 输入必须是 JSON 对象（键值对）", file=sys.stderr)
+        sys.exit(1)
+
+    return data
 
 
 def parse_float_list(value: str) -> List[float]:

@@ -16,10 +16,10 @@
 - 安装覆盖：`install.sh` 安装全部 CLI。
 - 桥接与样例：`docs/AI_IO_GUIDE.md` 列出模板→CLI 对齐和可运行样例，`skills.md` 引用。
 - 质量标注：`docs/MODEL_ASSUMPTIONS.md` 说明模型假设；新增 `CHANGELOG.md`。
-- Smoke：`scripts/smoke.sh` 最小回归脚本。
+- Smoke：`scripts/smoke.sh` 最小回归脚本；CI 工作流触发。
 
 ## 接下来要做
-- 示例与桥接：补充 fm 子命令的最小样例（LBO/DCF/三表/比率），以及 ma/ri/kp 的 Excel 模板示意，降低输入门槛。
-- 校验与提示：在 balance/fm/cf 等 CLI 增强输入校验、错误码和日志级别，给出可操作的修复建议。
-- 可用性验证：将 smoke/集成脚本纳入 CI，覆盖导入→计算→诊断→导出链路。
+- 示例与桥接：补充 ma/ri/kp 的 Excel 模板示意，降低输入门槛。
+- 校验与提示：在 balance/fm/cf 等 CLI 继续增强输入校验、错误码和日志级别，给出可操作的修复建议。
+- 可用性验证：扩充 smoke/集成链路（含 excel2json/json2excel），完善 CI 覆盖导入→计算→导出。
 - 质量管理：明确版本策略，结合 changelog 标注模型适用范围与假设更新。

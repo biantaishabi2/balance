@@ -95,15 +95,34 @@ def print_table(headers: List[str], rows: List[List[str]], title: str = None):
 
 def cmd_forecast(args):
     """13周现金流预测"""
-    data = json.load(sys.stdin)
+    try:
+        data = json.load(sys.stdin)
+    except json.JSONDecodeError as e:
+        print(f"错误: 无效的 JSON 输入 - {e}", file=sys.stderr)
+        sys.exit(1)
+
+    if not isinstance(data, dict):
+        print("错误: 输入必须是 JSON 对象（键值对）", file=sys.stderr)
+        sys.exit(1)
+
+    opening_cash = data.get("opening_cash", 0)
+    weeks = data.get("weeks", args.weeks)
+    if weeks <= 0:
+        print("错误: weeks 必须为正整数", file=sys.stderr)
+        sys.exit(1)
+    try:
+        opening_cash = float(opening_cash)
+    except (TypeError, ValueError):
+        print("错误: opening_cash 必须是数值", file=sys.stderr)
+        sys.exit(1)
 
     result = cash_forecast_13w(
-        opening_cash=data.get("opening_cash", 0),
+        opening_cash=opening_cash,
         receivables_schedule=data.get("receivables_schedule", []),
         payables_schedule=data.get("payables_schedule", []),
         recurring_inflows=data.get("recurring_inflows"),
         recurring_outflows=data.get("recurring_outflows"),
-        weeks=data.get("weeks", args.weeks)
+        weeks=weeks
     )
 
     if args.json:
