@@ -69,12 +69,20 @@ cat output.json | balance explain --field net_income
 # 13周现金流预测
 cf forecast < cash_plan.json
 
-# LBO 快算
+# LBO 快算（见 docs/AI_IO_GUIDE.md）
 fm lbo calc < lbo_input.json
+
+# 增值税快算
+tx vat < vat_input.json
 
 # 预算差异分析
 fa variance < budget_vs_actual.json
+
+# 试算平衡检查
+ac tb < trial_balance.json
 ```
+
+更多输入/输出样例与模板对齐：`docs/AI_IO_GUIDE.md`。自动化最小回归：`./scripts/smoke.sh`。
 
 ## 计算流程
 
