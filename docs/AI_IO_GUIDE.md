@@ -19,6 +19,7 @@
 ### 三表配平（balance）
 ```
 balance calc --compact < examples/input.json
+balance calc --iterations 3 --compact < examples/input.json   # 启用融资/利息迭代
 ```
 `examples/input.json`/`examples/output.json` 是一组完整回归样例，可用于对比。
 
