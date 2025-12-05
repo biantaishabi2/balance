@@ -20,6 +20,14 @@
 ```
 balance calc --compact < examples/input.json
 balance calc --iterations 3 --compact < examples/input.json   # 启用融资/利息迭代
+
+# 非收敛示例（高利率+大 min_cash，会跑满迭代仍标记 iteration_converged=false）
+python3 balance.py calc --iterations 3 --compact <<'JSON'
+{"revenue":0,"cost":0,"opening_cash":0,"opening_debt":100,"interest_rate":1.0,"min_cash":1000}
+JSON | tee /tmp/balance_iter_nonconv.json
+
+# 用德尔塔法诊断该结果
+python3 balance.py diagnose < /tmp/balance_iter_nonconv.json
 ```
 `examples/input.json`/`examples/output.json` 是一组完整回归样例，可用于对比。
 
