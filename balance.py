@@ -597,6 +597,38 @@ def main():
         print("错误: 输入必须是 JSON 对象（键值对）", file=sys.stderr)
         sys.exit(1)
 
+    def _ensure_number(val, name, errors):
+        try:
+            return float(val)
+        except (TypeError, ValueError):
+            errors.append(f"{name} 必须是数值")
+            return None
+
+    # 基础校验（calc/scenario 也依赖相同字段）
+    if args.command in ["calc", None]:
+        errors = []
+        for field in ["revenue", "cost", "opening_cash"]:
+            if field not in data:
+                errors.append(f"缺少必填字段: {field}")
+            else:
+                _ensure_number(data.get(field), field, errors)
+
+        # 数值型检查
+        if "interest_rate" in data and _ensure_number(data.get("interest_rate"), "interest_rate", errors) is not None:
+            if data.get("interest_rate", 0) < 0:
+                errors.append("interest_rate 不能为负")
+        if "tax_rate" in data and _ensure_number(data.get("tax_rate"), "tax_rate", errors) is not None:
+            if data.get("tax_rate", 0) < 0:
+                errors.append("tax_rate 不能为负")
+        if "fixed_asset_life" in data and _ensure_number(data.get("fixed_asset_life"), "fixed_asset_life", errors) is not None:
+            if data.get("fixed_asset_life", 0) < 0:
+                errors.append("fixed_asset_life 不能为负")
+
+        if errors:
+            for e in errors:
+                print(f"错误: {e}", file=sys.stderr)
+            sys.exit(1)
+
     # 执行对应命令
     if args.command == "calc":
         result = run_calc(data, getattr(args, 'step', None), getattr(args, 'iterations', 1))

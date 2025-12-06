@@ -21,8 +21,8 @@
 - 配平迭代：`balance calc --iterations` 支持融资/利息迭代；新增示例（收敛/不收敛）和单测。
 - 版本策略：`docs/VERSIONING.md` 记录 SemVer 策略；`CHANGELOG.md` 按版本分段。
 - ma/ri/kp 桥接示意：`docs/MA_RI_KP_TEMPLATES.md` 补充表格字段示意；AI_IO_GUIDE 增加 ri/ma 示例。
+- 集成链路：`scripts/smoke.sh` 覆盖 excel2json→balance→json2excel。
 
 ## 接下来要做
 - 校验与提示：在 balance/fm/cf 等 CLI 继续增强输入校验、错误码和日志级别，给出可操作的修复建议。
-- 可用性验证：扩充 smoke/集成链路（含 excel2json→balance→json2excel），完善 CI 覆盖导入→计算→导出。
 - 质量管理：明确版本策略，结合 changelog 标注模型适用范围与假设更新。

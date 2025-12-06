@@ -3,6 +3,7 @@
 ## Unreleased
 - Added ma/ri/kp 额外样例到 AI_IO_GUIDE；基础输入校验扩展到 ma/ri/kp。
 - Added VERSIONING.md 说明版本策略。
+- Added excel2json→balance→json2excel smoke chain; balance calc validation tightened.
 
 ## 0.1.0
 - Install script now installs all CLI tools (balance/excel2json/json2excel/excel_inspect/fm/ac/fa/cf/ma/ri/tx/kp).

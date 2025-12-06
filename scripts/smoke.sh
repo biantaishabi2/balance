@@ -57,4 +57,47 @@ cat > /tmp/smoke_tb.csv <<'CSV'
 CSV
 python3 "$ROOT/excel2json.py" /tmp/smoke_tb.csv --template tb --header 1 >/dev/null
 
+echo "[smoke] excel2json -> balance -> json2excel"
+python3 - <<PY
+from pathlib import Path
+from openpyxl import Workbook
+import subprocess
+import json
+
+ROOT = Path("$ROOT")
+tmp = Path("/tmp/smoke_balance_chain.xlsx")
+wb = Workbook()
+ws = wb.active
+ws.title = "资产负债表"
+ws["A1"] = "现金"; ws["B1"] = 5000
+ws["A2"] = "固定资产原值"; ws["B2"] = 10000
+ws["A3"] = "累计折旧"; ws["B3"] = 0
+ws["A4"] = "短期借款"; ws["B4"] = 4000
+ws["A5"] = "股本"; ws["B5"] = 6000
+ws["A6"] = "留存收益"; ws["B6"] = 1000
+ws2 = wb.create_sheet("损益表")
+ws2["A1"] = "营业收入"; ws2["B1"] = 20000
+ws2["A2"] = "营业成本"; ws2["B2"] = 12000
+ws2["A3"] = "其他费用"; ws2["B3"] = 2000
+ws3 = wb.create_sheet("参数")
+ws3["A1"] = "利率"; ws3["B1"] = 0.05
+ws3["A2"] = "税率"; ws3["B2"] = 0.25
+ws3["A3"] = "折旧年限"; ws3["B3"] = 5
+wb.save(tmp)
+
+excel2json = subprocess.run(
+    ["python3", str(ROOT / "excel2json.py"), str(tmp)],
+    capture_output=True, text=True, check=True
+).stdout
+balance = subprocess.run(
+    ["python3", str(ROOT / "balance.py"), "calc", "--compact"],
+    input=excel2json, capture_output=True, text=True, check=True
+).stdout
+out_path = "/tmp/smoke_chain_out.xlsx"
+subprocess.run(
+    ["python3", str(ROOT / "json2excel.py"), "-", out_path],
+    input=balance, check=True, text=True
+)
+PY
+
 echo "[smoke] OK"
