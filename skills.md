@@ -72,63 +72,7 @@
 AI 输入/输出对齐与样例：详见 `docs/AI_IO_GUIDE.md`、ma/ri/kp 字段示意见 `docs/MA_RI_KP_TEMPLATES.md`。
 模型假设与增强方向：`docs/MODEL_ASSUMPTIONS.md`；版本策略：`docs/VERSIONING.md`；最小回归：`scripts/smoke.sh`。
 
-### balance 子命令
-
-| 子命令 | 作用 | 示例 |
-|--------|------|------|
-| `calc` | 五步配平计算（默认） | `balance calc < input.json` |
-| `check` | 校验输入数据是否合理 | `balance check < input.json` |
-| `diagnose` | 诊断结果问题 | `balance diagnose < output.json` |
-| `scenario` | 场景分析对比 | `balance scenario --vary "interest_rate:0.05,0.08" < input.json` |
-| `explain` | 追溯解释数字 | `balance explain --field net_income < output.json` |
-
-### fm 子命令
-- `fm lbo`：杠杆收购分析/敏感性
-- `fm dcf`：DCF 估值与敏感性
-- `fm three`：三表预测与配平检验
-- `fm ratio`：财务比率/杜邦/同业对比/趋势
-
-### ac 子命令
-- `ac tb`：试算平衡/会计恒等式检查
-- `ac adj`：调整分录建议
-- `ac sample`：审计抽样
-- `ac consol`：合并抵消
-
-### fa 子命令
-- `fa variance`：预算差异分析
-- `fa flex`：弹性预算分解
-- `fa forecast`：滚动预测
-- `fa trend`：趋势/同比分析
-
-### cf 子命令
-- `cf forecast`：13 周现金流预测
-- `cf wcc`：营运资金周期（DSO/DIO/DPO）
-- `cf drivers`：现金流驱动因素变动
-
-### ma 子命令
-- `ma dept`/`ma product`：部门/产品盈利分析
-- `ma allocate`：成本分摊（直接/逐步/ABC）
-- `ma cvp`：本量利/CVP 分析
-- `ma breakeven`：盈亏平衡点
-
-### ri 子命令
-- `ri credit`：客户信用评分
-- `ri aging`：应收账龄分析
-- `ri provision`：坏账计提
-- `ri fx`：汇率风险敞口
-
-### tx 子命令
-- `tx vat`：增值税计算
-- `tx cit`：企业所得税
-- `tx iit`/`tx bonus`：个人所得税/年终奖优化
-- `tx rd`：研发加计扣除
-- `tx burden`：综合税负
-
-### kp 子命令
-- `kp kpi`：KPI 仪表盘
-- `kp eva`：EVA 计算
-- `kp bsc`：平衡计分卡
-- `kp okr`：OKR 进度追踪
+各 CLI 详细子命令请用 `--help` 查看，示例在 `docs/AI_IO_GUIDE.md`。
 
 ## 标准字段名
 
