@@ -94,6 +94,8 @@ cat <<'JSON' | ma allocate --json
 JSON
 ```
 
+更多表格字段示意：`docs/MA_RI_KP_TEMPLATES.md`。
+
 ### LBO 快算（fm lbo calc）
 ```
 cat <<'JSON' | fm lbo calc --compact

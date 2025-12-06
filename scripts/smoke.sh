@@ -49,4 +49,12 @@ JSON
 echo "[smoke] json2excel"
 python3 "$ROOT/json2excel.py" "$ROOT/examples/output.json" /tmp/smoke_output.xlsx >/dev/null
 
+echo "[smoke] excel2json (trial balance CSV)"
+cat > /tmp/smoke_tb.csv <<'CSV'
+科目代码,科目名称,期初借方,期初贷方,本期借方,本期贷方,期末借方,期末贷方
+1001,现金,0,0,0,0,100,0
+2001,应付账款,0,50,0,0,0,50
+CSV
+python3 "$ROOT/excel2json.py" /tmp/smoke_tb.csv --template tb --header 1 >/dev/null
+
 echo "[smoke] OK"
