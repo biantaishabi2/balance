@@ -61,7 +61,7 @@
 | `balance` | 配平计算（含多个子命令） | `balance --help` |
 | `json2excel` | 将结果写回 Excel | `json2excel --help` |
 
-AI 输入/输出对齐与样例：详见 `docs/AI_IO_GUIDE.md`。
+AI 输入/输出对齐与样例：详见 `docs/AI_IO_GUIDE.md`、ma/ri/kp 字段示意见 `docs/MA_RI_KP_TEMPLATES.md`。
 
 ### balance 子命令
 
