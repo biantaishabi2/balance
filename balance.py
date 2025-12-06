@@ -626,8 +626,8 @@ def main():
 
         if errors:
             for e in errors:
-                print(f"错误: {e}", file=sys.stderr)
-            sys.exit(1)
+                print(f"ERROR: {e}", file=sys.stderr)
+            sys.exit(2)
 
     # 执行对应命令
     if args.command == "calc":

@@ -98,23 +98,23 @@ def cmd_forecast(args):
     try:
         data = json.load(sys.stdin)
     except json.JSONDecodeError as e:
-        print(f"错误: 无效的 JSON 输入 - {e}", file=sys.stderr)
-        sys.exit(1)
+        print(f"ERROR: 无效的 JSON 输入 - {e}", file=sys.stderr)
+        sys.exit(2)
 
     if not isinstance(data, dict):
-        print("错误: 输入必须是 JSON 对象（键值对）", file=sys.stderr)
-        sys.exit(1)
+        print("ERROR: 输入必须是 JSON 对象（键值对）", file=sys.stderr)
+        sys.exit(2)
 
     opening_cash = data.get("opening_cash", 0)
     weeks = data.get("weeks", args.weeks)
     if weeks <= 0:
-        print("错误: weeks 必须为正整数", file=sys.stderr)
-        sys.exit(1)
+        print("ERROR: weeks 必须为正整数", file=sys.stderr)
+        sys.exit(2)
     try:
         opening_cash = float(opening_cash)
     except (TypeError, ValueError):
-        print("错误: opening_cash 必须是数值", file=sys.stderr)
-        sys.exit(1)
+        print("ERROR: opening_cash 必须是数值", file=sys.stderr)
+        sys.exit(2)
 
     result = cash_forecast_13w(
         opening_cash=opening_cash,

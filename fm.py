@@ -93,12 +93,12 @@ def read_json_input() -> Dict:
     try:
         data = json.load(sys.stdin)
     except json.JSONDecodeError as e:
-        print(f"错误: 无效的JSON输入 - {e}", file=sys.stderr)
-        sys.exit(1)
+        print(f"ERROR: 无效的JSON输入 - {e}", file=sys.stderr)
+        sys.exit(2)
 
     if not isinstance(data, dict):
-        print("错误: 输入必须是 JSON 对象（键值对）", file=sys.stderr)
-        sys.exit(1)
+        print("ERROR: 输入必须是 JSON 对象（键值对）", file=sys.stderr)
+        sys.exit(2)
 
     return data
 

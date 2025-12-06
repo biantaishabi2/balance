@@ -37,11 +37,11 @@ def load_json():
     try:
         data = json.load(sys.stdin)
     except json.JSONDecodeError as e:
-        print(f"错误: 无效的 JSON 输入 - {e}", file=sys.stderr)
-        sys.exit(1)
+        print(f"ERROR: 无效的 JSON 输入 - {e}", file=sys.stderr)
+        sys.exit(2)
     if not isinstance(data, (dict, list)):
-        print("错误: 输入必须是 JSON 对象或数组", file=sys.stderr)
-        sys.exit(1)
+        print("ERROR: 输入必须是 JSON 对象或数组", file=sys.stderr)
+        sys.exit(2)
     return data
 
 def format_number(value: float, style: str = "auto") -> str:
