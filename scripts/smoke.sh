@@ -8,6 +8,9 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 echo "[smoke] balance calc"
 python3 "$ROOT/balance.py" calc --compact < "$ROOT/examples/input.json" >/dev/null
 
+echo "[smoke] balance calc (iterations)"
+python3 "$ROOT/balance.py" calc --iterations 3 --compact < "$ROOT/examples/input.json" >/dev/null
+
 echo "[smoke] fa variance"
 python3 "$ROOT/fa.py" variance --json <<'JSON' >/dev/null
 {"budget":{"收入":1000,"成本":600},"actual":{"收入":1100,"成本":650},"threshold":0.1}
@@ -42,5 +45,8 @@ echo "[smoke] kp kpi"
 python3 "$ROOT/kp.py" kpi --json <<'JSON' >/dev/null
 [{"name":"收入","target":1000000,"actual":950000,"direction":"higher_better","weight":0.3},{"name":"成本率","target":0.6,"actual":0.55,"direction":"lower_better","weight":0.2}]
 JSON
+
+echo "[smoke] json2excel"
+python3 "$ROOT/json2excel.py" "$ROOT/examples/output.json" /tmp/smoke_output.xlsx >/dev/null
 
 echo "[smoke] OK"

@@ -19,6 +19,7 @@
 - Smoke：`scripts/smoke.sh` 最小回归脚本；CI 工作流触发。
 - 测试计划：`docs/BALANCE_TEST_PLAN.md` 描述配平增强的单元/集成/CI 测试思路。
 - 配平迭代：`balance calc --iterations` 支持融资/利息迭代；新增示例（收敛/不收敛）和单测。
+- 版本策略：`docs/VERSIONING.md` 记录 SemVer 策略；`CHANGELOG.md` 按版本分段。
 
 ## 接下来要做
 - 示例与桥接：补充 ma/ri/kp 的 Excel 模板示意，降低输入门槛。

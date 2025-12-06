@@ -32,6 +32,18 @@ from fin_tools.tools.performance_tools import (
 # 输出格式化
 # ============================================================
 
+def load_json():
+    """从 stdin 读取 JSON，接受对象或数组"""
+    try:
+        data = json.load(sys.stdin)
+    except json.JSONDecodeError as e:
+        print(f"错误: 无效的 JSON 输入 - {e}", file=sys.stderr)
+        sys.exit(1)
+    if not isinstance(data, (dict, list)):
+        print("错误: 输入必须是 JSON 对象或数组", file=sys.stderr)
+        sys.exit(1)
+    return data
+
 def format_number(value: float, style: str = "auto") -> str:
     """格式化数字"""
     if value is None:
@@ -107,7 +119,7 @@ def status_icon(status: str) -> str:
 
 def cmd_kpi(args):
     """KPI仪表盘"""
-    data = json.load(sys.stdin)
+    data = load_json()
 
     kpis = data if isinstance(data, list) else data.get("kpis", [])
     period = data.get("period", args.period) if isinstance(data, dict) else args.period
@@ -158,7 +170,7 @@ def cmd_kpi(args):
 
 def cmd_eva(args):
     """经济增加值计算"""
-    data = json.load(sys.stdin)
+    data = load_json()
 
     result = eva_calc(
         nopat=data.get("nopat", 0),
@@ -199,7 +211,7 @@ def cmd_eva(args):
 
 def cmd_bsc(args):
     """平衡计分卡"""
-    data = json.load(sys.stdin)
+    data = load_json()
 
     perspectives = data.get("perspectives", data)
     weights = data.get("weights")
@@ -263,7 +275,7 @@ def cmd_bsc(args):
 
 def cmd_okr(args):
     """OKR进度追踪"""
-    data = json.load(sys.stdin)
+    data = load_json()
 
     objectives = data if isinstance(data, list) else data.get("objectives", [])
     method = data.get("scoring_method", args.method) if isinstance(data, dict) else args.method

@@ -80,6 +80,20 @@ cat <<'JSON' | kp kpi --json
 JSON
 ```
 
+### 账龄分析（ri aging）
+```
+cat <<'JSON' | ri aging --json
+{"as_of_date":"2025-12-31","receivables":[{"customer_name":"A","amount":5000,"days_overdue":45},{"customer_name":"B","amount":8000,"days_overdue":10}]}
+JSON
+```
+
+### 成本分摊（ma allocate）
+```
+cat <<'JSON' | ma allocate --json
+{"total_cost":100000,"cost_objects":[{"name":"产线A","driver_units":100},{"name":"产线B","driver_units":50}],"method":"direct"}
+JSON
+```
+
 ### LBO 快算（fm lbo calc）
 ```
 cat <<'JSON' | fm lbo calc --compact

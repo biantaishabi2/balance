@@ -34,6 +34,18 @@ from fin_tools.tools.management_tools import (
 # 输出格式化
 # ============================================================
 
+def load_json():
+    """从 stdin 读取 JSON，接受对象或列表"""
+    try:
+        data = json.load(sys.stdin)
+    except json.JSONDecodeError as e:
+        print(f"错误: 无效的 JSON 输入 - {e}", file=sys.stderr)
+        sys.exit(1)
+    if not isinstance(data, (dict, list)):
+        print("错误: 输入必须是 JSON 对象或数组", file=sys.stderr)
+        sys.exit(1)
+    return data
+
 def format_number(value: float, style: str = "auto") -> str:
     """格式化数字"""
     if value is None:
@@ -100,7 +112,7 @@ def print_table(headers: List[str], rows: List[List[str]], title: str = None):
 
 def cmd_dept(args):
     """部门损益表"""
-    data = json.load(sys.stdin)
+    data = load_json()
 
     result = dept_pnl(
         revenues=data.get("revenues", []),
@@ -138,7 +150,7 @@ def cmd_dept(args):
 
 def cmd_product(args):
     """产品盈利分析"""
-    data = json.load(sys.stdin)
+    data = load_json()
 
     result = product_profitability(
         products=data.get("products", []),
@@ -182,7 +194,7 @@ def cmd_product(args):
 
 def cmd_allocate(args):
     """成本分摊"""
-    data = json.load(sys.stdin)
+    data = load_json()
 
     result = cost_allocation(
         total_cost=data.get("total_cost", 0),
@@ -219,7 +231,7 @@ def cmd_allocate(args):
 
 def cmd_cvp(args):
     """本量利分析"""
-    data = json.load(sys.stdin)
+    data = load_json()
 
     result = cvp_analysis(
         selling_price=data.get("selling_price", 0),
@@ -274,7 +286,7 @@ def cmd_cvp(args):
 
 def cmd_breakeven(args):
     """盈亏平衡点计算"""
-    data = json.load(sys.stdin)
+    data = load_json()
 
     result = breakeven(
         products=data.get("products", []),

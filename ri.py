@@ -32,6 +32,18 @@ from fin_tools.tools.risk_tools import (
 # 输出格式化
 # ============================================================
 
+def load_json():
+    """从 stdin 读取 JSON，接受对象或数组"""
+    try:
+        data = json.load(sys.stdin)
+    except json.JSONDecodeError as e:
+        print(f"错误: 无效的 JSON 输入 - {e}", file=sys.stderr)
+        sys.exit(1)
+    if not isinstance(data, (dict, list)):
+        print("错误: 输入必须是 JSON 对象或数组", file=sys.stderr)
+        sys.exit(1)
+    return data
+
 def format_number(value: float, style: str = "auto") -> str:
     """格式化数字"""
     if value is None:
@@ -93,7 +105,7 @@ def print_table(headers: List[str], rows: List[List[str]], title: str = None):
 
 def cmd_credit(args):
     """客户信用评分"""
-    data = json.load(sys.stdin)
+    data = load_json()
 
     result = credit_score(
         customer_data=data,
@@ -141,7 +153,7 @@ def cmd_credit(args):
 
 def cmd_aging(args):
     """应收账款账龄分析"""
-    data = json.load(sys.stdin)
+    data = load_json()
 
     receivables = data if isinstance(data, list) else data.get("receivables", [])
 
@@ -202,7 +214,7 @@ def cmd_aging(args):
 
 def cmd_provision(args):
     """坏账准备计算"""
-    data = json.load(sys.stdin)
+    data = load_json()
 
     # 支持直接传入账龄数据或ar_aging的输出
     aging_data = data.get("aging_data", data.get("aging_summary", data))
@@ -263,7 +275,7 @@ def cmd_provision(args):
 
 def cmd_fx(args):
     """汇率风险敞口"""
-    data = json.load(sys.stdin)
+    data = load_json()
 
     result = fx_exposure(
         assets=data.get("assets", []),
