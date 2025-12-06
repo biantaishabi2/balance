@@ -214,6 +214,15 @@ balance scenario --vary "interest_rate:0.05,0.08,0.10" < input.json
 
 全链路示例与更多命令可见 `docs/AI_IO_GUIDE.md`，可用 `scripts/smoke.sh` 做最小验证。
 
+## 工具组合示例（按场景）
+- 基础配平：`excel2json --template tb ... | balance calc --iterations 3 | json2excel - 报表.xlsx`，必要时再用 `balance diagnose/explain` 输出诊断。
+- 预算与分析：`excel2json --template budget ... | fa variance`，或 `fa flex` 用业务量/成本性态拆解，再将结果喂给报告生成。
+- 现金与营运：`excel2json --template cash ... | cf forecast` 预测 13 周资金；或用 `cf wcc` 分析营运资金周期。
+- 管理会计：表格按 `docs/MA_RI_KP_TEMPLATES.md` 准备数据，运行 `ma cvp`/`ma allocate`/`ma breakeven` 做成本分摊、本量利/盈亏平衡分析。
+- 风险与账龄：`excel2json --template ar ... | ri aging`/`ri provision`/`ri credit`，输出账龄、减值或信用建议。
+- 税务：结构化收入/成本/薪酬后，直接 `tx vat`/`tx cit`/`tx iit`/`tx bonus` 计算税负。
+- 绩效：按 KPI/OKR 表格（见模板文档）运行 `kp kpi`/`kp okr` 做评分与进度。
+
 ### 问题4：输入数据可能有错
 ```bash
 balance check < input.json
