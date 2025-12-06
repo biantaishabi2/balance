@@ -57,9 +57,17 @@
 | 工具 | 作用 | 帮助 |
 |------|------|------|
 | `excel_inspect` | 查看 Excel 结构 | `excel_inspect --help` |
-| `excel2json` | 从 Excel 提取数据 | `excel2json --help` |
-| `balance` | 配平计算（含多个子命令） | `balance --help` |
+| `excel2json` | 从 Excel/CSV 提取数据 | `excel2json --help` |
 | `json2excel` | 将结果写回 Excel | `json2excel --help` |
+| `balance` | 三表配平/诊断/场景/解释 | `balance --help` |
+| `fm` | 财务建模 (LBO/MA/DCF/三表/比率) | `fm --help` |
+| `ac` | 会计审计 (试算平衡/调整/抽样/合并) | `ac --help` |
+| `fa` | 财务分析 (预算差异/弹性预算/预测/趋势) | `fa --help` |
+| `cf` | 现金流 (13周预测/营运资金/驱动因素) | `cf --help` |
+| `ma` | 管理会计 (部门/产品/分摊/CVP/盈亏平衡) | `ma --help` |
+| `ri` | 风险管理 (信用/账龄/减值/汇率) | `ri --help` |
+| `tx` | 税务 (增值税/企税/个税/年终奖/加计扣除) | `tx --help` |
+| `kp` | 绩效 (KPI/EVA/BSC/OKR) | `kp --help` |
 
 AI 输入/输出对齐与样例：详见 `docs/AI_IO_GUIDE.md`、ma/ri/kp 字段示意见 `docs/MA_RI_KP_TEMPLATES.md`。
 模型假设与增强方向：`docs/MODEL_ASSUMPTIONS.md`；版本策略：`docs/VERSIONING.md`；最小回归：`scripts/smoke.sh`。
@@ -73,6 +81,54 @@ AI 输入/输出对齐与样例：详见 `docs/AI_IO_GUIDE.md`、ma/ri/kp 字段
 | `diagnose` | 诊断结果问题 | `balance diagnose < output.json` |
 | `scenario` | 场景分析对比 | `balance scenario --vary "interest_rate:0.05,0.08" < input.json` |
 | `explain` | 追溯解释数字 | `balance explain --field net_income < output.json` |
+
+### fm 子命令
+- LBO：`fm lbo calc`，敏感性 `fm lbo sensitivity`
+- DCF：`fm dcf calc`，敏感性 `fm dcf sensitivity`
+- 三表：`fm three forecast`，配平检验 `fm three check`
+- 比率：`fm ratio calc|dupont|compare|trend`
+
+### ac 子命令
+- 试算平衡：`ac tb`
+- 调整分录建议：`ac adj`
+- 审计抽样：`ac sample`
+- 合并抵消：`ac consol`
+
+### fa 子命令
+- 预算差异：`fa variance`
+- 弹性预算：`fa flex`
+- 滚动预测：`fa forecast`
+- 趋势分析：`fa trend`
+
+### cf 子命令
+- 13 周现金流：`cf forecast`
+- 营运资金周期：`cf wcc`
+- 现金流驱动因素：`cf drivers`
+
+### ma 子命令
+- 部门/产品损益：`ma dept` / `ma product`
+- 成本分摊：`ma allocate`
+- 本量利/CVP：`ma cvp`
+- 盈亏平衡：`ma breakeven`
+
+### ri 子命令
+- 信用评分：`ri credit`
+- 账龄分析：`ri aging`
+- 坏账计提：`ri provision`
+- 汇率风险：`ri fx`
+
+### tx 子命令
+- 增值税：`tx vat`
+- 企税：`tx cit`
+- 个税/年终奖：`tx iit` / `tx bonus`
+- 研发加计扣除：`tx rd`
+- 综合税负：`tx burden`
+
+### kp 子命令
+- KPI 仪表盘：`kp kpi`
+- EVA：`kp eva`
+- BSC：`kp bsc`
+- OKR：`kp okr`
 
 ## 标准字段名
 
