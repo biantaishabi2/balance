@@ -24,5 +24,4 @@
 - 集成链路：`scripts/smoke.sh` 覆盖 excel2json→balance→json2excel。
 
 ## 接下来要做
-- 校验与提示：在 balance/fm/cf 等 CLI 继续增强输入校验、错误码和日志级别，给出可操作的修复建议。
-- 质量管理：明确版本策略，结合 changelog 标注模型适用范围与假设更新。
+- 质量管理：按版本节奏更新 changelog 与模型假设标注，保持变更透明。
