@@ -62,6 +62,7 @@
 | `json2excel` | 将结果写回 Excel | `json2excel --help` |
 
 AI 输入/输出对齐与样例：详见 `docs/AI_IO_GUIDE.md`、ma/ri/kp 字段示意见 `docs/MA_RI_KP_TEMPLATES.md`。
+模型假设与增强方向：`docs/MODEL_ASSUMPTIONS.md`；版本策略：`docs/VERSIONING.md`；最小回归：`scripts/smoke.sh`。
 
 ### balance 子命令
 
@@ -200,6 +201,18 @@ balance explain --field net_income < output.json
 ```bash
 balance scenario --vary "interest_rate:0.05,0.08,0.10" < input.json
 ```
+
+## 其他 CLI 快捷参考
+- fm（财务建模）：`fm lbo|dcf|three|ratio`，见 `docs/AI_IO_GUIDE.md` 对应示例。
+- ac（会计审计）：`ac tb|adj|sample|consol`，输入可由 trial balance/voucher 转换。
+- fa（财务分析）：`fa variance|flex|forecast|trend`，预算/趋势场景。
+- cf（现金流）：`cf forecast|wcc|drivers`，13 周现金流、营运资金。
+- ma（管理会计）：`ma dept|product|allocate|cvp|breakeven`，表格字段示意见 `docs/MA_RI_KP_TEMPLATES.md`。
+- ri（风险）：`ri credit|aging|provision|fx`，账龄/坏账/汇率。
+- tx（税务）：`tx vat|cit|iit|bonus|rd|burden`。
+- kp（绩效）：`kp kpi|eva|bsc|okr`。
+
+全链路示例与更多命令可见 `docs/AI_IO_GUIDE.md`，可用 `scripts/smoke.sh` 做最小验证。
 
 ### 问题4：输入数据可能有错
 ```bash
