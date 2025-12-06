@@ -83,52 +83,52 @@ AI 输入/输出对齐与样例：详见 `docs/AI_IO_GUIDE.md`、ma/ri/kp 字段
 | `explain` | 追溯解释数字 | `balance explain --field net_income < output.json` |
 
 ### fm 子命令
-- LBO：`fm lbo calc`，敏感性 `fm lbo sensitivity`
-- DCF：`fm dcf calc`，敏感性 `fm dcf sensitivity`
-- 三表：`fm three forecast`，配平检验 `fm three check`
-- 比率：`fm ratio calc|dupont|compare|trend`
+- `fm lbo`：杠杆收购分析/敏感性
+- `fm dcf`：DCF 估值与敏感性
+- `fm three`：三表预测与配平检验
+- `fm ratio`：财务比率/杜邦/同业对比/趋势
 
 ### ac 子命令
-- 试算平衡：`ac tb`
-- 调整分录建议：`ac adj`
-- 审计抽样：`ac sample`
-- 合并抵消：`ac consol`
+- `ac tb`：试算平衡/会计恒等式检查
+- `ac adj`：调整分录建议
+- `ac sample`：审计抽样
+- `ac consol`：合并抵消
 
 ### fa 子命令
-- 预算差异：`fa variance`
-- 弹性预算：`fa flex`
-- 滚动预测：`fa forecast`
-- 趋势分析：`fa trend`
+- `fa variance`：预算差异分析
+- `fa flex`：弹性预算分解
+- `fa forecast`：滚动预测
+- `fa trend`：趋势/同比分析
 
 ### cf 子命令
-- 13 周现金流：`cf forecast`
-- 营运资金周期：`cf wcc`
-- 现金流驱动因素：`cf drivers`
+- `cf forecast`：13 周现金流预测
+- `cf wcc`：营运资金周期（DSO/DIO/DPO）
+- `cf drivers`：现金流驱动因素变动
 
 ### ma 子命令
-- 部门/产品损益：`ma dept` / `ma product`
-- 成本分摊：`ma allocate`
-- 本量利/CVP：`ma cvp`
-- 盈亏平衡：`ma breakeven`
+- `ma dept`/`ma product`：部门/产品盈利分析
+- `ma allocate`：成本分摊（直接/逐步/ABC）
+- `ma cvp`：本量利/CVP 分析
+- `ma breakeven`：盈亏平衡点
 
 ### ri 子命令
-- 信用评分：`ri credit`
-- 账龄分析：`ri aging`
-- 坏账计提：`ri provision`
-- 汇率风险：`ri fx`
+- `ri credit`：客户信用评分
+- `ri aging`：应收账龄分析
+- `ri provision`：坏账计提
+- `ri fx`：汇率风险敞口
 
 ### tx 子命令
-- 增值税：`tx vat`
-- 企税：`tx cit`
-- 个税/年终奖：`tx iit` / `tx bonus`
-- 研发加计扣除：`tx rd`
-- 综合税负：`tx burden`
+- `tx vat`：增值税计算
+- `tx cit`：企业所得税
+- `tx iit`/`tx bonus`：个人所得税/年终奖优化
+- `tx rd`：研发加计扣除
+- `tx burden`：综合税负
 
 ### kp 子命令
-- KPI 仪表盘：`kp kpi`
-- EVA：`kp eva`
-- BSC：`kp bsc`
-- OKR：`kp okr`
+- `kp kpi`：KPI 仪表盘
+- `kp eva`：EVA 计算
+- `kp bsc`：平衡计分卡
+- `kp okr`：OKR 进度追踪
 
 ## 标准字段名
 
