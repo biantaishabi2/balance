@@ -8,13 +8,21 @@ from typing import Any, Dict, Optional
 
 from balance import run_calc
 
+from ledger.reporting_engine import generate_ledger_statements
 from ledger.services import balances_for_period, build_balance_input
 
 
 def generate_statements(
-    conn, period: str, assumptions: Optional[Dict[str, Any]] = None
+    conn,
+    period: str,
+    assumptions: Optional[Dict[str, Any]] = None,
+    dims: Optional[Dict[str, int]] = None,
+    engine: str = "balance",
 ) -> Dict[str, Any]:
-    balances = balances_for_period(conn, period)
+    if engine == "ledger":
+        return generate_ledger_statements(conn, period, dims=dims)
+
+    balances = balances_for_period(conn, period, dims=dims)
     input_data = build_balance_input(balances)
     if assumptions:
         input_data.update(assumptions)

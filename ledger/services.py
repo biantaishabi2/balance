@@ -392,15 +392,25 @@ def fetch_entries(conn, voucher_id: int) -> List[Dict[str, Any]]:
     return [dict(r) for r in rows]
 
 
-def balances_for_period(conn, period: str) -> List[Dict[str, Any]]:
+def balances_for_period(
+    conn, period: str, dims: Optional[Dict[str, int]] = None
+) -> List[Dict[str, Any]]:
+    conditions = ["b.period = ?"]
+    params: List[Any] = [period]
+    if dims:
+        for field in ("dept_id", "project_id", "customer_id", "supplier_id", "employee_id"):
+            value = dims.get(field)
+            if value is not None:
+                conditions.append(f"b.{field} = ?")
+                params.append(value)
     rows = conn.execute(
-        """
+        f"""
         SELECT b.*, a.name AS account_name, a.type AS account_type, a.direction AS account_direction
         FROM balances b
         JOIN accounts a ON b.account_code = a.code
-        WHERE b.period = ?
+        WHERE {' AND '.join(conditions)}
         """,
-        (period,),
+        params,
     ).fetchall()
     return [dict(r) for r in rows]
 
