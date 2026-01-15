@@ -48,6 +48,12 @@
 - [ ] 返回的三表数据格式正确
 - [ ] `is_balanced` 字段正确
 
+#### 账务口径三表引擎
+- [ ] 读取 `data/report_mapping.json` 并按映射汇总
+- [ ] 资产负债表：资产=负债+权益
+- [ ] 利润表：收入/成本/费用按发生额汇总
+- [ ] 现金流量表（间接法）：净增加=期末现金-期初现金
+
 ### 辅助核算测试
 
 - [ ] 部门维度正确关联到分录
@@ -108,6 +114,12 @@
 - [ ] balance calc 返回结果正确
 - [ ] 生成的三表与 balance calc 结果一致
 
+#### 账务口径三表引擎
+- [ ] `ledger report --engine ledger` 返回三表
+- [ ] 输出口径不依赖利率/税率/折旧假设
+- [ ] 三表与余额表口径一致
+- [ ] 支持维度过滤（`--dept-id`/`--project-id`/`--customer-id`/`--supplier-id`/`--employee-id`）
+
 #### 调用 ac tb
 - [ ] 余额数据正确映射到 ac tb 输入格式
 - [ ] 试算平衡结果正确
@@ -144,7 +156,9 @@ ledger query balances --period 2025-01
 
 # 生成三表
 ledger report --period 2025-01
+ledger report --period 2025-01 --engine ledger
 ledger report --period 2025-01 --interest-rate 0 --tax-rate 0 --fixed-asset-life 0 --fixed-asset-salvage 0
+ledger report --period 2025-01 --engine ledger --dept-id 1
 ```
 
 **预期结果：**
@@ -198,7 +212,9 @@ ledger query balances --dept-id 1 --customer-id 1
 
 # 生成三表
 ledger report --period 2025-01
+ledger report --period 2025-01 --engine ledger
 ledger report --period 2025-01 --interest-rate 0 --tax-rate 0 --fixed-asset-life 0 --fixed-asset-salvage 0
+ledger report --period 2025-01 --engine ledger --dept-id 1
 ```
 
 **预期结果：**
@@ -218,6 +234,19 @@ ledger report --period 2025-01 --interest-rate 0 --tax-rate 0 --fixed-asset-life
 
 **预期结果：**
 - [ ] 映射文件生效（报表汇总字段随配置变化）
+
+### 账务口径映射配置
+
+**运行命令：**
+```bash
+# 检查映射字段与输出
+sed -n '1,160p' data/report_mapping.json
+ledger report --period 2025-01 --engine ledger
+```
+
+**预期结果：**
+- [ ] 映射包含 `prefixes`/`source`/`direction`
+- [ ] 报表汇总字段随映射变化
 
 ---
 

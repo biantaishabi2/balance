@@ -675,6 +675,8 @@ ledger query trial-balance --period 2025-01
 ledger report --period 2025-01
 ledger report --period 2025-01 --output reports/2025-01.xlsx
 ledger report --period 2025-01 --interest-rate 0 --tax-rate 0 --fixed-asset-life 0 --fixed-asset-salvage 0
+ledger report --period 2025-01 --engine ledger
+ledger report --period 2025-01 --engine ledger --dept-id 1
 ```
 
 **功能：**
@@ -683,6 +685,8 @@ ledger report --period 2025-01 --interest-rate 0 --tax-rate 0 --fixed-asset-life
 3. 调用 `balance calc` 计算配平
 4. 生成资产负债表、利润表、现金流量表，并输出JSON或Excel
 5. 支持利率/税率/折旧年限/残值参数覆盖默认假设
+6. 支持 `--engine ledger` 使用账务口径三表引擎
+7. 支持按维度过滤（`--dept-id`/`--project-id`/`--customer-id`/`--supplier-id`/`--employee-id`）
 
 **输出（JSON）：**
 ```json
@@ -822,6 +826,78 @@ def generate_statements(period):
     return result
 ```
 
+### 4.4 账务口径三表引擎（方案三）
+
+目标：不使用财务模型假设，直接基于账务数据生成三表。与 `balance calc` 并存，通过 `ledger report --engine ledger` 启用。
+
+**数据来源：**
+1. `balances`：期初/本期发生/期末余额（opening/debit/credit/closing）
+2. `voucher_entries`：现金流量分类需要时用于细分（可选）
+
+**映射配置：**
+- `data/report_mapping.json`：定义报表项目与科目映射、汇总口径
+- 字段：`prefixes`（科目前缀数组）、`source`（opening_balance/closing_balance/debit_amount/credit_amount）、`direction`（debit/credit，用于符号归一）
+- 示例字段：
+  - `balance_sheet.assets`：按科目前缀汇总期末余额
+  - `income_statement.revenue`：按科目汇总本期贷方发生额
+  - `cash_flow.operating`：按科目映射汇总现金流入/流出
+
+**映射配置示例：**
+```json
+{
+  "balance_sheet": {
+    "assets": {
+      "prefixes": ["1001", "1002", "140", "1601"],
+      "source": "closing_balance",
+      "direction": "debit"
+    },
+    "liabilities": {
+      "prefixes": ["200", "220"],
+      "source": "closing_balance",
+      "direction": "credit"
+    },
+    "equity": {
+      "prefixes": ["4001", "4002", "4101", "4102", "4201"],
+      "source": "closing_balance",
+      "direction": "credit"
+    }
+  },
+  "income_statement": {
+    "revenue": {
+      "prefixes": ["6001", "6051"],
+      "source": "credit_amount",
+      "direction": "credit"
+    },
+    "cost": {
+      "prefixes": ["5001", "6401"],
+      "source": "debit_amount",
+      "direction": "debit"
+    },
+    "expense": {
+      "prefixes": ["6601", "6602"],
+      "source": "debit_amount",
+      "direction": "debit"
+    }
+  },
+  "cash_flow": {
+    "operating": {
+      "prefixes": ["1001", "1002"],
+      "source": "debit_amount",
+      "direction": "debit"
+    }
+  }
+}
+```
+
+**计算规则：**
+- 资产负债表：按映射汇总期末余额，借方科目记正，贷方科目记正（按方向做符号归一）
+- 利润表：收入=贷方发生额汇总，成本/费用=借方发生额汇总
+- 现金流量表（间接法）：净利润 + 非现金项目 + 营运资本变动 + 投资/筹资变动
+
+**对平校验：**
+- 资产 = 负债 + 权益
+- 现金净增加 = 期末现金 - 期初现金
+
 ---
 
 ## 5. 实现架构
@@ -855,10 +931,12 @@ balance/
 │   │   ├── connection.py        # 数据库连接
 │   │   ├── schema.py           # 建表SQL
 │   │   └── migrations.py       # 数据迁移
+│   ├── reporting_engine.py     # 账务口径三表引擎
 │   └── utils.py
 ├── data/
 │   └── standard_accounts.json   # 财政部标准科目
 │   └── balance_mapping.json     # 三表映射配置
+│   └── report_mapping.json      # 账务口径三表映射
 └── fin_tools/                   # 现有工具
 ```
 
