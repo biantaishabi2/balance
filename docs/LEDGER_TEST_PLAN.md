@@ -35,7 +35,7 @@
 - [ ] 借方科目：期末 = 期初 + 借方 - 贷方
 - [ ] 贷方科目：期末 = 期初 - 借方 + 贷方
 - [ ] 凭证确认后余额表正确更新
-- [ ] 按维度（部门、项目等）正确汇总余额
+- [ ] 按维度组合（部门、项目等）正确汇总余额
 
 #### 期间滚动
 - [ ] 本期期末余额 = 下期期初余额
@@ -161,6 +161,8 @@ ledger init
 # 添加辅助核算
 ledger dimensions add <<'JSON'
 {"type": "department", "code": "D001", "name": "销售部"}
+JSON
+ledger dimensions add <<'JSON'
 {"type": "customer", "code": "C001", "name": "客户A"}
 JSON
 
@@ -170,7 +172,7 @@ cat <<'JSON' | ledger record --auto
   "date": "2025-01-15",
   "description": "销售产品",
   "entries": [
-    {"account": "应收账款", "debit": 50000, "customer": "C001"},
+    {"account": "应收账款", "debit": 50000, "customer": "C001", "department": "D001"},
     {"account": "主营业务收入", "credit": 50000, "department": "D001"}
   ]
 }
@@ -187,9 +189,10 @@ cat <<'JSON' | ledger record --auto
 }
 JSON
 
-# 查询余额（按维度）
-ledger query balances --dimension department --dimension-id 1
-ledger query balances --dimension customer --dimension-id 1
+# 查询余额（按维度组合）
+ledger query balances --dept-id 1
+ledger query balances --customer-id 1
+ledger query balances --dept-id 1 --customer-id 1
 
 # 生成三表
 ledger report --period 2025-01
@@ -197,7 +200,7 @@ ledger report --period 2025-01
 
 **预期结果：**
 - [ ] 辅助核算正确关联
-- [ ] 按维度查询返回正确结果
+- [ ] 按维度组合查询返回正确结果
 - [ ] 三表正确生成
 
 ---
@@ -328,6 +331,33 @@ ledger confirm 9999
 **预期结果：**
 - [ ] 返回错误码 `VOUCHER_NOT_FOUND`
 - [ ] 显示凭证ID
+
+#### 删除草稿凭证（物理删除）
+```bash
+# 创建草稿
+ledger record <<'JSON'
+{
+  "date": "2025-01-15",
+  "description": "草稿删除测试",
+  "entries": [
+    {"account": "库存现金", "debit": 1000},
+    {"account": "银行存款", "credit": 1000}
+  ]
+}
+JSON
+
+# 删除草稿
+ledger delete 1
+
+# 验证数据库无记录
+sqlite3 ledger.db "SELECT COUNT(*) FROM vouchers WHERE id=1"
+sqlite3 ledger.db "SELECT COUNT(*) FROM voucher_entries WHERE voucher_id=1"
+```
+
+**预期结果：**
+- [ ] 返回 `deleted: true`
+- [ ] vouchers 表记录已删除
+- [ ] voucher_entries 表记录已删除
 
 #### 删除已确认凭证
 ```bash
@@ -512,7 +542,7 @@ ledger query vouchers --db-path "$DB" | jq '.vouchers | length'  # 应为10
 ```bash
 for py in python3.8 python3.9 python3.10 python3.11; do
   echo "Testing with $py"
-  $py -m pytest ledger/tests/ -v
+  $py -m pytest tests/ -v
 done
 ```
 
@@ -572,7 +602,7 @@ diff /tmp/actual_reports.json examples/ledger_reports_001.json
 
 **查看覆盖率：**
 ```bash
-pytest --cov=ledger --cov-report=html ledger/tests/
+pytest --cov=ledger --cov-report=html tests/
 ```
 
 ---
