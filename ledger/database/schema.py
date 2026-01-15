@@ -48,6 +48,7 @@ CREATE TABLE IF NOT EXISTS vouchers (
   status TEXT NOT NULL DEFAULT 'draft',
   void_reason TEXT,
   created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+  reviewed_at TEXT,
   confirmed_at TEXT,
   voided_at TEXT
 );

@@ -22,7 +22,11 @@ def build_parser() -> argparse.ArgumentParser:
 
     commands.add_init_parser(subparsers, [common])
     commands.add_record_parser(subparsers, [common])
+    commands.add_review_parser(subparsers, [common])
+    commands.add_unreview_parser(subparsers, [common])
     commands.add_confirm_parser(subparsers, [common])
+    commands.add_close_parser(subparsers, [common])
+    commands.add_reopen_parser(subparsers, [common])
     commands.add_delete_parser(subparsers, [common])
     commands.add_void_parser(subparsers, [common])
     commands.add_query_parser(subparsers, [common])

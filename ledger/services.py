@@ -5,6 +5,7 @@
 from __future__ import annotations
 
 from datetime import datetime
+import calendar
 import json
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Tuple
@@ -38,6 +39,12 @@ DEFAULT_BALANCE_MAPPING = {
 }
 
 
+DEFAULT_CLOSE_CONFIG = {
+    "profit_account": "4103",
+    "retain_account": "4104",
+}
+
+
 def parse_period(date_str: str) -> str:
     return date_str[:7]
 
@@ -52,6 +59,26 @@ def _prev_period(period: str) -> Optional[str]:
     if month_i == 1:
         return f"{year_i - 1:04d}-12"
     return f"{year_i:04d}-{month_i - 1:02d}"
+
+
+def _next_period(period: str) -> Optional[str]:
+    try:
+        year, month = period.split("-")
+        year_i = int(year)
+        month_i = int(month)
+    except ValueError:
+        return None
+    if month_i == 12:
+        return f"{year_i + 1:04d}-01"
+    return f"{year_i:04d}-{month_i + 1:02d}"
+
+
+def _period_end_date(period: str) -> str:
+    year, month = period.split("-")
+    year_i = int(year)
+    month_i = int(month)
+    last_day = calendar.monthrange(year_i, month_i)[1]
+    return f"{year_i:04d}-{month_i:02d}-{last_day:02d}"
 
 
 def ensure_period(conn, period: str) -> None:
@@ -100,6 +127,17 @@ def ensure_period(conn, period: str) -> None:
                 row["closing_balance"],
             ),
         )
+
+
+def get_period_status(conn, period: str) -> Optional[str]:
+    row = conn.execute("SELECT status FROM periods WHERE period = ?", (period,)).fetchone()
+    return row["status"] if row else None
+
+
+def assert_period_open(conn, period: str) -> None:
+    status = get_period_status(conn, period)
+    if status == "closed":
+        raise LedgerError("PERIOD_CLOSED", f"期间已结账: {period}")
 
 
 def load_standard_accounts(conn, accounts: List[Dict[str, Any]]) -> int:
@@ -215,13 +253,17 @@ def insert_voucher(
     voucher_no = generate_voucher_no(conn, voucher_data["date"])
     period = parse_period(voucher_data["date"])
     ensure_period(conn, period)
+    assert_period_open(conn, period)
     confirmed_at = None
+    reviewed_at = None
+    if status == "reviewed":
+        reviewed_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     if status == "confirmed":
         confirmed_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     cur = conn.execute(
         """
-        INSERT INTO vouchers (voucher_no, date, period, description, status, confirmed_at)
-        VALUES (?, ?, ?, ?, ?, ?)
+        INSERT INTO vouchers (voucher_no, date, period, description, status, reviewed_at, confirmed_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
         """,
         (
             voucher_no,
@@ -229,6 +271,7 @@ def insert_voucher(
             period,
             voucher_data.get("description"),
             status,
+            reviewed_at,
             confirmed_at,
         ),
     )
@@ -392,6 +435,71 @@ def fetch_entries(conn, voucher_id: int) -> List[Dict[str, Any]]:
     return [dict(r) for r in rows]
 
 
+def review_voucher(conn, voucher_id: int) -> Dict[str, Any]:
+    voucher = fetch_voucher(conn, voucher_id)
+    if not voucher:
+        raise LedgerError("VOUCHER_NOT_FOUND", f"凭证不存在: {voucher_id}")
+    if voucher["status"] != "draft":
+        raise LedgerError("VOUCHER_STATUS_INVALID", "仅草稿凭证可审核")
+    reviewed_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    conn.execute(
+        "UPDATE vouchers SET status = 'reviewed', reviewed_at = ? WHERE id = ?",
+        (reviewed_at, voucher_id),
+    )
+    voucher["status"] = "reviewed"
+    voucher["reviewed_at"] = reviewed_at
+    return voucher
+
+
+def unreview_voucher(conn, voucher_id: int) -> Dict[str, Any]:
+    voucher = fetch_voucher(conn, voucher_id)
+    if not voucher:
+        raise LedgerError("VOUCHER_NOT_FOUND", f"凭证不存在: {voucher_id}")
+    if voucher["status"] != "reviewed":
+        raise LedgerError("VOUCHER_STATUS_INVALID", "仅已审核凭证可反审核")
+    conn.execute(
+        "UPDATE vouchers SET status = 'draft', reviewed_at = NULL WHERE id = ?",
+        (voucher_id,),
+    )
+    voucher["status"] = "draft"
+    voucher["reviewed_at"] = None
+    return voucher
+
+
+def confirm_voucher(conn, voucher_id: int) -> Dict[str, Any]:
+    voucher = fetch_voucher(conn, voucher_id)
+    if not voucher:
+        raise LedgerError("VOUCHER_NOT_FOUND", f"凭证不存在: {voucher_id}")
+    if voucher["status"] != "reviewed":
+        raise LedgerError("VOUCHER_NOT_REVIEWED", "未审核凭证不能记账")
+    assert_period_open(conn, voucher["period"])
+
+    entries = fetch_entries(conn, voucher_id)
+    total_debit = sum(e["debit_amount"] for e in entries)
+    total_credit = sum(e["credit_amount"] for e in entries)
+    if abs(total_debit - total_credit) >= 0.01:
+        raise LedgerError(
+            "NOT_BALANCED",
+            f"借贷不相等：借方{total_debit}，贷方{total_credit}",
+            {
+                "debit_total": round(total_debit, 2),
+                "credit_total": round(total_credit, 2),
+                "difference": round(total_debit - total_credit, 2),
+            },
+        )
+
+    confirmed_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    conn.execute(
+        "UPDATE vouchers SET status = 'confirmed', confirmed_at = ? WHERE id = ?",
+        (confirmed_at, voucher_id),
+    )
+    balances_updated = update_balance_for_voucher(conn, voucher_id, voucher["period"])
+    voucher["status"] = "confirmed"
+    voucher["confirmed_at"] = confirmed_at
+    voucher["balances_updated"] = balances_updated
+    return voucher
+
+
 def balances_for_period(
     conn, period: str, dims: Optional[Dict[str, int]] = None
 ) -> List[Dict[str, Any]]:
@@ -413,6 +521,233 @@ def balances_for_period(
         params,
     ).fetchall()
     return [dict(r) for r in rows]
+
+
+def close_period(conn, period: str) -> Dict[str, Any]:
+    ensure_period(conn, period)
+    assert_period_open(conn, period)
+
+    row = conn.execute(
+        "SELECT COUNT(*) AS cnt FROM vouchers WHERE period = ? AND status IN ('draft', 'reviewed')",
+        (period,),
+    ).fetchone()
+    if row and row["cnt"] > 0:
+        raise LedgerError("PERIOD_HAS_UNPOSTED", "期间存在未记账凭证")
+
+    balances = balances_for_period(conn, period)
+    config = _load_close_config()
+    profit_account = config["profit_account"]
+    retain_account = config.get("retain_account")
+
+    closing_entries, net_by_dims = _build_income_close_entries(
+        conn, balances, profit_account
+    )
+
+    closing_voucher_id = None
+    if closing_entries:
+        close_data = {
+            "date": _period_end_date(period),
+            "description": f"{period} 期末结转",
+        }
+        closing_voucher_id, _, _, _ = insert_voucher(
+            conn, close_data, closing_entries, "confirmed"
+        )
+        update_balance_for_voucher(conn, closing_voucher_id, period)
+
+    transfer_voucher_id = None
+    if retain_account and retain_account != profit_account:
+        transfer_entries = _build_profit_transfer_entries(
+            conn, period, profit_account, retain_account
+        )
+        if transfer_entries:
+            transfer_data = {
+                "date": _period_end_date(period),
+                "description": f"{period} 本年利润结转",
+            }
+            transfer_voucher_id, _, _, _ = insert_voucher(
+                conn, transfer_data, transfer_entries, "confirmed"
+            )
+            update_balance_for_voucher(conn, transfer_voucher_id, period)
+
+    conn.execute(
+        "UPDATE periods SET status = 'closed', closed_at = CURRENT_TIMESTAMP WHERE period = ?",
+        (period,),
+    )
+
+    next_period = _next_period(period)
+    if next_period:
+        ensure_period(conn, next_period)
+
+    net_total = round(sum(net_by_dims.values()), 2)
+    return {
+        "period": period,
+        "next_period": next_period,
+        "closing_voucher_id": closing_voucher_id,
+        "transfer_voucher_id": transfer_voucher_id,
+        "net_income": net_total,
+    }
+
+
+def reopen_period(conn, period: str) -> Dict[str, Any]:
+    status = get_period_status(conn, period)
+    if status != "closed":
+        raise LedgerError("PERIOD_NOT_CLOSED", f"期间未结账: {period}")
+    conn.execute(
+        "UPDATE periods SET status = 'open', closed_at = NULL WHERE period = ?",
+        (period,),
+    )
+    return {"period": period, "status": "open"}
+
+
+def _build_income_close_entries(
+    conn, balances: List[Dict[str, Any]], profit_account: str
+) -> Tuple[List[Dict[str, Any]], Dict[Tuple[int, int, int, int, int], float]]:
+    profit = find_account(conn, profit_account)
+    entries: List[Dict[str, Any]] = []
+    net_by_dims: Dict[Tuple[int, int, int, int, int], float] = {}
+
+    for balance in balances:
+        if balance.get("account_type") not in ("revenue", "expense"):
+            continue
+        closing = float(balance.get("closing_balance") or 0)
+        if abs(closing) < 0.01:
+            continue
+        _append_reverse_entry(entries, balance)
+        dims = _dims_from_balance(balance)
+        if balance.get("account_type") == "revenue":
+            net_by_dims[dims] = net_by_dims.get(dims, 0.0) + closing
+        else:
+            net_by_dims[dims] = net_by_dims.get(dims, 0.0) - closing
+
+    for dims, net in net_by_dims.items():
+        if abs(net) < 0.01:
+            continue
+        debit = abs(net) if net < 0 else 0.0
+        credit = net if net > 0 else 0.0
+        _append_entry(
+            entries,
+            profit["code"],
+            profit["name"],
+            debit,
+            credit,
+            dims,
+            "期末结转",
+        )
+
+    return entries, net_by_dims
+
+
+def _build_profit_transfer_entries(
+    conn, period: str, profit_account: str, retain_account: str
+) -> List[Dict[str, Any]]:
+    profit = find_account(conn, profit_account)
+    retain = find_account(conn, retain_account)
+    balances = balances_for_period(conn, period)
+    entries: List[Dict[str, Any]] = []
+
+    for balance in balances:
+        if balance.get("account_code") != profit_account:
+            continue
+        closing = float(balance.get("closing_balance") or 0)
+        if abs(closing) < 0.01:
+            continue
+        dims = _dims_from_balance(balance)
+        if closing > 0:
+            _append_entry(
+                entries,
+                profit["code"],
+                profit["name"],
+                closing,
+                0.0,
+                dims,
+                "本年利润结转",
+            )
+            _append_entry(
+                entries,
+                retain["code"],
+                retain["name"],
+                0.0,
+                closing,
+                dims,
+                "本年利润结转",
+            )
+        else:
+            amount = abs(closing)
+            _append_entry(
+                entries,
+                profit["code"],
+                profit["name"],
+                0.0,
+                amount,
+                dims,
+                "本年利润结转",
+            )
+            _append_entry(
+                entries,
+                retain["code"],
+                retain["name"],
+                amount,
+                0.0,
+                dims,
+                "本年利润结转",
+            )
+
+    return entries
+
+
+def _dims_from_balance(balance: Dict[str, Any]) -> Tuple[int, int, int, int, int]:
+    return (
+        balance.get("dept_id") or 0,
+        balance.get("project_id") or 0,
+        balance.get("customer_id") or 0,
+        balance.get("supplier_id") or 0,
+        balance.get("employee_id") or 0,
+    )
+
+
+def _append_reverse_entry(entries: List[Dict[str, Any]], balance: Dict[str, Any]) -> None:
+    closing = float(balance.get("closing_balance") or 0)
+    if balance.get("account_direction") == "debit":
+        debit = abs(closing) if closing < 0 else 0.0
+        credit = closing if closing > 0 else 0.0
+    else:
+        debit = closing if closing > 0 else 0.0
+        credit = abs(closing) if closing < 0 else 0.0
+    _append_entry(
+        entries,
+        balance["account_code"],
+        balance.get("account_name"),
+        debit,
+        credit,
+        _dims_from_balance(balance),
+        "期末结转",
+    )
+
+
+def _append_entry(
+    entries: List[Dict[str, Any]],
+    account_code: str,
+    account_name: str,
+    debit_amount: float,
+    credit_amount: float,
+    dims: Tuple[int, int, int, int, int],
+    description: str,
+) -> None:
+    entries.append(
+        {
+            "line_no": len(entries) + 1,
+            "account_code": account_code,
+            "account_name": account_name,
+            "description": description,
+            "debit_amount": debit_amount,
+            "credit_amount": credit_amount,
+            "dept_id": dims[0] or None,
+            "project_id": dims[1] or None,
+            "customer_id": dims[2] or None,
+            "supplier_id": dims[3] or None,
+            "employee_id": dims[4] or None,
+        }
+    )
 
 
 def build_balance_input(balances: List[Dict[str, Any]]) -> Dict[str, Any]:
@@ -499,6 +834,22 @@ def build_balance_input(balances: List[Dict[str, Any]]) -> Dict[str, Any]:
         }
     )
     return input_data
+
+
+def _load_close_config() -> Dict[str, str]:
+    config_path = Path(__file__).resolve().parents[1] / "data" / "close_config.json"
+    if not config_path.exists():
+        return dict(DEFAULT_CLOSE_CONFIG)
+    try:
+        data = json.loads(config_path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as exc:
+        raise LedgerError("CLOSE_CONFIG_INVALID", f"结账配置JSON错误: {exc}") from exc
+    if not isinstance(data, dict):
+        raise LedgerError("CLOSE_CONFIG_INVALID", "结账配置必须为对象")
+    return {
+        "profit_account": data.get("profit_account", DEFAULT_CLOSE_CONFIG["profit_account"]),
+        "retain_account": data.get("retain_account", DEFAULT_CLOSE_CONFIG["retain_account"]),
+    }
 
 
 def _load_balance_mapping() -> Dict[str, Any]:
