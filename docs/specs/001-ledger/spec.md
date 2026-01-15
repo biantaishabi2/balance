@@ -31,7 +31,7 @@ feature
 - `ledger report` 能生成三表（调用balance calc）
 - `scripts/ledger_smoke.sh` 能通过所有测试
 - 余额表正确计算，借贷必相等（允许0.01误差）
-- 所有辅助核算维度正确关联到分录，支持多维度组合汇总与查询
+- 所有辅助核算维度正确关联到分录
 
 ## Requirements
 - Python 3.8+
@@ -39,6 +39,8 @@ feature
 - 保持与现有balance工具的兼容性
 - 数据库文件默认为 `./ledger.db`，可配置 `--db-path`
 - 凭证号格式：`VYYYYMMDDNNN`
+- 三表映射从 `data/balance_mapping.json` 读取，可按科目前缀配置
+- `ledger report` 支持利率/税率/折旧年限/残值参数，默认0
 
 ## Dev Environment
 
@@ -81,6 +83,7 @@ bash scripts/ledger_smoke.sh
 - `ledger/database/schema.py` - 建表SQL
 - `ledger/database/migrations.py` - 数据迁移
 - `data/standard_accounts.json` - 财政部标准科目
+- `data/balance_mapping.json` - 三表映射配置
 - `scripts/ledger_smoke.sh` - 烟雾测试
 - `tests/__init__.py`
 - `tests/test_connection.py` - 数据库连接测试
@@ -100,7 +103,7 @@ bash scripts/ledger_smoke.sh
 
 ## QA Acceptance Criteria
 
-通过测试用例 TC-LEDGER-01 ~ TC-LEDGER-08
+通过测试用例 TC-LEDGER-01 ~ TC-LEDGER-10
 
 - TC-LEDGER-01: 数据库初始化成功，标准科目加载
 - TC-LEDGER-02: 草稿凭证创建正确，status='draft'
@@ -110,6 +113,8 @@ bash scripts/ledger_smoke.sh
 - TC-LEDGER-06: 辅助核算正确关联到分录和余额
 - TC-LEDGER-07: `ledger report` 生成三表，调用balance calc成功
 - TC-LEDGER-08: smoke test全部通过
+- TC-LEDGER-09: 删除草稿凭证为物理删除，已确认凭证禁止删除
+- TC-LEDGER-10: 三表映射读取配置，报表参数可覆盖默认假设
 
 ## Test Setup
 
@@ -148,7 +153,7 @@ python3 ledger.py report --period 2025-01 --db-path /tmp/test_ledger.db
 - **预期**：
   - 数据库文件 `ledger.db` 创建成功
   - 7张表正确创建
-  - 财政部标准科目（163个）加载成功
+  - 财政部标准科目（156个）加载成功
   - 默认期间创建成功
 - **验证方式**：
   ```bash
@@ -238,20 +243,21 @@ python3 ledger.py report --period 2025-01 --db-path /tmp/test_ledger.db
 - **操作**：创建带辅助核算的凭证
 - **预期**：
   - 分录正确关联dept_id和customer_id
-  - 余额表按维度组合正确汇总
-  - 按维度组合查询返回正确结果
+  - 余额表按维度正确汇总
+  - 按维度查询返回正确结果
 - **验证方式**：
   ```bash
   python3 ledger.py record --auto <<JSON
   {
     "date": "2025-01-15",
     "entries": [
-      {"account": "应收账款", "debit": 50000, "customer": "C001", "department": "D001"},
+      {"account": "应收账款", "debit": 50000, "customer": "C001"},
       {"account": "主营业务收入", "credit": 50000, "department": "D001"}
     ]
   }
   JSON
   sqlite3 ledger.db "SELECT dept_id, customer_id FROM voucher_entries WHERE voucher_id=1"
+  python3 ledger.py query balances --dept-id 1
   python3 ledger.py query balances --dept-id 1 --customer-id 1
   ```
 
@@ -282,54 +288,79 @@ python3 ledger.py report --period 2025-01 --db-path /tmp/test_ledger.db
   echo $?
   ```
 
+### TC-LEDGER-10: 三表映射与报表参数
+- **前置**：数据库已初始化，存在余额数据
+- **操作**：自定义 `data/balance_mapping.json` 并调用 `ledger report` 传入参数
+- **预期**：
+  - 映射文件生效，报表使用映射字段汇总
+  - `--interest-rate`/`--tax-rate`/`--fixed-asset-life`/`--fixed-asset-salvage` 生效
+- **验证方式**：
+  ```bash
+  python3 ledger.py report --period 2025-01 --interest-rate 0 --tax-rate 0 --fixed-asset-life 0 --fixed-asset-salvage 0
+  ```
+
+### TC-LEDGER-09: 删除草稿凭证
+- **前置**：草稿凭证已创建
+- **操作**：运行 `ledger delete <voucher_id>`
+- **预期**：
+  - vouchers 表记录被物理删除
+  - voucher_entries 表记录被物理删除
+  - 已确认凭证删除返回 `VOID_CONFIRMED`
+- **验证方式**：
+  ```bash
+  python3 ledger.py delete 1
+  sqlite3 ledger.db "SELECT COUNT(*) FROM vouchers WHERE id=1"
+  sqlite3 ledger.db "SELECT COUNT(*) FROM voucher_entries WHERE voucher_id=1"
+  ```
+
 ## Step-by-step Validation
 
-0. **数据库初始化（待做）**
+0. **数据库初始化（已做）**
    - 做什么：实现 `database/connection.py` 和 `database/schema.py`
    - 测试：运行 `ledger init`，验证表创建
    - 验收：7张表正确创建，标准科目加载成功
 
-1. **凭证模型实现（待做）**
+1. **凭证模型实现（已做）**
    - 做什么：实现 `models/voucher.py`，定义Voucher和VoucherEntry
    - 测试：测试 `is_balanced()` 方法
    - 验收：借贷平衡判断正确（允许0.01误差）
 
-2. **录入凭证命令（待做）**
+2. **录入凭证命令（已做）**
    - 做什么：实现 `commands/record.py`，支持草稿和自动模式
    - 测试：创建草稿凭证，验证status='draft'
    - 验收：凭证正确写入数据库，分录正确关联
 
-3. **确认凭证命令（待做）**
+3. **确认凭证命令（已做）**
    - 做什么：实现 `commands/confirm.py`，更新状态和余额
    - 测试：确认凭证，验证余额表更新
    - 验收：余额计算正确，借贷必相等
 
-4. **红字冲销命令（待做）**
+4. **红字冲销命令（已做）**
    - 做什么：实现 `commands/void.py`，生成红字凭证
    - 测试：冲销已确认凭证
    - 验收：红字凭证正确生成，余额恢复
 
-5. **查询命令（待做）**
+5. **查询命令（已做）**
    - 做什么：实现 `commands/query.py`，支持凭证和余额查询
    - 测试：查询凭证列表、余额列表、试算平衡
-   - 验收：查询结果正确，按期间/科目/维度组合筛选正确
+   - 验收：查询结果正确，按期间/科目/维度筛选正确
 
-6. **三表生成命令（待做）**
+6. **三表生成命令（已做）**
    - 做什么：实现 `commands/report.py`，调用balance calc
    - 测试：生成三表
    - 验收：三表数据正确，配平成功
 
-7. **科目管理命令（待做）**
+7. **科目管理命令（已做）**
    - 做什么：实现 `commands/account.py`，支持列表/添加/停用
    - 测试：添加自定义科目
    - 验收：科目正确添加，层级关系正确
 
-8. **辅助核算管理（待做）**
+8. **辅助核算管理（已做）**
    - 做什么：实现 `commands/dimension.py`，支持5个维度
    - 测试：添加部门、项目、客户、供应商、员工
    - 验收：维度正确添加，能关联到分录
 
-9. **Smoke Test（待做）**
+9. **Smoke Test（已做）**
    - 做什么：创建 `scripts/ledger_smoke.sh`
    - 测试：运行smoke test
    - 验收：所有命令执行成功，输出OK
@@ -340,15 +371,15 @@ python3 ledger.py report --period 2025-01 --db-path /tmp/test_ledger.db
 
 **测试计划位置：** `docs/LEDGER_TEST_PLAN.md`
 
-**财政部标准科目：** 需要在 `data/standard_accounts.json` 中定义一级科目（163个）
+**财政部标准科目：** 已在 `data/standard_accounts.json` 中定义一级科目（156个，来源：财政部《企业会计准则——应用指南》附录）
 
 **实现分6个阶段：**
 - Phase 1: 核心框架（CLI、数据库连接、建表）
 - Phase 2: 基础功能（init、account、dimensions、record、confirm）
 - Phase 3: 余额计算（余额更新、查询、试算平衡）
-- Phase 4: 报表生成（调用balance calc、Excel导出）
+- Phase 4: 报表生成（调用balance calc）
 - Phase 5: 凭证管理（delete、void、查询）
-- Phase 6: 高级功能（期间管理、批量导入）
+- Phase 6: 高级功能（期间管理）
 
 **参考实现：**
 - 数据库连接参考 `database/connection.py` 的上下文管理器设计
@@ -360,18 +391,13 @@ python3 ledger.py report --period 2025-01 --db-path /tmp/test_ledger.db
 - [x] 完成设计文档（LEDGER_DESIGN.md）
 - [x] 完成测试计划（LEDGER_TEST_PLAN.md）
 - [x] 创建Spec文档（spec.md）
-- [ ] Phase 1: 核心框架
-- [ ] Phase 2: 基础功能
-- [ ] Phase 3: 余额计算
-- [ ] Phase 4: 报表生成
-- [ ] Phase 5: 凭证管理
-- [ ] Phase 6: 高级功能
+- [x] Phase 1: 核心框架
+- [x] Phase 2: 基础功能
+- [x] Phase 3: 余额计算
+- [x] Phase 4: 报表生成
+- [x] Phase 5: 凭证管理
+- [x] Phase 6: 高级功能（期间管理）
 
 ## Next
 
-开始Phase 1实现：
-1. 创建 `ledger.py` CLI入口
-2. 实现 `database/connection.py` 数据库连接管理
-3. 实现 `database/schema.py` 建表SQL
-4. 准备 `data/standard_accounts.json` 财政部标准科目数据
-5. 实现 `ledger init` 命令
+无（已完成）

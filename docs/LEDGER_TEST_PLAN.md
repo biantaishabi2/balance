@@ -144,12 +144,14 @@ ledger query balances --period 2025-01
 
 # 生成三表
 ledger report --period 2025-01
+ledger report --period 2025-01 --interest-rate 0 --tax-rate 0 --fixed-asset-life 0 --fixed-asset-salvage 0
 ```
 
 **预期结果：**
 - [ ] 所有命令执行成功
 - [ ] 余额表正确更新
 - [ ] 三表生成成功且配平
+- [ ] 报表参数覆盖默认假设生效
 
 ### 多凭证回归
 
@@ -196,12 +198,26 @@ ledger query balances --dept-id 1 --customer-id 1
 
 # 生成三表
 ledger report --period 2025-01
+ledger report --period 2025-01 --interest-rate 0 --tax-rate 0 --fixed-asset-life 0 --fixed-asset-salvage 0
 ```
 
 **预期结果：**
 - [ ] 辅助核算正确关联
 - [ ] 按维度组合查询返回正确结果
 - [ ] 三表正确生成
+- [ ] 报表参数覆盖默认假设生效
+
+### 三表映射配置
+
+**运行命令：**
+```bash
+# 调整映射文件后生成报表
+sed -n '1,120p' data/balance_mapping.json
+ledger report --period 2025-01 --interest-rate 0 --tax-rate 0 --fixed-asset-life 0 --fixed-asset-salvage 0
+```
+
+**预期结果：**
+- [ ] 映射文件生效（报表汇总字段随配置变化）
 
 ---
 

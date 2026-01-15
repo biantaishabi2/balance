@@ -290,7 +290,7 @@ ledger init --db-path /path/to/ledger.db
 {
   "status": "success",
   "message": "账套初始化完成",
-  "accounts_loaded": 163,
+  "accounts_loaded": 156,
   "current_period": "2025-01"
 }
 ```
@@ -674,13 +674,15 @@ ledger query trial-balance --period 2025-01
 ```bash
 ledger report --period 2025-01
 ledger report --period 2025-01 --output reports/2025-01.xlsx
+ledger report --period 2025-01 --interest-rate 0 --tax-rate 0 --fixed-asset-life 0 --fixed-asset-salvage 0
 ```
 
 **功能：**
 1. 从余额表提取数据
-2. 调用 `balance calc` 计算配平
-3. 生成资产负债表、利润表、现金流量表
-4. 输出JSON或Excel
+2. 读取 `data/balance_mapping.json` 汇总到 balance calc 输入字段
+3. 调用 `balance calc` 计算配平
+4. 生成资产负债表、利润表、现金流量表，并输出JSON或Excel
+5. 支持利率/税率/折旧年限/残值参数覆盖默认假设
 
 **输出（JSON）：**
 ```json
@@ -703,7 +705,13 @@ ledger report --period 2025-01 --output reports/2025-01.xlsx
     "financing_cf": -10000,
     "net_change": 0
   },
-  "is_balanced": true
+  "is_balanced": true,
+  "assumptions": {
+    "interest_rate": 0,
+    "tax_rate": 0,
+    "fixed_asset_life": 0,
+    "fixed_asset_salvage": 0
+  }
 }
 ```
 
@@ -798,7 +806,7 @@ def generate_statements(period):
     # 1. 读取余额表
     balances = get_balances_by_period(period)
 
-    # 2. 映射到 balance calc 的输入格式
+    # 2. 读取 data/balance_mapping.json 映射到 balance calc 的输入格式
     input_data = {
         "revenue": sum(get_balance(balances, "主营业务收入").closing_balance),
         "cost": sum(get_balance(balances, "主营业务成本").closing_balance),
@@ -850,6 +858,7 @@ balance/
 │   └── utils.py
 ├── data/
 │   └── standard_accounts.json   # 财政部标准科目
+│   └── balance_mapping.json     # 三表映射配置
 └── fin_tools/                   # 现有工具
 ```
 
