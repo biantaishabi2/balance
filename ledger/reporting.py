@@ -4,19 +4,23 @@
 
 from __future__ import annotations
 
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 
 from balance import run_calc
 
 from ledger.services import balances_for_period, build_balance_input
 
 
-def generate_statements(conn, period: str) -> Dict[str, Any]:
+def generate_statements(
+    conn, period: str, assumptions: Optional[Dict[str, Any]] = None
+) -> Dict[str, Any]:
     balances = balances_for_period(conn, period)
     input_data = build_balance_input(balances)
+    if assumptions:
+        input_data.update(assumptions)
     result = run_calc(input_data)
 
-    return {
+    output = {
         "period": period,
         "income_statement": {
             "revenue": result.get("revenue", 0),
@@ -39,3 +43,6 @@ def generate_statements(conn, period: str) -> Dict[str, Any]:
         },
         "is_balanced": result.get("is_balanced", False),
     }
+    if assumptions:
+        output["assumptions"] = assumptions
+    return output

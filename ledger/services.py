@@ -5,6 +5,8 @@
 from __future__ import annotations
 
 from datetime import datetime
+import json
+from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 
 from ledger.utils import LedgerError
@@ -16,6 +18,23 @@ DIMENSION_FIELDS = {
     "customer": "customer",
     "supplier": "supplier",
     "employee": "employee",
+}
+
+
+DEFAULT_BALANCE_MAPPING = {
+    "revenue": {"account_types": ["revenue"], "source": "credit_amount"},
+    "cost": {"account_types": ["expense"], "source": "debit_amount"},
+    "opening_cash": {"prefixes": ["1001", "1002"], "source": "opening_balance"},
+    "opening_debt": {"account_types": ["liability"], "source": "opening_balance"},
+    "opening_equity": {
+        "prefixes": ["4001", "4002", "4101", "4102", "4201"],
+        "source": "opening_balance",
+    },
+    "closing_receivable": {"prefixes": ["1122"], "source": "closing_balance"},
+    "closing_payable": {"prefixes": ["2202"], "source": "closing_balance"},
+    "closing_inventory": {"prefixes": ["1403"], "source": "closing_balance"},
+    "fixed_asset_cost": {"prefixes": ["1601"], "source": "closing_balance"},
+    "accum_depreciation": {"prefixes": ["1602"], "source": "closing_balance"},
 }
 
 
@@ -387,6 +406,9 @@ def balances_for_period(conn, period: str) -> List[Dict[str, Any]]:
 
 
 def build_balance_input(balances: List[Dict[str, Any]]) -> Dict[str, Any]:
+    mapping = _load_balance_mapping()
+    mapped = _apply_balance_mapping(balances, mapping)
+
     def sum_opening(filter_fn):
         return sum(b["opening_balance"] for b in balances if filter_fn(b))
 
@@ -397,12 +419,20 @@ def build_balance_input(balances: List[Dict[str, Any]]) -> Dict[str, Any]:
         return sum(b["credit_amount"] for b in balances if filter_fn(b))
 
     cash_codes = {"1001", "1002"}
-    revenue = sum_credit(lambda b: b["account_type"] == "revenue")
-    cost = sum_debit(lambda b: b["account_type"] == "expense")
+    revenue = mapped.get("revenue", sum_credit(lambda b: b["account_type"] == "revenue"))
+    cost = mapped.get("cost", sum_debit(lambda b: b["account_type"] == "expense"))
+    other_expense = mapped.get("other_expense", 0.0)
 
-    opening_cash = sum_opening(lambda b: b["account_code"] in cash_codes)
-    opening_debt = sum_opening(lambda b: b["account_type"] == "liability")
-    opening_equity = sum_opening(lambda b: b["account_type"] == "equity")
+    opening_cash = mapped.get(
+        "opening_cash", sum_opening(lambda b: b["account_code"] in cash_codes)
+    )
+    opening_debt = mapped.get(
+        "opening_debt", sum_opening(lambda b: b["account_type"] == "liability")
+    )
+    opening_equity = mapped.get(
+        "opening_equity", sum_opening(lambda b: b["account_type"] == "equity")
+    )
+    opening_retained = mapped.get("opening_retained", 0.0)
 
     def sum_closing_by_prefix(prefixes: Tuple[str, ...]):
         return sum(
@@ -411,24 +441,94 @@ def build_balance_input(balances: List[Dict[str, Any]]) -> Dict[str, Any]:
             if b["account_code"].startswith(prefixes)
         )
 
-    closing_receivable = sum_closing_by_prefix(("1122",))
-    closing_payable = sum_closing_by_prefix(("2202",))
-    closing_inventory = sum_closing_by_prefix(("1403",))
-    closing_fixed_asset_net = sum_closing_by_prefix(("1601",))
+    closing_receivable = mapped.get(
+        "closing_receivable", sum_closing_by_prefix(("1122",))
+    )
+    closing_payable = mapped.get("closing_payable", sum_closing_by_prefix(("2202",)))
+    closing_inventory = mapped.get("closing_inventory", sum_closing_by_prefix(("1403",)))
+    opening_receivable = mapped.get(
+        "opening_receivable",
+        sum_opening(lambda b: b["account_code"].startswith("1122")),
+    )
+    opening_payable = mapped.get(
+        "opening_payable",
+        sum_opening(lambda b: b["account_code"].startswith("2202")),
+    )
+    opening_inventory = mapped.get(
+        "opening_inventory",
+        sum_opening(lambda b: b["account_code"].startswith("1403")),
+    )
+    fixed_asset_cost = mapped.get("fixed_asset_cost", sum_closing_by_prefix(("1601",)))
+    accum_depreciation = mapped.get("accum_depreciation", 0.0)
 
-    delta_receivable = closing_receivable - sum_opening(lambda b: b["account_code"].startswith("1122"))
-    delta_payable = closing_payable - sum_opening(lambda b: b["account_code"].startswith("2202"))
+    delta_receivable = mapped.get(
+        "delta_receivable", closing_receivable - opening_receivable
+    )
+    delta_payable = mapped.get("delta_payable", closing_payable - opening_payable)
 
-    return {
-        "revenue": round(revenue, 2),
-        "cost": round(cost, 2),
-        "opening_cash": round(opening_cash, 2),
-        "opening_debt": round(opening_debt, 2),
-        "opening_equity": round(opening_equity, 2),
-        "closing_receivable": round(closing_receivable, 2),
-        "closing_payable": round(closing_payable, 2),
-        "closing_inventory": round(closing_inventory, 2),
-        "closing_fixed_asset_net": round(closing_fixed_asset_net, 2),
-        "delta_receivable": round(delta_receivable, 2),
-        "delta_payable": round(delta_payable, 2),
-    }
+    input_data = dict(mapped)
+    input_data.update(
+        {
+            "revenue": round(revenue, 2),
+            "cost": round(cost, 2),
+            "other_expense": round(other_expense, 2),
+            "opening_cash": round(opening_cash, 2),
+            "opening_debt": round(opening_debt, 2),
+            "opening_equity": round(opening_equity, 2),
+            "opening_retained": round(opening_retained, 2),
+            "opening_receivable": round(opening_receivable, 2),
+            "opening_payable": round(opening_payable, 2),
+            "opening_inventory": round(opening_inventory, 2),
+            "closing_receivable": round(closing_receivable, 2),
+            "closing_payable": round(closing_payable, 2),
+            "closing_inventory": round(closing_inventory, 2),
+            "fixed_asset_cost": round(fixed_asset_cost, 2),
+            "accum_depreciation": round(accum_depreciation, 2),
+            "delta_receivable": round(delta_receivable, 2),
+            "delta_payable": round(delta_payable, 2),
+        }
+    )
+    return input_data
+
+
+def _load_balance_mapping() -> Dict[str, Any]:
+    mapping_path = Path(__file__).resolve().parents[1] / "data" / "balance_mapping.json"
+    if not mapping_path.exists():
+        return DEFAULT_BALANCE_MAPPING
+    try:
+        raw = json.loads(mapping_path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as exc:
+        raise LedgerError("BALANCE_MAPPING_INVALID", f"映射文件JSON错误: {exc}") from exc
+    fields = raw.get("fields") if isinstance(raw, dict) else None
+    if not isinstance(fields, dict):
+        raise LedgerError("BALANCE_MAPPING_INVALID", "映射文件缺少 fields")
+    return fields
+
+
+def _apply_balance_mapping(
+    balances: List[Dict[str, Any]], mapping: Dict[str, Any]
+) -> Dict[str, float]:
+    result: Dict[str, float] = {}
+    for field, rule in mapping.items():
+        if not isinstance(rule, dict):
+            continue
+        source = rule.get("source")
+        if source not in {"opening_balance", "closing_balance", "debit_amount", "credit_amount"}:
+            raise LedgerError("BALANCE_MAPPING_INVALID", f"无效的source: {source}")
+        total = 0.0
+        for balance in balances:
+            if _matches_balance(balance, rule):
+                total += float(balance.get(source) or 0)
+        result[field] = total
+    return result
+
+
+def _matches_balance(balance: Dict[str, Any], rule: Dict[str, Any]) -> bool:
+    prefixes = rule.get("prefixes") or []
+    account_types = rule.get("account_types") or []
+    matched = False
+    if prefixes:
+        matched = any(balance["account_code"].startswith(p) for p in prefixes)
+    if account_types:
+        matched = matched or balance.get("account_type") in account_types
+    return matched

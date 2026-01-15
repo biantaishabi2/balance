@@ -1,0 +1,83 @@
+{
+  "fields": {
+    "revenue": {
+      "account_types": ["revenue"],
+      "source": "credit_amount"
+    },
+    "cost": {
+      "prefixes": [
+        "5001",
+        "5101",
+        "5201",
+        "5301",
+        "5401",
+        "5402",
+        "5403",
+        "6401",
+        "6402"
+      ],
+      "source": "debit_amount"
+    },
+    "other_expense": {
+      "prefixes": [
+        "6411",
+        "6421",
+        "6601",
+        "6602",
+        "6603",
+        "6604",
+        "6701",
+        "6711"
+      ],
+      "source": "debit_amount"
+    },
+    "opening_cash": {
+      "prefixes": ["1001", "1002"],
+      "source": "opening_balance"
+    },
+    "opening_debt": {
+      "account_types": ["liability"],
+      "source": "opening_balance"
+    },
+    "opening_equity": {
+      "prefixes": ["4001", "4002", "4101", "4102", "4201"],
+      "source": "opening_balance"
+    },
+    "opening_retained": {
+      "prefixes": ["4104"],
+      "source": "opening_balance"
+    },
+    "opening_receivable": {
+      "prefixes": ["112", "113", "122"],
+      "source": "opening_balance"
+    },
+    "opening_payable": {
+      "prefixes": ["220", "221"],
+      "source": "opening_balance"
+    },
+    "opening_inventory": {
+      "prefixes": ["140"],
+      "source": "opening_balance"
+    },
+    "closing_receivable": {
+      "prefixes": ["112", "113", "122"],
+      "source": "closing_balance"
+    },
+    "closing_payable": {
+      "prefixes": ["220", "221"],
+      "source": "closing_balance"
+    },
+    "closing_inventory": {
+      "prefixes": ["140"],
+      "source": "closing_balance"
+    },
+    "fixed_asset_cost": {
+      "prefixes": ["1601"],
+      "source": "closing_balance"
+    },
+    "accum_depreciation": {
+      "prefixes": ["1602"],
+      "source": "closing_balance"
+    }
+  }
+}

@@ -39,6 +39,8 @@ feature
 - 保持与现有balance工具的兼容性
 - 数据库文件默认为 `./ledger.db`，可配置 `--db-path`
 - 凭证号格式：`VYYYYMMDDNNN`
+- 三表映射从 `data/balance_mapping.json` 读取，可按科目前缀配置
+- `ledger report` 支持利率/税率/折旧年限/残值参数，默认0
 
 ## Dev Environment
 
@@ -81,6 +83,7 @@ bash scripts/ledger_smoke.sh
 - `ledger/database/schema.py` - 建表SQL
 - `ledger/database/migrations.py` - 数据迁移
 - `data/standard_accounts.json` - 财政部标准科目
+- `data/balance_mapping.json` - 三表映射配置
 - `scripts/ledger_smoke.sh` - 烟雾测试
 - `tests/__init__.py`
 - `tests/test_connection.py` - 数据库连接测试
@@ -100,7 +103,7 @@ bash scripts/ledger_smoke.sh
 
 ## QA Acceptance Criteria
 
-通过测试用例 TC-LEDGER-01 ~ TC-LEDGER-09
+通过测试用例 TC-LEDGER-01 ~ TC-LEDGER-10
 
 - TC-LEDGER-01: 数据库初始化成功，标准科目加载
 - TC-LEDGER-02: 草稿凭证创建正确，status='draft'
@@ -111,6 +114,7 @@ bash scripts/ledger_smoke.sh
 - TC-LEDGER-07: `ledger report` 生成三表，调用balance calc成功
 - TC-LEDGER-08: smoke test全部通过
 - TC-LEDGER-09: 删除草稿凭证为物理删除，已确认凭证禁止删除
+- TC-LEDGER-10: 三表映射读取配置，报表参数可覆盖默认假设
 
 ## Test Setup
 
@@ -282,6 +286,17 @@ python3 ledger.py report --period 2025-01 --db-path /tmp/test_ledger.db
   ```bash
   bash scripts/ledger_smoke.sh
   echo $?
+  ```
+
+### TC-LEDGER-10: 三表映射与报表参数
+- **前置**：数据库已初始化，存在余额数据
+- **操作**：自定义 `data/balance_mapping.json` 并调用 `ledger report` 传入参数
+- **预期**：
+  - 映射文件生效，报表使用映射字段汇总
+  - `--interest-rate`/`--tax-rate`/`--fixed-asset-life`/`--fixed-asset-salvage` 生效
+- **验证方式**：
+  ```bash
+  python3 ledger.py report --period 2025-01 --interest-rate 0 --tax-rate 0 --fixed-asset-life 0 --fixed-asset-salvage 0
   ```
 
 ### TC-LEDGER-09: 删除草稿凭证
