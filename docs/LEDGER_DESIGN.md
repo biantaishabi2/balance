@@ -836,7 +836,7 @@ def generate_statements(period):
 
 **映射配置：**
 - `data/report_mapping.json`：定义报表项目与科目映射、汇总口径
-- 字段：`prefixes`（科目前缀数组）、`source`（opening_balance/closing_balance/debit_amount/credit_amount）、`direction`（debit/credit，用于符号归一）
+- 字段：`prefixes`（科目前缀数组）/`account_types`（asset/liability/equity/revenue/expense）、`source`（opening_balance/closing_balance/debit_amount/credit_amount/net_change）、`direction`（debit/credit，用于符号归一）
 - 示例字段：
   - `balance_sheet.assets`：按科目前缀汇总期末余额
   - `income_statement.revenue`：按科目汇总本期贷方发生额
@@ -881,8 +881,23 @@ def generate_statements(period):
   },
   "cash_flow": {
     "operating": {
+      "prefixes": ["112", "113", "122", "220", "221"],
+      "source": "net_change",
+      "direction": "debit"
+    },
+    "investing": {
+      "prefixes": ["1601", "1602"],
+      "source": "net_change",
+      "direction": "debit"
+    },
+    "financing": {
+      "prefixes": ["200", "4001", "4002"],
+      "source": "net_change",
+      "direction": "credit"
+    },
+    "cash_accounts": {
       "prefixes": ["1001", "1002"],
-      "source": "debit_amount",
+      "source": "net_change",
       "direction": "debit"
     }
   }
@@ -892,7 +907,8 @@ def generate_statements(period):
 **计算规则：**
 - 资产负债表：按映射汇总期末余额，借方科目记正，贷方科目记正（按方向做符号归一）
 - 利润表：收入=贷方发生额汇总，成本/费用=借方发生额汇总
-- 现金流量表（间接法）：净利润 + 非现金项目 + 营运资本变动 + 投资/筹资变动
+- 权益：期末权益 = 权益类科目余额 + 本期净利润（未结转时计入权益）
+- 现金流量表（间接法）：净利润 + 经营性调整 + 投资/筹资变动
 
 **对平校验：**
 - 资产 = 负债 + 权益

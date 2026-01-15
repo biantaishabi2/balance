@@ -53,6 +53,7 @@
 - [ ] 资产负债表：资产=负债+权益
 - [ ] 利润表：收入/成本/费用按发生额汇总
 - [ ] 现金流量表（间接法）：净增加=期末现金-期初现金
+- [ ] `source=net_change` 能正确计算余额变动
 
 ### 辅助核算测试
 
@@ -245,7 +246,7 @@ ledger report --period 2025-01 --engine ledger
 ```
 
 **预期结果：**
-- [ ] 映射包含 `prefixes`/`source`/`direction`
+- [ ] 映射包含 `prefixes`/`account_types`/`source`/`direction`/`cash_accounts`
 - [ ] 报表汇总字段随映射变化
 
 ---

@@ -30,7 +30,8 @@ feature
 - 账务口径不依赖利率/税率/折旧假设
 - 映射配置可按科目前缀/科目类型定义
 - 现金流量表采用间接法口径
-- 映射字段包含 `prefixes`、`source`（opening_balance/closing_balance/debit_amount/credit_amount）、`direction`（debit/credit）
+- 映射字段包含 `prefixes`/`account_types`、`source`（opening_balance/closing_balance/debit_amount/credit_amount/net_change）、`direction`（debit/credit）
+- `cash_flow.cash_accounts` 可配置现金科目前缀（默认 1001/1002）
 - 保持现有 `ledger report` JSON 输出结构
 
 ## Dev Environment

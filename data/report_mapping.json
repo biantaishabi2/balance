@@ -1,0 +1,78 @@
+{
+  "balance_sheet": {
+    "assets": {
+      "account_types": ["asset"],
+      "source": "closing_balance",
+      "direction": "debit"
+    },
+    "liabilities": {
+      "account_types": ["liability"],
+      "source": "closing_balance",
+      "direction": "credit"
+    },
+    "equity": {
+      "account_types": ["equity"],
+      "source": "closing_balance",
+      "direction": "credit"
+    }
+  },
+  "income_statement": {
+    "revenue": {
+      "account_types": ["revenue"],
+      "source": "credit_amount",
+      "direction": "credit"
+    },
+    "cost": {
+      "prefixes": [
+        "5001",
+        "5101",
+        "5201",
+        "5301",
+        "5401",
+        "5402",
+        "5403",
+        "6401",
+        "6402"
+      ],
+      "source": "debit_amount",
+      "direction": "debit"
+    },
+    "expense": {
+      "prefixes": [
+        "6201",
+        "6411",
+        "6421",
+        "6601",
+        "6602",
+        "6603",
+        "6604",
+        "6701",
+        "6711"
+      ],
+      "source": "debit_amount",
+      "direction": "debit"
+    }
+  },
+  "cash_flow": {
+    "operating": {
+      "prefixes": ["112", "113", "122", "220", "221"],
+      "source": "net_change",
+      "direction": "debit"
+    },
+    "investing": {
+      "prefixes": ["1601", "1602", "1603", "1604"],
+      "source": "net_change",
+      "direction": "debit"
+    },
+    "financing": {
+      "prefixes": ["200", "4001", "4002", "4101", "4102", "4201"],
+      "source": "net_change",
+      "direction": "credit"
+    },
+    "cash_accounts": {
+      "prefixes": ["1001", "1002"],
+      "source": "net_change",
+      "direction": "debit"
+    }
+  }
+}
