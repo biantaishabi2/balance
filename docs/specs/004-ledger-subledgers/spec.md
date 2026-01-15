@@ -29,6 +29,7 @@ feature
 - 子账操作必须生成平衡凭证
 - 支持期间/维度过滤查询
 - 不引入多币种
+- 子账科目映射通过 `data/subledger_mapping.json` 配置
 
 ## Dev Environment
 
@@ -50,8 +51,11 @@ bash scripts/ledger_smoke.sh
 - `ledger/commands/ap.py` - 应付模块
 - `ledger/commands/inventory.py` - 存货模块
 - `ledger/commands/fixed_asset.py` - 固定资产模块
+- `ledger/cli.py` - 命令注册
+- `ledger/commands/__init__.py` - 命令注册
 - `ledger/services.py` - 子账与凭证生成
 - `ledger/database/schema.py` - 子账表结构
+- `data/subledger_mapping.json` - 子账科目映射
 - `tests/` - 子账测试
 - `docs/LEDGER_DESIGN.md`
 - `docs/LEDGER_TEST_PLAN.md`
@@ -82,6 +86,7 @@ python3 ledger.py init --db-path /tmp/test_ledger.db
 ## Notes
 - 存货成本默认使用移动平均法
 - 固定资产折旧按直线法
+- 子账凭证科目映射以 `data/subledger_mapping.json` 为准
 
 ## Progress
 - [ ] 设计文档补充

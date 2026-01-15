@@ -31,6 +31,8 @@ feature
 - 保持现有 `ledger confirm` 行为不回退
 - 支持指定期间结账
 - 期末结转逻辑可配置科目（本年利润/利润分配）
+- 凭证状态支持 `draft`/`reviewed`/`confirmed`/`voided`
+- 默认结转科目：本年利润(4103)、利润分配(4104)
 
 ## Dev Environment
 
@@ -53,8 +55,11 @@ bash scripts/ledger_smoke.sh
 - `ledger/commands/unreview.py` - 反审核
 - `ledger/commands/close.py` - 期末结账
 - `ledger/commands/reopen.py` - 反结账
+- `ledger/cli.py` - 命令注册
+- `ledger/commands/__init__.py` - 命令注册
 - `ledger/services.py` - 期间关闭、损益结转
 - `ledger/database/schema.py` - 期间/凭证状态调整
+- `data/close_config.json` - 结账科目配置
 - `tests/` - 新增审核与结账测试
 - `docs/LEDGER_DESIGN.md`
 - `docs/LEDGER_TEST_PLAN.md`
@@ -87,6 +92,10 @@ python3 ledger.py init --db-path /tmp/test_ledger.db
 ### TC-LEDGER-CLOSE-01: 审核/反审核
 - **操作**：`ledger review 1`、`ledger unreview 1`
 - **预期**：凭证状态在 draft/reviewed 间切换
+- **验证方式**：
+  ```bash
+  sqlite3 ledger.db "SELECT status FROM vouchers WHERE id=1"
+  ```
 
 ### TC-LEDGER-CLOSE-02: 未审核禁止记账
 - **操作**：`ledger confirm 1`
@@ -95,6 +104,11 @@ python3 ledger.py init --db-path /tmp/test_ledger.db
 ### TC-LEDGER-CLOSE-03: 期末结账
 - **操作**：`ledger close --period 2025-01`
 - **预期**：期间状态变为 closed，下期余额生成
+- **验证方式**：
+  ```bash
+  sqlite3 ledger.db "SELECT status FROM periods WHERE period='2025-01'"
+  sqlite3 ledger.db "SELECT COUNT(*) FROM balances WHERE period='2025-02'"
+  ```
 
 ### TC-LEDGER-CLOSE-04: 结账后禁止记账
 - **操作**：`ledger record`/`ledger confirm`
@@ -103,13 +117,17 @@ python3 ledger.py init --db-path /tmp/test_ledger.db
 ### TC-LEDGER-CLOSE-05: 损益结转
 - **操作**：结账后查询权益科目
 - **预期**：本期损益结转到权益
+- **验证方式**：
+  ```bash
+  sqlite3 ledger.db "SELECT closing_balance FROM balances WHERE account_code='4103' AND period='2025-01'"
+  ```
 
 ### TC-LEDGER-CLOSE-06: 反结账
 - **操作**：`ledger reopen --period 2025-01`
 - **预期**：期间状态恢复 open
 
 ## Notes
-- 期末结转默认使用本年利润与利润分配科目，可通过配置覆盖
+- 期末结转默认使用本年利润(4103)与利润分配(4104)，可通过 `data/close_config.json` 覆盖
 
 ## Progress
 - [ ] 设计文档补充

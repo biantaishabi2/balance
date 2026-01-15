@@ -1302,6 +1302,91 @@ def generate_statements(period):
 
 ---
 
+## 12.4 模块一设计（结账与审核）
+
+### 12.4.1 凭证状态流转
+
+状态定义：
+- `draft`：制单草稿
+- `reviewed`：已审核
+- `confirmed`：已记账
+- `voided`：已冲销
+
+流转规则：
+- `review`：draft → reviewed
+- `unreview`：reviewed → draft（confirmed 不可反审核）
+- `confirm`：仅允许 reviewed → confirmed
+
+### 12.4.2 期间结账
+
+结账步骤：
+1. 校验期间为 open，且无未记账凭证
+2. 汇总损益类科目余额，生成结转凭证
+3. 标记期间为 closed
+4. 生成下期余额（期末=下期期初）
+
+结转配置（`data/close_config.json`）：
+- `profit_account`: 本年利润（默认 4103）
+- `retain_account`: 利润分配（默认 4104）
+
+结转规则：
+- 所有收入/费用科目结转到本年利润
+- 可选将本年利润结转到利润分配
+
+### 12.4.3 数据表变更（示意）
+
+- `vouchers`：新增 `reviewed_at` 字段（可选）
+- `periods`：使用现有 status(open/closed) 与 closed_at
+
+---
+
+## 12.5 模块二设计（子账）
+
+### 12.5.1 往来核销
+
+表结构示意：
+- `ar_items(id, customer_id, voucher_id, amount, settled_amount, status, created_at)`
+- `ap_items(id, supplier_id, voucher_id, amount, settled_amount, status, created_at)`
+- `settlements(id, item_type, item_id, amount, voucher_id, date)`
+
+流程：
+1. 录入应收/应付 → 生成凭证
+2. 核销 → 生成收款/付款凭证
+3. 子账余额与总账对平
+
+### 12.5.2 存货核算
+
+表结构示意：
+- `inventory_items(id, sku, name, unit)`
+- `inventory_moves(id, sku, direction, qty, unit_cost, total_cost, voucher_id, date)`
+- `inventory_balances(sku, period, qty, amount)`
+
+流程：
+1. 入库/出库生成凭证
+2. 采用移动平均法计算成本
+3. 期末生成结存记录
+
+### 12.5.3 固定资产
+
+表结构示意：
+- `fixed_assets(id, name, cost, acquired_at, life_years, salvage_value, status)`
+- `fixed_asset_depreciations(id, asset_id, period, amount, voucher_id)`
+
+流程：
+1. 资产卡片创建 → 生成入账凭证
+2. 折旧计提 → 生成折旧凭证
+3. 资产处置 → 生成处置凭证
+
+### 12.5.4 子账科目映射
+
+配置文件：`data/subledger_mapping.json`
+
+示例：
+- `ar`：应收账款(1122)、主营业务收入(6001)、银行存款(1002)
+- `ap`：应付账款(2202)、库存商品/原材料(1403)、银行存款(1002)
+- `inventory`：存货(1403)、主营业务成本(6401)
+- `fixed_asset`：固定资产(1601)、累计折旧(1602)、管理费用(6602)
+
 ## 13. 附录
 
 ### 13.1 财政部标准科目表（部分）

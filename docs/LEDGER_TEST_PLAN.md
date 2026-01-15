@@ -134,11 +134,34 @@
 - [ ] 审核/反审核状态切换
 - [ ] 未审核凭证禁止记账
 
+**运行命令：**
+```bash
+ledger review 1
+ledger unreview 1
+ledger confirm 1
+```
+
+**预期结果：**
+- [ ] review 后 status=reviewed
+- [ ] unreview 后 status=draft
+- [ ] 未审核直接 confirm 返回 `VOUCHER_NOT_REVIEWED`
+
 ### 期末结账
 - [ ] 关闭期间后禁止新增/记账
 - [ ] 期末损益结转到权益科目
 - [ ] 下期余额生成正确
 - [ ] 反结账恢复可记账状态
+
+**运行命令：**
+```bash
+ledger close --period 2025-01
+ledger reopen --period 2025-01
+```
+
+**预期结果：**
+- [ ] period 状态从 open → closed → open
+- [ ] 结账后新增/记账返回 `PERIOD_CLOSED`
+- [ ] 4103/4104 科目结转金额存在
 
 ---
 
@@ -149,15 +172,49 @@
 - [ ] 核销记录生成
 - [ ] 总账与子账对平
 
+**运行命令：**
+```bash
+ledger ar add --customer C001 --amount 1000
+ledger ar settle --item-id 1 --amount 1000
+ledger ap add --supplier S001 --amount 800
+ledger ap settle --item-id 1 --amount 800
+```
+
+**预期结果：**
+- [ ] 生成凭证且借贷平衡
+- [ ] 子账已核销，余额为 0
+
 ### 存货核算
 - [ ] 入库/出库生成凭证
 - [ ] 结存数量与金额正确
 - [ ] 成本结转凭证正确
 
+**运行命令：**
+```bash
+ledger inventory in --sku A001 --qty 10 --unit-cost 50
+ledger inventory out --sku A001 --qty 4
+ledger inventory balance --period 2025-01
+```
+
+**预期结果：**
+- [ ] 生成入库/出库凭证
+- [ ] 结存数量与金额正确
+
 ### 固定资产
 - [ ] 资产卡片创建
 - [ ] 折旧凭证生成
 - [ ] 资产处置凭证生成
+
+**运行命令：**
+```bash
+ledger fixed-asset add --name \"设备\" --cost 12000 --life 3 --salvage 2000
+ledger fixed-asset depreciate --period 2025-01
+ledger fixed-asset dispose --asset-id 1
+```
+
+**预期结果：**
+- [ ] 折旧凭证生成且借贷平衡
+- [ ] 处置凭证生成且资产状态变更
 
 ---
 
