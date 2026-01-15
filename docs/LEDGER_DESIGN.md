@@ -187,18 +187,34 @@ CREATE TABLE balances (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   account_code TEXT NOT NULL,
   period TEXT NOT NULL,
-  dimension_type TEXT,               -- 维度类型（空值=全部）
-  dimension_id INTEGER,              -- 维度ID（空值=全部）
-  opening_balance REAL DEFAULT 0,     -- 期初余额
-  debit_amount REAL DEFAULT 0,       -- 借方发生额
-  credit_amount REAL DEFAULT 0,      -- 贷方发生额
-  closing_balance REAL DEFAULT 0,     -- 期末余额
+  dept_id INTEGER NOT NULL DEFAULT 0,       -- 部门ID（0=未指定）
+  project_id INTEGER NOT NULL DEFAULT 0,    -- 项目ID（0=未指定）
+  customer_id INTEGER NOT NULL DEFAULT 0,   -- 客户ID（0=未指定）
+  supplier_id INTEGER NOT NULL DEFAULT 0,   -- 供应商ID（0=未指定）
+  employee_id INTEGER NOT NULL DEFAULT 0,   -- 员工ID（0=未指定）
+  opening_balance REAL DEFAULT 0,           -- 期初余额
+  debit_amount REAL DEFAULT 0,              -- 借方发生额
+  credit_amount REAL DEFAULT 0,             -- 贷方发生额
+  closing_balance REAL DEFAULT 0,           -- 期末余额
   updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
-  UNIQUE(account_code, period, dimension_type, dimension_id)
+  UNIQUE(
+    account_code,
+    period,
+    dept_id,
+    project_id,
+    customer_id,
+    supplier_id,
+    employee_id
+  )
 );
 
 CREATE INDEX idx_balances_account ON balances(account_code);
 CREATE INDEX idx_balances_period ON balances(period);
+CREATE INDEX idx_balances_dept ON balances(dept_id);
+CREATE INDEX idx_balances_project ON balances(project_id);
+CREATE INDEX idx_balances_customer ON balances(customer_id);
+CREATE INDEX idx_balances_supplier ON balances(supplier_id);
+CREATE INDEX idx_balances_employee ON balances(employee_id);
 ```
 
 #### void_vouchers - 红字冲销记录
@@ -241,7 +257,7 @@ vouchers (凭证)
   ├─ 1:N → voucher_entries (分录)
 
 balances (余额)
-  └─ 按科目、期间、维度汇总
+  └─ 按科目、期间、维度组合汇总
 
 void_vouchers (冲销记录)
   ├─ N:1 → vouchers (原凭证)
@@ -527,13 +543,13 @@ ledger confirm 1
 ledger delete 1
 ```
 
-**条件：** 只能删除 `draft` 状态的凭证
+**条件：** 只能删除 `draft` 状态的凭证（物理删除）
 
 **输出：**
 ```json
 {
   "voucher_id": 1,
-  "status": "deleted",
+  "deleted": true,
   "message": "草稿已删除"
 }
 ```
@@ -602,7 +618,8 @@ ledger query vouchers --account 1001
 ledger query balances
 ledger query balances --period 2025-01
 ledger query balances --account 1001
-ledger query balances --dimension department --dimension-id 1
+ledger query balances --dept-id 1
+ledger query balances --dept-id 1 --customer-id 2
 ```
 
 **输出：**
@@ -703,7 +720,7 @@ def update_balance(voucher_id, period):
 
     逻辑：
     1. 读取凭证的所有分录
-    2. 按科目+期间+维度分组汇总
+    2. 按科目+期间+维度组合分组汇总
     3. 计算期末余额 = 期初 + 借方 - 贷方（或反之）
     """
 
@@ -714,8 +731,11 @@ def update_balance(voucher_id, period):
         balance = get_or_create_balance(
             account_code=entry.account_code,
             period=period,
-            dimension_type=entry.dimension_type,
-            dimension_id=entry.dimension_id
+            dept_id=entry.dept_id or 0,
+            project_id=entry.project_id or 0,
+            customer_id=entry.customer_id or 0,
+            supplier_id=entry.supplier_id or 0,
+            employee_id=entry.employee_id or 0
         )
 
         # 更新发生额
@@ -811,7 +831,7 @@ balance/
 │   │   ├── init.py              # 初始化
 │   │   ├── record.py            # 录入凭证
 │   │   ├── confirm.py           # 确认草稿
-│   │   ├── delete.py            # 删除/作废
+│   │   ├── delete.py            # 删除草稿
 │   │   ├── query.py             # 查询
 │   │   ├── report.py            # 生成报表
 │   │   ├── account.py           # 科目管理
@@ -915,9 +935,8 @@ def generate_statements(period):
     input_data = balances_to_balance_input(balances)
 
     # 2. 调用 balance calc
-    from fin_tools.models.balance_model import BalanceModel
-    model = BalanceModel()
-    result = model.calculate(**input_data)
+    from balance import run_calc
+    result = run_calc(input_data)
 
     # 3. 返回结果
     return result
