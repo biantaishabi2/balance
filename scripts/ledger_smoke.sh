@@ -30,6 +30,9 @@ python3 "$ROOT/ledger.py" record --db-path "$DB" <<'JSON' >/dev/null
 }
 JSON
 
+echo "[smoke] ledger review"
+python3 "$ROOT/ledger.py" review 1 --db-path "$DB" >/dev/null
+
 echo "[smoke] ledger confirm"
 python3 "$ROOT/ledger.py" confirm 1 --db-path "$DB" >/dev/null
 

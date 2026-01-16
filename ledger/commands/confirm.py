@@ -13,7 +13,7 @@ from ledger.utils import LedgerError, print_json
 
 
 def add_parser(subparsers, parents):
-    parser = subparsers.add_parser("confirm", help="确认草稿凭证", parents=parents)
+    parser = subparsers.add_parser("confirm", help="确认已审核凭证", parents=parents)
     parser.add_argument("voucher_id", type=int, help="凭证ID")
     parser.set_defaults(func=run)
     return parser
