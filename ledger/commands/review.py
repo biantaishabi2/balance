@@ -20,11 +20,12 @@ def run(args):
     with get_db(args.db_path) as conn:
         voucher = review_voucher(conn, args.voucher_id)
 
-    print_json(
-        {
-            "voucher_id": args.voucher_id,
-            "status": voucher["status"],
-            "reviewed_at": voucher.get("reviewed_at"),
-            "message": "凭证已审核",
-        }
-    )
+    output = {
+        "voucher_id": args.voucher_id,
+        "status": voucher["status"],
+        "reviewed_at": voucher.get("reviewed_at"),
+        "message": "凭证已审核",
+    }
+    if voucher.get("budget_warnings"):
+        output["budget_warnings"] = voucher.get("budget_warnings", [])
+    print_json(output)

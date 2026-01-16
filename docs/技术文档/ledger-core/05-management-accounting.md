@@ -44,13 +44,23 @@ feature
   - 面积：`allocation_basis_values(period, dim_type, dim_id, value)` 维护面积
   - 计算公式：目标比重 = 目标指标值 / 指标值合计
   - `dim_type` 约定：`{target_dim}_headcount` / `{target_dim}_area`
+- 基础数据维护命令：
+  - `ledger allocation basis set --period 2025-01 --dim-type department_headcount --dim-code D-A --value 10`
+  - `ledger allocation basis list --period 2025-01 --dim-type department_headcount`
 
 ### 3. 预算控制
 - `budgets`：
   - `id, period, dim_type, dim_id, amount`
 - `budget_controls`：
   - `id, period, dim_type, dim_id, used_amount, locked_amount`
+- `budget_locks`：
+  - `voucher_id, period, dim_type, dim_id, amount`
 - 录入费用类凭证时占用预算，超额时提示或阻断
+- 预算冻结/释放流程：
+  - 审核：冻结预算（locked_amount 增加）
+  - 反审核：释放冻结（locked_amount 减少）
+  - 确认：冻结转占用（locked_amount 减少，used_amount 增加）
+  - 冲销：释放占用（used_amount 减少）
 - 预算策略通过 `data/budget_config.json` 配置（`warn`/`block`）
 
 ### 4. 预算-实际差异

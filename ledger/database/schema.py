@@ -346,6 +346,20 @@ CREATE TABLE IF NOT EXISTS budget_controls (
   UNIQUE(period, dim_type, dim_id)
 );
 
+CREATE TABLE IF NOT EXISTS budget_locks (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  voucher_id INTEGER NOT NULL,
+  period TEXT NOT NULL,
+  dim_type TEXT NOT NULL,
+  dim_id INTEGER NOT NULL,
+  amount REAL NOT NULL,
+  created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE(voucher_id, dim_type, dim_id),
+  FOREIGN KEY (voucher_id) REFERENCES vouchers(id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_budget_locks_voucher ON budget_locks(voucher_id);
+
 CREATE TABLE IF NOT EXISTS voucher_events (
   event_id TEXT PRIMARY KEY,
   template_code TEXT NOT NULL,

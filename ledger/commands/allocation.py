@@ -9,7 +9,9 @@ from ledger.services import (
     create_allocation_rule,
     find_dimension,
     list_allocation_rules,
+    list_allocation_basis_values,
     run_allocation,
+    set_allocation_basis_value,
     set_allocation_rule_lines,
 )
 from ledger.utils import LedgerError, print_json
@@ -37,6 +39,21 @@ def add_parser(subparsers, parents):
     run_cmd.add_argument("--date", help="凭证日期")
     run_cmd.add_argument("--description", help="摘要")
     run_cmd.set_defaults(func=run_run)
+
+    basis_cmd = sub.add_parser("basis", help="分摊基础数据", parents=parents)
+    basis_sub = basis_cmd.add_subparsers(dest="basis_cmd")
+
+    basis_set = basis_sub.add_parser("set", help="设置基础值", parents=parents)
+    basis_set.add_argument("--period", required=True, help="期间")
+    basis_set.add_argument("--dim-type", required=True, help="维度类型")
+    basis_set.add_argument("--dim-code", required=True, help="维度代码")
+    basis_set.add_argument("--value", type=float, required=True, help="基础值")
+    basis_set.set_defaults(func=run_basis_set)
+
+    basis_list = basis_sub.add_parser("list", help="基础值列表", parents=parents)
+    basis_list.add_argument("--period", help="期间")
+    basis_list.add_argument("--dim-type", help="维度类型")
+    basis_list.set_defaults(func=run_basis_list)
 
     return parser
 
@@ -81,3 +98,17 @@ def run_run(args):
     with get_db(args.db_path) as conn:
         result = run_allocation(conn, args.rule_id, args.period, args.date, args.description)
     print_json({"status": "success", **result})
+
+
+def run_basis_set(args):
+    with get_db(args.db_path) as conn:
+        result = set_allocation_basis_value(
+            conn, args.period, args.dim_type, args.dim_code, args.value
+        )
+    print_json({"status": "success", **result})
+
+
+def run_basis_list(args):
+    with get_db(args.db_path) as conn:
+        rows = list_allocation_basis_values(conn, args.period, args.dim_type)
+    print_json({"values": rows})

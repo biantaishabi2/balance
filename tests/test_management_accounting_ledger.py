@@ -8,9 +8,13 @@ from ledger.services import (
     confirm_voucher,
     create_allocation_rule,
     insert_voucher,
+    list_allocation_basis_values,
     load_standard_accounts,
     run_allocation,
+    review_voucher,
     set_budget,
+    set_allocation_basis_value,
+    unreview_voucher,
 )
 from ledger.utils import LedgerError
 
@@ -182,3 +186,97 @@ def test_budget_variance(tmp_path):
         )
         variance = budget_variance(conn, "2025-01", "department", "D-A")
         assert variance["variance"] == pytest.approx(200.0, rel=0.01)
+
+
+def test_budget_freeze_release(tmp_path, monkeypatch):
+    db_path = tmp_path / "ledger.db"
+    accounts = [
+        {"code": "1001", "name": "Cash", "level": 1, "type": "asset", "direction": "debit"},
+        {"code": "6601", "name": "Admin", "level": 1, "type": "expense", "direction": "debit"},
+    ]
+
+    with get_db(str(db_path)) as conn:
+        init_db(conn)
+        load_standard_accounts(conn, accounts)
+        _seed_dimension(conn, "department", "D-A", "Dept A")
+        set_budget(conn, "2025-01", "department", "D-A", 1000)
+        monkeypatch.setattr(services, "_load_budget_config", lambda: {"mode": "warn"})
+        dept_id = conn.execute(
+            "SELECT id FROM dimensions WHERE type = 'department' AND code = 'D-A'"
+        ).fetchone()["id"]
+
+        entries, _, _ = build_entries(
+            conn,
+            [
+                {"account": "6601", "debit": 300, "credit": 0, "department": "D-A"},
+                {"account": "1001", "debit": 0, "credit": 300},
+            ],
+            "2025-01-12",
+        )
+        voucher_id, _, _, _ = insert_voucher(
+            conn,
+            {"date": "2025-01-12", "description": "expense"},
+            entries,
+            "draft",
+        )
+        review_voucher(conn, voucher_id)
+        row = conn.execute(
+            """
+            SELECT used_amount, locked_amount FROM budget_controls
+            WHERE period = ? AND dim_type = ? AND dim_id = ?
+            """,
+            ("2025-01", "department", dept_id),
+        ).fetchone()
+        assert row["locked_amount"] == pytest.approx(300.0, rel=0.01)
+        confirm_voucher(conn, voucher_id)
+        row = conn.execute(
+            """
+            SELECT used_amount, locked_amount FROM budget_controls
+            WHERE period = ? AND dim_type = ? AND dim_id = ?
+            """,
+            ("2025-01", "department", dept_id),
+        ).fetchone()
+        assert row["used_amount"] == pytest.approx(300.0, rel=0.01)
+        assert row["locked_amount"] == pytest.approx(0.0, rel=0.01)
+
+        entries, _, _ = build_entries(
+            conn,
+            [
+                {"account": "6601", "debit": 200, "credit": 0, "department": "D-A"},
+                {"account": "1001", "debit": 0, "credit": 200},
+            ],
+            "2025-01-13",
+        )
+        voucher_id, _, _, _ = insert_voucher(
+            conn,
+            {"date": "2025-01-13", "description": "expense"},
+            entries,
+            "draft",
+        )
+        review_voucher(conn, voucher_id)
+        unreview_voucher(conn, voucher_id)
+        row = conn.execute(
+            """
+            SELECT used_amount, locked_amount FROM budget_controls
+            WHERE period = ? AND dim_type = ? AND dim_id = ?
+            """,
+            ("2025-01", "department", dept_id),
+        ).fetchone()
+        assert row["locked_amount"] == pytest.approx(0.0, rel=0.01)
+
+
+def test_allocation_basis_values(tmp_path):
+    db_path = tmp_path / "ledger.db"
+    with get_db(str(db_path)) as conn:
+        init_db(conn)
+        _seed_dimension(conn, "department", "D-A", "Dept A")
+        result = set_allocation_basis_value(
+            conn,
+            "2025-01",
+            "department_headcount",
+            "D-A",
+            12,
+        )
+        assert result["value"] == 12
+        rows = list_allocation_basis_values(conn, "2025-01", "department_headcount")
+        assert rows[0]["value"] == pytest.approx(12.0, rel=0.01)

@@ -9,7 +9,7 @@ from typing import Any, Dict, Optional
 from balance import run_calc
 
 from ledger.reporting_engine import generate_ledger_statements
-from ledger.services import balances_for_period, build_balance_input
+from ledger.services import balances_for_period, build_balance_input, budget_variance
 
 
 def generate_statements(
@@ -19,6 +19,7 @@ def generate_statements(
     dims: Optional[Dict[str, int]] = None,
     engine: str = "balance",
     scope: str = "all",
+    budget: Optional[Dict[str, Optional[str]]] = None,
 ) -> Dict[str, Any]:
     if engine == "ledger":
         return generate_ledger_statements(conn, period, dims=dims, scope=scope)
@@ -54,4 +55,11 @@ def generate_statements(
     }
     if assumptions:
         output["assumptions"] = assumptions
+    if budget:
+        output["budget_variance"] = budget_variance(
+            conn,
+            period,
+            budget.get("dim_type") or "department",
+            budget.get("dim_code"),
+        )
     return output
