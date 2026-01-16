@@ -153,6 +153,18 @@ def _build_audit_context(context: Optional[Dict[str, Any]] = None) -> Dict[str, 
     return payload
 
 
+def _resolve_tenant(
+    tenant_id: Optional[str] = None, org_id: Optional[str] = None
+) -> Tuple[str, str]:
+    tenant = tenant_id or os.getenv("LEDGER_TENANT_ID") or "default"
+    org = org_id or os.getenv("LEDGER_ORG_ID") or "default"
+    if not tenant:
+        tenant = "default"
+    if not org:
+        org = "default"
+    return tenant, org
+
+
 def log_audit_event(
     conn,
     action: str,
@@ -757,9 +769,13 @@ def insert_voucher(
     status: str,
     enforce_open: bool = True,
 ) -> Tuple[int, str, str, Optional[str]]:
-    voucher_no = generate_voucher_no(conn, voucher_data["date"])
+    tenant_id, org_id = _resolve_tenant(
+        voucher_data.get("tenant_id"),
+        voucher_data.get("org_id"),
+    )
+    voucher_no = generate_voucher_no(conn, voucher_data["date"], tenant_id, org_id)
     period = parse_period(voucher_data["date"])
-    ensure_period(conn, period)
+    ensure_period(conn, period, tenant_id=tenant_id, org_id=org_id)
     if enforce_open:
         entry_type = voucher_data.get("entry_type", "normal")
         assert_period_writable(conn, period, entry_type)
@@ -772,11 +788,14 @@ def insert_voucher(
     cur = conn.execute(
         """
         INSERT INTO vouchers (
-          voucher_no, date, period, description, status, entry_type, source_template, source_event_id, reviewed_at, confirmed_at
+          tenant_id, org_id, voucher_no, date, period, description, status, entry_type,
+          source_template, source_event_id, reviewed_at, confirmed_at
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (
+            tenant_id,
+            org_id,
             voucher_no,
             voucher_data["date"],
             period,
@@ -804,13 +823,15 @@ def insert_voucher(
         conn.execute(
             """
             INSERT INTO voucher_entries (
-              voucher_id, line_no, account_code, account_name, description,
+              tenant_id, org_id, voucher_id, line_no, account_code, account_name, description,
               debit_amount, credit_amount, currency_code, fx_rate, foreign_debit_amount, foreign_credit_amount,
               dept_id, project_id, customer_id, supplier_id, employee_id
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
+                tenant_id,
+                org_id,
                 voucher_id,
                 entry["line_no"],
                 entry["account_code"],
@@ -856,18 +877,24 @@ def _balance_key(entry: Dict[str, Any]) -> Tuple[Any, ...]:
 
 
 def _get_opening_balance(
-    conn, period: str, account_code: str, dims: Tuple[int, int, int, int, int]
+    conn,
+    period: str,
+    account_code: str,
+    dims: Tuple[int, int, int, int, int],
+    tenant_id: Optional[str] = None,
+    org_id: Optional[str] = None,
 ) -> float:
     prev = _prev_period(period)
     if not prev:
         return 0.0
+    tenant_id, org_id = _resolve_tenant(tenant_id, org_id)
     row = conn.execute(
         """
         SELECT closing_balance FROM balances
-        WHERE period = ? AND account_code = ?
+        WHERE period = ? AND tenant_id = ? AND org_id = ? AND account_code = ?
           AND dept_id = ? AND project_id = ? AND customer_id = ? AND supplier_id = ? AND employee_id = ?
         """,
-        (prev, account_code, *dims),
+        (prev, tenant_id, org_id, account_code, *dims),
     ).fetchone()
     return float(row["closing_balance"]) if row else 0.0
 
@@ -893,7 +920,14 @@ def _get_opening_balance_fx(
     return float(row["foreign_closing"]) if row else 0.0
 
 
-def update_balance_for_voucher(conn, voucher_id: int, period: str) -> int:
+def update_balance_for_voucher(
+    conn,
+    voucher_id: int,
+    period: str,
+    tenant_id: Optional[str] = None,
+    org_id: Optional[str] = None,
+) -> int:
+    tenant_id, org_id = _resolve_tenant(tenant_id, org_id)
     entries = conn.execute(
         """
         SELECT ve.*, a.direction
@@ -914,6 +948,8 @@ def update_balance_for_voucher(conn, voucher_id: int, period: str) -> int:
         supplier_id = row["supplier_id"] or 0
         employee_id = row["employee_id"] or 0
         key = (
+            tenant_id,
+            org_id,
             row["account_code"],
             period,
             dept_id,
@@ -926,7 +962,7 @@ def update_balance_for_voucher(conn, voucher_id: int, period: str) -> int:
         balance_row = conn.execute(
             """
             SELECT * FROM balances
-            WHERE account_code = ? AND period = ?
+            WHERE tenant_id = ? AND org_id = ? AND account_code = ? AND period = ?
               AND dept_id = ? AND project_id = ? AND customer_id = ? AND supplier_id = ? AND employee_id = ?
             """,
             key,
@@ -937,16 +973,20 @@ def update_balance_for_voucher(conn, voucher_id: int, period: str) -> int:
                 period,
                 row["account_code"],
                 (dept_id, project_id, customer_id, supplier_id, employee_id),
+                tenant_id,
+                org_id,
             )
             conn.execute(
                 """
                 INSERT INTO balances (
-                  account_code, period, dept_id, project_id, customer_id, supplier_id, employee_id,
+                  tenant_id, org_id, account_code, period, dept_id, project_id, customer_id, supplier_id, employee_id,
                   opening_balance, debit_amount, credit_amount, closing_balance
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, 0, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, ?)
                 """,
                 (
+                    tenant_id,
+                    org_id,
                     row["account_code"],
                     period,
                     dept_id,
@@ -961,7 +1001,7 @@ def update_balance_for_voucher(conn, voucher_id: int, period: str) -> int:
             balance_row = conn.execute(
                 """
                 SELECT * FROM balances
-                WHERE account_code = ? AND period = ?
+                WHERE tenant_id = ? AND org_id = ? AND account_code = ? AND period = ?
                   AND dept_id = ? AND project_id = ? AND customer_id = ? AND supplier_id = ? AND employee_id = ?
                 """,
                 key,
@@ -1078,8 +1118,16 @@ def fetch_entries(conn, voucher_id: int) -> List[Dict[str, Any]]:
 
 
 def _budget_dim_from_entry(entry: Dict[str, Any]) -> Tuple[Optional[str], Optional[int]]:
-    dept_id = entry.get("dept_id") or 0
-    project_id = entry.get("project_id") or 0
+    def _value(key: str) -> Optional[Any]:
+        if isinstance(entry, dict):
+            return entry.get(key)
+        try:
+            return entry[key]
+        except (KeyError, TypeError, IndexError):
+            return None
+
+    dept_id = _value("dept_id") or 0
+    project_id = _value("project_id") or 0
     if dept_id:
         return "department", int(dept_id)
     if project_id:
@@ -1545,10 +1593,13 @@ def balances_for_period(
     period: str,
     dims: Optional[Dict[str, int]] = None,
     scope: str = "all",
+    tenant_id: Optional[str] = None,
+    org_id: Optional[str] = None,
 ) -> List[Dict[str, Any]]:
+    tenant_id, org_id = _resolve_tenant(tenant_id, org_id)
     if scope == "all":
-        conditions = ["b.period = ?"]
-        params: List[Any] = [period]
+        conditions = ["b.period = ?", "b.tenant_id = ?", "b.org_id = ?"]
+        params: List[Any] = [period, tenant_id, org_id]
         if dims:
             for field in ("dept_id", "project_id", "customer_id", "supplier_id", "employee_id"):
                 value = dims.get(field)
@@ -1573,8 +1624,13 @@ def balances_for_period(
     placeholders = ", ".join(["?"] * len(entry_types))
 
     def _fetch_sums(period_condition: str, period_value: str) -> List[Dict[str, Any]]:
-        conditions = [f"v.entry_type IN ({placeholders})", f"v.period {period_condition} ?"]
-        params: List[Any] = [*entry_types, period_value]
+        conditions = [
+            f"v.entry_type IN ({placeholders})",
+            f"v.period {period_condition} ?",
+            "v.tenant_id = ?",
+            "v.org_id = ?",
+        ]
+        params: List[Any] = [*entry_types, period_value, tenant_id, org_id]
         if dims:
             for field in ("dept_id", "project_id", "customer_id", "supplier_id", "employee_id"):
                 value = dims.get(field)

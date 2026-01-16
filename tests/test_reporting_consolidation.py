@@ -1,61 +1,20 @@
 from ledger.database import get_db, init_db
 from ledger.reporting_consolidation import generate_consolidated_statements
+from ledger.services import insert_voucher, load_standard_accounts, update_balance_for_voucher
 
 
 def _init_ledger_db(db_path, accounts, vouchers):
     with get_db(str(db_path)) as conn:
         init_db(conn)
-        account_map = {}
-        for acc in accounts:
-            account_map[acc["code"]] = acc
-            conn.execute(
-                """
-                INSERT INTO accounts (
-                  code, name, level, parent_code, type, direction, cash_flow, is_enabled, is_system
-                )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """,
-                (
-                    acc["code"],
-                    acc["name"],
-                    acc.get("level", 1),
-                    acc.get("parent_code"),
-                    acc.get("type", "asset"),
-                    acc.get("direction", "debit"),
-                    acc.get("cash_flow"),
-                    acc.get("is_enabled", 1),
-                    acc.get("is_system", 1),
-                ),
-            )
-
-        totals = {}
+        load_standard_accounts(conn, accounts)
         for voucher_entries in vouchers:
-            for entry in voucher_entries:
-                code = entry["account_code"]
-                totals.setdefault(code, {"debit": 0.0, "credit": 0.0})
-                totals[code]["debit"] += float(entry.get("debit_amount") or 0)
-                totals[code]["credit"] += float(entry.get("credit_amount") or 0)
-
-        period = "2025-01"
-        for code, sums in totals.items():
-            direction = account_map[code].get("direction", "debit")
-            opening = 0.0
-            debit = sums["debit"]
-            credit = sums["credit"]
-            if direction == "debit":
-                closing = opening + debit - credit
-            else:
-                closing = opening - debit + credit
-            conn.execute(
-                """
-                INSERT INTO balances (
-                  account_code, period, dept_id, project_id, customer_id, supplier_id, employee_id,
-                  opening_balance, debit_amount, credit_amount, closing_balance
-                )
-                VALUES (?, ?, 0, 0, 0, 0, 0, ?, ?, ?, ?)
-                """,
-                (code, period, opening, debit, credit, closing),
+            voucher_id, _, period, _ = insert_voucher(
+                conn,
+                {"date": "2025-01-15", "description": "test"},
+                voucher_entries,
+                "confirmed",
             )
+            update_balance_for_voucher(conn, voucher_id, period)
     return period
 
 
@@ -296,6 +255,112 @@ def test_consolidation_elimination(tmp_path):
     assert report["balance_sheet"]["total_assets"] == 0.0
     assert report["balance_sheet"]["total_liabilities"] == 0.0
     assert report["eliminations"][0]["amount"] == 200.0
+
+
+def test_consolidation_prefix_elimination(tmp_path):
+    ledger_a = tmp_path / "ledger_prefix_a.db"
+    ledger_b = tmp_path / "ledger_prefix_b.db"
+    accounts = [
+        {"code": "1122", "name": "内部应收A", "level": 1, "type": "asset", "direction": "debit"},
+        {"code": "1123", "name": "内部应收B", "level": 1, "type": "asset", "direction": "debit"},
+        {"code": "2202", "name": "内部应付A", "level": 1, "type": "liability", "direction": "credit"},
+        {"code": "2203", "name": "内部应付B", "level": 1, "type": "liability", "direction": "credit"},
+        {"code": "3001", "name": "实收资本", "level": 1, "type": "equity", "direction": "credit"},
+    ]
+    period = _init_ledger_db(
+        ledger_a,
+        accounts,
+        [
+            [
+                {
+                    "line_no": 1,
+                    "account_code": "1122",
+                    "account_name": "内部应收A",
+                    "debit_amount": 150,
+                    "credit_amount": 0,
+                },
+                {
+                    "line_no": 2,
+                    "account_code": "1123",
+                    "account_name": "内部应收B",
+                    "debit_amount": 50,
+                    "credit_amount": 0,
+                },
+                {
+                    "line_no": 3,
+                    "account_code": "3001",
+                    "account_name": "实收资本",
+                    "debit_amount": 0,
+                    "credit_amount": 200,
+                },
+            ]
+        ],
+    )
+    _init_ledger_db(
+        ledger_b,
+        accounts,
+        [
+            [
+                {
+                    "line_no": 1,
+                    "account_code": "3001",
+                    "account_name": "实收资本",
+                    "debit_amount": 170,
+                    "credit_amount": 0,
+                },
+                {
+                    "line_no": 2,
+                    "account_code": "2202",
+                    "account_name": "内部应付A",
+                    "debit_amount": 0,
+                    "credit_amount": 120,
+                },
+                {
+                    "line_no": 3,
+                    "account_code": "2203",
+                    "account_name": "内部应付B",
+                    "debit_amount": 0,
+                    "credit_amount": 50,
+                },
+            ]
+        ],
+    )
+
+    group_db = tmp_path / "group_prefix.db"
+    _init_group_db(
+        group_db,
+        [
+            {
+                "company_code": "PA",
+                "company_name": "Prefix A",
+                "code": "PA",
+                "name": "Prefix Ledger A",
+                "base_currency": "CNY",
+                "db_path": str(ledger_a),
+            },
+            {
+                "company_code": "PB",
+                "company_name": "Prefix B",
+                "code": "PB",
+                "name": "Prefix Ledger B",
+                "base_currency": "CNY",
+                "db_path": str(ledger_b),
+            },
+        ],
+        rule={
+            "name": "PREFIX",
+            "group_currency": "CNY",
+            "elimination_accounts": '[{"left_prefixes":["112"],"right_prefixes":["220"],"source":"closing_balance"}]',
+            "ownership": "{}",
+        },
+    )
+
+    with get_db(str(group_db)) as conn:
+        report = generate_consolidated_statements(conn, period, rule_name="PREFIX")
+
+    assert report["eliminations"][0]["amount"] == 170.0
+    assert report["balance_sheet"]["total_assets"] == 30.0
+    assert report["balance_sheet"]["total_liabilities"] == 0.0
 
 
 def test_consolidation_template_report(tmp_path):

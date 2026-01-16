@@ -9,6 +9,8 @@ import sqlite3
 
 SCHEMA_SQL = """
 CREATE TABLE IF NOT EXISTS accounts (
+  tenant_id TEXT NOT NULL DEFAULT 'default',
+  org_id TEXT NOT NULL DEFAULT 'default',
   code TEXT PRIMARY KEY,
   name TEXT NOT NULL,
   level INTEGER NOT NULL,
@@ -24,9 +26,12 @@ CREATE TABLE IF NOT EXISTS accounts (
 
 CREATE INDEX IF NOT EXISTS idx_accounts_type ON accounts(type);
 CREATE INDEX IF NOT EXISTS idx_accounts_level ON accounts(level);
+CREATE INDEX IF NOT EXISTS idx_accounts_tenant ON accounts(tenant_id, org_id);
 
 CREATE TABLE IF NOT EXISTS dimensions (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
+  tenant_id TEXT NOT NULL DEFAULT 'default',
+  org_id TEXT NOT NULL DEFAULT 'default',
   type TEXT NOT NULL,
   code TEXT NOT NULL,
   name TEXT NOT NULL,
@@ -41,9 +46,12 @@ CREATE TABLE IF NOT EXISTS dimensions (
 );
 
 CREATE INDEX IF NOT EXISTS idx_dimensions_type ON dimensions(type);
+CREATE INDEX IF NOT EXISTS idx_dimensions_tenant ON dimensions(tenant_id, org_id);
 
 CREATE TABLE IF NOT EXISTS vouchers (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
+  tenant_id TEXT NOT NULL DEFAULT 'default',
+  org_id TEXT NOT NULL DEFAULT 'default',
   voucher_no TEXT UNIQUE NOT NULL,
   date TEXT NOT NULL,
   period TEXT NOT NULL,
@@ -62,6 +70,7 @@ CREATE TABLE IF NOT EXISTS vouchers (
 CREATE INDEX IF NOT EXISTS idx_vouchers_period ON vouchers(period);
 CREATE INDEX IF NOT EXISTS idx_vouchers_date ON vouchers(date);
 CREATE INDEX IF NOT EXISTS idx_vouchers_status ON vouchers(status);
+CREATE INDEX IF NOT EXISTS idx_vouchers_tenant ON vouchers(tenant_id, org_id);
 
 CREATE TABLE IF NOT EXISTS invoices (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -86,6 +95,8 @@ CREATE INDEX IF NOT EXISTS idx_invoices_voucher ON invoices(voucher_id);
 
 CREATE TABLE IF NOT EXISTS voucher_entries (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
+  tenant_id TEXT NOT NULL DEFAULT 'default',
+  org_id TEXT NOT NULL DEFAULT 'default',
   voucher_id INTEGER NOT NULL,
   line_no INTEGER NOT NULL,
   account_code TEXT NOT NULL,
@@ -113,9 +124,12 @@ CREATE TABLE IF NOT EXISTS voucher_entries (
 
 CREATE INDEX IF NOT EXISTS idx_entries_voucher ON voucher_entries(voucher_id);
 CREATE INDEX IF NOT EXISTS idx_entries_account ON voucher_entries(account_code);
+CREATE INDEX IF NOT EXISTS idx_entries_tenant ON voucher_entries(tenant_id, org_id);
 
 CREATE TABLE IF NOT EXISTS balances (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
+  tenant_id TEXT NOT NULL DEFAULT 'default',
+  org_id TEXT NOT NULL DEFAULT 'default',
   account_code TEXT NOT NULL,
   period TEXT NOT NULL,
   dept_id INTEGER NOT NULL DEFAULT 0,
@@ -146,6 +160,7 @@ CREATE INDEX IF NOT EXISTS idx_balances_project ON balances(project_id);
 CREATE INDEX IF NOT EXISTS idx_balances_customer ON balances(customer_id);
 CREATE INDEX IF NOT EXISTS idx_balances_supplier ON balances(supplier_id);
 CREATE INDEX IF NOT EXISTS idx_balances_employee ON balances(employee_id);
+CREATE INDEX IF NOT EXISTS idx_balances_tenant ON balances(tenant_id, org_id);
 
 CREATE TABLE IF NOT EXISTS tax_adjustments (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -381,6 +396,20 @@ CREATE TABLE IF NOT EXISTS budget_controls (
   UNIQUE(period, dim_type, dim_id)
 );
 
+CREATE TABLE IF NOT EXISTS budget_locks (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  voucher_id INTEGER NOT NULL,
+  period TEXT NOT NULL,
+  dim_type TEXT NOT NULL,
+  dim_id INTEGER NOT NULL,
+  amount REAL NOT NULL,
+  created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE(voucher_id, dim_type, dim_id),
+  FOREIGN KEY (voucher_id) REFERENCES vouchers(id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_budget_locks_voucher ON budget_locks(voucher_id);
+
 CREATE TABLE IF NOT EXISTS voucher_events (
   event_id TEXT PRIMARY KEY,
   template_code TEXT NOT NULL,
@@ -584,12 +613,15 @@ CREATE INDEX IF NOT EXISTS idx_fixed_asset_depr_asset ON fixed_asset_depreciatio
 
 CREATE TABLE IF NOT EXISTS periods (
   period TEXT PRIMARY KEY,
+  tenant_id TEXT NOT NULL DEFAULT 'default',
+  org_id TEXT NOT NULL DEFAULT 'default',
   status TEXT NOT NULL DEFAULT 'open',
   opened_at TEXT,
   closed_at TEXT
 );
 
 CREATE INDEX IF NOT EXISTS idx_periods_status ON periods(status);
+CREATE INDEX IF NOT EXISTS idx_periods_tenant ON periods(tenant_id, org_id);
 
 CREATE TABLE IF NOT EXISTS companies (
   id INTEGER PRIMARY KEY AUTOINCREMENT,

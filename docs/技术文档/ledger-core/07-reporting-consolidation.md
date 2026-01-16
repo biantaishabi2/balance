@@ -37,6 +37,9 @@ feature
 - `consolidation_rules`：
   - `id, name, elimination_accounts, ownership`
 - 根据权益比例进行合并
+- `elimination_accounts` 支持：
+  - 精确科目：`{"left":"1122","right":"2202","source":"closing_balance"}`
+  - 前缀/类型：`{"left_prefixes":["112"],"right_prefixes":["220"],"source":"closing_balance"}`
 
 ### 3. 合并币种与折算
 - 集团本位币：`group_currency`
@@ -103,5 +106,10 @@ pytest -q tests/test_reporting_consolidation.py
 - **操作**：配置模板字段与公式（毛利=收入-成本）
 - **预期**：毛利字段输出 40.00
 
+### 补充验证：前缀抵销
+- **操作**：配置 `left_prefixes=["112"]`、`right_prefixes=["220"]`
+- **预期**：内部往来按前缀批量抵销，资产/负债同时下降
+
 ## 备注
 - 合并口径初期仅支持全资或简单权益比例
+- 多租户默认 `tenant_id/org_id=default`，可按环境变量覆盖

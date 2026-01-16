@@ -43,6 +43,20 @@ def run_migrations(conn: sqlite3.Connection) -> None:
     _ensure_column("inventory_balances", "location_id", "location_id INTEGER DEFAULT 0")
     _ensure_column("fixed_assets", "dept_id", "dept_id INTEGER")
     _ensure_column("fixed_assets", "project_id", "project_id INTEGER")
+    _ensure_column("accounts", "tenant_id", "tenant_id TEXT NOT NULL DEFAULT 'default'")
+    _ensure_column("accounts", "org_id", "org_id TEXT NOT NULL DEFAULT 'default'")
+    _ensure_column("dimensions", "tenant_id", "tenant_id TEXT NOT NULL DEFAULT 'default'")
+    _ensure_column("dimensions", "org_id", "org_id TEXT NOT NULL DEFAULT 'default'")
+    _ensure_column("vouchers", "tenant_id", "tenant_id TEXT NOT NULL DEFAULT 'default'")
+    _ensure_column("vouchers", "org_id", "org_id TEXT NOT NULL DEFAULT 'default'")
+    _ensure_column(
+        "voucher_entries", "tenant_id", "tenant_id TEXT NOT NULL DEFAULT 'default'"
+    )
+    _ensure_column("voucher_entries", "org_id", "org_id TEXT NOT NULL DEFAULT 'default'")
+    _ensure_column("balances", "tenant_id", "tenant_id TEXT NOT NULL DEFAULT 'default'")
+    _ensure_column("balances", "org_id", "org_id TEXT NOT NULL DEFAULT 'default'")
+    _ensure_column("periods", "tenant_id", "tenant_id TEXT NOT NULL DEFAULT 'default'")
+    _ensure_column("periods", "org_id", "org_id TEXT NOT NULL DEFAULT 'default'")
     conn.executescript(
         """
         CREATE TABLE IF NOT EXISTS invoices (
@@ -295,6 +309,20 @@ def run_migrations(conn: sqlite3.Connection) -> None:
           UNIQUE(period, dim_type, dim_id)
         );
 
+        CREATE TABLE IF NOT EXISTS budget_locks (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          voucher_id INTEGER NOT NULL,
+          period TEXT NOT NULL,
+          dim_type TEXT NOT NULL,
+          dim_id INTEGER NOT NULL,
+          amount REAL NOT NULL,
+          created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+          UNIQUE(voucher_id, dim_type, dim_id),
+          FOREIGN KEY (voucher_id) REFERENCES vouchers(id)
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_budget_locks_voucher ON budget_locks(voucher_id);
+
         CREATE TABLE IF NOT EXISTS voucher_events (
           event_id TEXT PRIMARY KEY,
           template_code TEXT NOT NULL,
@@ -531,6 +559,13 @@ def run_migrations(conn: sqlite3.Connection) -> None:
           rate_type TEXT NOT NULL,
           PRIMARY KEY (date, base_currency, quote_currency, rate_type)
         );
+
+        CREATE INDEX IF NOT EXISTS idx_accounts_tenant ON accounts(tenant_id, org_id);
+        CREATE INDEX IF NOT EXISTS idx_dimensions_tenant ON dimensions(tenant_id, org_id);
+        CREATE INDEX IF NOT EXISTS idx_vouchers_tenant ON vouchers(tenant_id, org_id);
+        CREATE INDEX IF NOT EXISTS idx_entries_tenant ON voucher_entries(tenant_id, org_id);
+        CREATE INDEX IF NOT EXISTS idx_balances_tenant ON balances(tenant_id, org_id);
+        CREATE INDEX IF NOT EXISTS idx_periods_tenant ON periods(tenant_id, org_id);
 
         CREATE TABLE IF NOT EXISTS audit_logs (
           id INTEGER PRIMARY KEY AUTOINCREMENT,

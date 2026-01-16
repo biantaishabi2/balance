@@ -337,6 +337,61 @@ def _aggregate_balances(balances: Iterable[Dict[str, Any]]) -> List[Dict[str, An
     return list(aggregated.values())
 
 
+def _as_list(value: Any) -> List[Any]:
+    if value is None:
+        return []
+    if isinstance(value, list):
+        return value
+    return [value]
+
+
+def _resolve_elimination_side(
+    balance_map: Dict[str, Dict[str, Any]],
+    pair: Dict[str, Any],
+    side: str,
+) -> List[Dict[str, Any]]:
+    codes = pair.get(side)
+    if codes is not None:
+        return [
+            balance_map[code]
+            for code in _as_list(codes)
+            if code in balance_map
+        ]
+    prefixes = pair.get(f"{side}_prefixes") or pair.get(f"{side}_prefix")
+    account_types = pair.get(f"{side}_account_types") or pair.get(f"{side}_account_type")
+    prefixes_list = _as_list(prefixes)
+    types_list = _as_list(account_types)
+    matches = []
+    if prefixes_list or types_list:
+        for balance in balance_map.values():
+            code = str(balance.get("account_code") or "")
+            if prefixes_list and any(code.startswith(prefix) for prefix in prefixes_list):
+                matches.append(balance)
+                continue
+            if types_list and balance.get("account_type") in types_list:
+                matches.append(balance)
+    return matches
+
+
+def _apply_elimination_to_balances(
+    balances: List[Dict[str, Any]],
+    source: str,
+    amount: float,
+) -> None:
+    total = sum(abs(float(balance.get(source) or 0)) for balance in balances)
+    if total <= 0:
+        return
+    remaining = amount
+    for idx, balance in enumerate(balances):
+        value = float(balance.get(source) or 0)
+        if idx == len(balances) - 1:
+            reduction = remaining
+        else:
+            reduction = amount * (abs(value) / total)
+        balance[source] = _reduce_towards_zero(value, reduction)
+        remaining -= reduction
+
+
 def _apply_eliminations(
     balances: List[Dict[str, Any]], elimination_rules: Any
 ) -> tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
@@ -354,33 +409,64 @@ def _apply_eliminations(
         for pair in pairs:
             if not isinstance(pair, dict):
                 raise LedgerError("INVALID_ELIMINATION_RULE", "抵销规则格式错误")
-            left_code = pair.get("left")
-            right_code = pair.get("right")
             source = pair.get("source", "closing_balance")
-            if not left_code or not right_code:
+            left_config = any(
+                pair.get(key) is not None
+                for key in (
+                    "left",
+                    "left_prefixes",
+                    "left_prefix",
+                    "left_account_types",
+                    "left_account_type",
+                )
+            )
+            right_config = any(
+                pair.get(key) is not None
+                for key in (
+                    "right",
+                    "right_prefixes",
+                    "right_prefix",
+                    "right_account_types",
+                    "right_account_type",
+                )
+            )
+            left_balances = _resolve_elimination_side(balance_map, pair, "left")
+            right_balances = _resolve_elimination_side(balance_map, pair, "right")
+            if not left_config or not right_config:
                 raise LedgerError(
                     "INVALID_ELIMINATION_RULE",
-                    "抵销规则缺少 left/right",
+                    "抵销规则缺少 left/right 或前缀/类型配置",
                 )
-            left = balance_map.get(left_code)
-            right = balance_map.get(right_code)
-            if not left or not right:
+            if not left_balances or not right_balances:
                 continue
-            left_val = float(left.get(source) or 0)
-            right_val = float(right.get(source) or 0)
-            elimination = min(abs(left_val), abs(right_val))
+            left_total = sum(abs(float(item.get(source) or 0)) for item in left_balances)
+            right_total = sum(abs(float(item.get(source) or 0)) for item in right_balances)
+            elimination = min(left_total, right_total)
             if elimination <= 0:
                 continue
-            left[source] = _reduce_towards_zero(left_val, elimination)
-            right[source] = _reduce_towards_zero(right_val, elimination)
-            eliminations.append(
-                {
-                    "left": left_code,
-                    "right": right_code,
-                    "source": source,
-                    "amount": round(elimination, 2),
-                }
-            )
+            _apply_elimination_to_balances(left_balances, source, elimination)
+            _apply_elimination_to_balances(right_balances, source, elimination)
+            record = {
+                "source": source,
+                "amount": round(elimination, 2),
+                "left_codes": [item["account_code"] for item in left_balances],
+                "right_codes": [item["account_code"] for item in right_balances],
+            }
+            if pair.get("left") is not None and pair.get("right") is not None:
+                left_codes = _as_list(pair.get("left"))
+                right_codes = _as_list(pair.get("right"))
+                if len(left_codes) == 1 and len(right_codes) == 1:
+                    record["left"] = left_codes[0]
+                    record["right"] = right_codes[0]
+            if pair.get("left_prefixes") or pair.get("left_prefix"):
+                record["left_prefixes"] = _as_list(
+                    pair.get("left_prefixes") or pair.get("left_prefix")
+                )
+            if pair.get("right_prefixes") or pair.get("right_prefix"):
+                record["right_prefixes"] = _as_list(
+                    pair.get("right_prefixes") or pair.get("right_prefix")
+                )
+            eliminations.append(record)
     return eliminations, list(balance_map.values())
 
 
