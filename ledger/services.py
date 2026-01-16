@@ -70,6 +70,20 @@ DEFAULT_SUBLEDGER_MAPPING = {
 }
 
 
+DEFAULT_TENANT_ID = "default"
+DEFAULT_ORG_ID = "default"
+
+
+def _resolve_tenant(tenant_id: Optional[str], org_id: Optional[str]) -> Tuple[str, str]:
+    return tenant_id or DEFAULT_TENANT_ID, org_id or DEFAULT_ORG_ID
+
+
+def _tenant_clause(alias: str = "") -> str:
+    prefix = f"{alias}." if alias else ""
+    return f"{prefix}tenant_id = ? AND {prefix}org_id = ?"
+
+
+
 def parse_period(date_str: str) -> str:
     return date_str[:7]
 
@@ -106,20 +120,30 @@ def _period_end_date(period: str) -> str:
     return f"{year_i:04d}-{month_i:02d}-{last_day:02d}"
 
 
-def ensure_period(conn, period: str) -> None:
-    row = conn.execute("SELECT period FROM periods WHERE period = ?", (period,)).fetchone()
+def ensure_period(
+    conn, period: str, tenant_id: Optional[str] = None, org_id: Optional[str] = None
+) -> None:
+    tenant_id, org_id = _resolve_tenant(tenant_id, org_id)
+    row = conn.execute(
+        "SELECT period FROM periods WHERE period = ? AND tenant_id = ? AND org_id = ?",
+        (period, tenant_id, org_id),
+    ).fetchone()
     if row:
         return
     conn.execute(
-        "INSERT INTO periods (period, status, opened_at) VALUES (?, 'open', CURRENT_TIMESTAMP)",
-        (period,),
+        """
+        INSERT INTO periods (tenant_id, org_id, period, status, opened_at)
+        VALUES (?, ?, ?, 'open', CURRENT_TIMESTAMP)
+        """,
+        (tenant_id, org_id, period),
     )
 
     prev = _prev_period(period)
     if not prev:
         return
     existing = conn.execute(
-        "SELECT 1 FROM balances WHERE period = ? LIMIT 1", (period,)
+        "SELECT 1 FROM balances WHERE period = ? AND tenant_id = ? AND org_id = ? LIMIT 1",
+        (period, tenant_id, org_id),
     ).fetchone()
     if existing:
         return
@@ -127,20 +151,22 @@ def ensure_period(conn, period: str) -> None:
         """
         SELECT account_code, dept_id, project_id, customer_id, supplier_id, employee_id, closing_balance
         FROM balances
-        WHERE period = ?
+        WHERE period = ? AND tenant_id = ? AND org_id = ?
         """,
-        (prev,),
+        (prev, tenant_id, org_id),
     ).fetchall()
     for row in prev_rows:
         conn.execute(
             """
             INSERT OR IGNORE INTO balances (
-              account_code, period, dept_id, project_id, customer_id, supplier_id, employee_id,
+              tenant_id, org_id, account_code, period, dept_id, project_id, customer_id, supplier_id, employee_id,
               opening_balance, debit_amount, credit_amount, closing_balance
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, 0, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, ?)
             """,
             (
+                tenant_id,
+                org_id,
                 row["account_code"],
                 period,
                 row["dept_id"],
@@ -154,28 +180,45 @@ def ensure_period(conn, period: str) -> None:
         )
 
 
-def get_period_status(conn, period: str) -> Optional[str]:
-    row = conn.execute("SELECT status FROM periods WHERE period = ?", (period,)).fetchone()
+def get_period_status(
+    conn, period: str, tenant_id: Optional[str] = None, org_id: Optional[str] = None
+) -> Optional[str]:
+    tenant_id, org_id = _resolve_tenant(tenant_id, org_id)
+    row = conn.execute(
+        "SELECT status FROM periods WHERE period = ? AND tenant_id = ? AND org_id = ?",
+        (period, tenant_id, org_id),
+    ).fetchone()
     return row["status"] if row else None
 
 
-def assert_period_open(conn, period: str) -> None:
-    status = get_period_status(conn, period)
+def assert_period_open(
+    conn, period: str, tenant_id: Optional[str] = None, org_id: Optional[str] = None
+) -> None:
+    status = get_period_status(conn, period, tenant_id=tenant_id, org_id=org_id)
     if status == "closed":
         raise LedgerError("PERIOD_CLOSED", f"期间已结账: {period}")
 
 
-def load_standard_accounts(conn, accounts: List[Dict[str, Any]]) -> int:
+def load_standard_accounts(
+    conn,
+    accounts: List[Dict[str, Any]],
+    tenant_id: Optional[str] = None,
+    org_id: Optional[str] = None,
+) -> int:
+    tenant_id, org_id = _resolve_tenant(tenant_id, org_id)
     loaded = 0
     for acc in accounts:
         conn.execute(
             """
             INSERT OR IGNORE INTO accounts (
-              code, name, level, parent_code, type, direction, cash_flow, is_enabled, is_system
+              tenant_id, org_id, code, name, level, parent_code, type, direction,
+              cash_flow, is_enabled, is_system
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
+                tenant_id,
+                org_id,
                 acc["code"],
                 acc["name"],
                 acc.get("level", 1),
@@ -191,10 +234,13 @@ def load_standard_accounts(conn, accounts: List[Dict[str, Any]]) -> int:
     return loaded
 
 
-def find_account(conn, identifier: str) -> Dict[str, Any]:
+def find_account(
+    conn, identifier: str, tenant_id: Optional[str] = None, org_id: Optional[str] = None
+) -> Dict[str, Any]:
+    tenant_id, org_id = _resolve_tenant(tenant_id, org_id)
     row = conn.execute(
-        "SELECT * FROM accounts WHERE code = ? OR name = ?",
-        (identifier, identifier),
+        "SELECT * FROM accounts WHERE tenant_id = ? AND org_id = ? AND (code = ? OR name = ?)",
+        (tenant_id, org_id, identifier, identifier),
     ).fetchone()
     if not row:
         raise LedgerError("ACCOUNT_NOT_FOUND", f"科目不存在: {identifier}")
@@ -203,21 +249,37 @@ def find_account(conn, identifier: str) -> Dict[str, Any]:
     return dict(row)
 
 
-def find_dimension(conn, dim_type: str, code: str) -> int:
+def find_dimension(
+    conn,
+    dim_type: str,
+    code: str,
+    tenant_id: Optional[str] = None,
+    org_id: Optional[str] = None,
+) -> int:
+    tenant_id, org_id = _resolve_tenant(tenant_id, org_id)
     row = conn.execute(
-        "SELECT id FROM dimensions WHERE type = ? AND code = ? AND is_enabled = 1",
-        (dim_type, code),
+        """
+        SELECT id FROM dimensions
+        WHERE tenant_id = ? AND org_id = ? AND type = ? AND code = ? AND is_enabled = 1
+        """,
+        (tenant_id, org_id, dim_type, code),
     ).fetchone()
     if not row:
         raise LedgerError("DIMENSION_NOT_FOUND", f"维度不存在: {dim_type}:{code}")
     return int(row["id"])
 
 
-def generate_voucher_no(conn, date_str: str) -> str:
+def generate_voucher_no(
+    conn, date_str: str, tenant_id: Optional[str] = None, org_id: Optional[str] = None
+) -> str:
+    tenant_id, org_id = _resolve_tenant(tenant_id, org_id)
     prefix = "V" + date_str.replace("-", "")
     row = conn.execute(
-        "SELECT COUNT(*) AS cnt FROM vouchers WHERE voucher_no LIKE ?",
-        (f"{prefix}%",),
+        """
+        SELECT COUNT(*) AS cnt FROM vouchers
+        WHERE voucher_no LIKE ? AND tenant_id = ? AND org_id = ?
+        """,
+        (f"{prefix}%", tenant_id, org_id),
     ).fetchone()
     seq = int(row["cnt"]) + 1
     return f"{prefix}{seq:03d}"
@@ -226,7 +288,10 @@ def generate_voucher_no(conn, date_str: str) -> str:
 def build_entries(
     conn,
     entries_data: Iterable[Dict[str, Any]],
+    tenant_id: Optional[str] = None,
+    org_id: Optional[str] = None,
 ) -> Tuple[List[Dict[str, Any]], float, float]:
+    tenant_id, org_id = _resolve_tenant(tenant_id, org_id)
     entries: List[Dict[str, Any]] = []
     total_debit = 0.0
     total_credit = 0.0
@@ -235,7 +300,7 @@ def build_entries(
         account_token = entry.get("account") or entry.get("account_code")
         if not account_token:
             raise LedgerError("ACCOUNT_NOT_FOUND", "分录缺少科目(account)")
-        account = find_account(conn, account_token)
+        account = find_account(conn, account_token, tenant_id=tenant_id, org_id=org_id)
         debit = float(entry.get("debit", entry.get("debit_amount", 0)) or 0)
         credit = float(entry.get("credit", entry.get("credit_amount", 0)) or 0)
 
@@ -249,7 +314,9 @@ def build_entries(
         for key, dim_type in DIMENSION_FIELDS.items():
             code = entry.get(key)
             if code:
-                dim_id = find_dimension(conn, dim_type, code)
+                dim_id = find_dimension(
+                    conn, dim_type, code, tenant_id=tenant_id, org_id=org_id
+                )
                 dims[f"{key}_id" if key != "department" else "dept_id"] = dim_id
 
         entries.append(
@@ -275,12 +342,17 @@ def insert_voucher(
     entries: List[Dict[str, Any]],
     status: str,
     enforce_open: bool = True,
+    tenant_id: Optional[str] = None,
+    org_id: Optional[str] = None,
 ) -> Tuple[int, str, str, Optional[str]]:
-    voucher_no = generate_voucher_no(conn, voucher_data["date"])
+    tenant_id, org_id = _resolve_tenant(tenant_id, org_id)
+    voucher_no = generate_voucher_no(
+        conn, voucher_data["date"], tenant_id=tenant_id, org_id=org_id
+    )
     period = parse_period(voucher_data["date"])
-    ensure_period(conn, period)
+    ensure_period(conn, period, tenant_id=tenant_id, org_id=org_id)
     if enforce_open:
-        assert_period_open(conn, period)
+        assert_period_open(conn, period, tenant_id=tenant_id, org_id=org_id)
     confirmed_at = None
     reviewed_at = None
     if status == "reviewed":
@@ -289,10 +361,14 @@ def insert_voucher(
         confirmed_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     cur = conn.execute(
         """
-        INSERT INTO vouchers (voucher_no, date, period, description, status, reviewed_at, confirmed_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO vouchers (
+          tenant_id, org_id, voucher_no, date, period, description, status, reviewed_at, confirmed_at
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (
+            tenant_id,
+            org_id,
             voucher_no,
             voucher_data["date"],
             period,
@@ -307,12 +383,14 @@ def insert_voucher(
         conn.execute(
             """
             INSERT INTO voucher_entries (
-              voucher_id, line_no, account_code, account_name, description,
+              tenant_id, org_id, voucher_id, line_no, account_code, account_name, description,
               debit_amount, credit_amount, dept_id, project_id, customer_id, supplier_id, employee_id
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
+                tenant_id,
+                org_id,
                 voucher_id,
                 entry["line_no"],
                 entry["account_code"],
@@ -342,8 +420,14 @@ def _balance_key(entry: Dict[str, Any]) -> Tuple[Any, ...]:
 
 
 def _get_opening_balance(
-    conn, period: str, account_code: str, dims: Tuple[int, int, int, int, int]
+    conn,
+    period: str,
+    account_code: str,
+    dims: Tuple[int, int, int, int, int],
+    tenant_id: Optional[str] = None,
+    org_id: Optional[str] = None,
 ) -> float:
+    tenant_id, org_id = _resolve_tenant(tenant_id, org_id)
     prev = _prev_period(period)
     if not prev:
         return 0.0
@@ -352,21 +436,32 @@ def _get_opening_balance(
         SELECT closing_balance FROM balances
         WHERE period = ? AND account_code = ?
           AND dept_id = ? AND project_id = ? AND customer_id = ? AND supplier_id = ? AND employee_id = ?
+          AND tenant_id = ? AND org_id = ?
         """,
-        (prev, account_code, *dims),
+        (prev, account_code, *dims, tenant_id, org_id),
     ).fetchone()
     return float(row["closing_balance"]) if row else 0.0
 
 
-def update_balance_for_voucher(conn, voucher_id: int, period: str) -> int:
+def update_balance_for_voucher(
+    conn,
+    voucher_id: int,
+    period: str,
+    tenant_id: Optional[str] = None,
+    org_id: Optional[str] = None,
+) -> int:
+    tenant_id, org_id = _resolve_tenant(tenant_id, org_id)
     entries = conn.execute(
         """
         SELECT ve.*, a.direction
         FROM voucher_entries ve
-        JOIN accounts a ON ve.account_code = a.code
-        WHERE ve.voucher_id = ?
+        JOIN accounts a
+          ON ve.account_code = a.code
+         AND ve.tenant_id = a.tenant_id
+         AND ve.org_id = a.org_id
+        WHERE ve.voucher_id = ? AND ve.tenant_id = ? AND ve.org_id = ?
         """,
-        (voucher_id,),
+        (voucher_id, tenant_id, org_id),
     ).fetchall()
 
     updated_keys = set()
@@ -391,8 +486,9 @@ def update_balance_for_voucher(conn, voucher_id: int, period: str) -> int:
             SELECT * FROM balances
             WHERE account_code = ? AND period = ?
               AND dept_id = ? AND project_id = ? AND customer_id = ? AND supplier_id = ? AND employee_id = ?
+              AND tenant_id = ? AND org_id = ?
             """,
-            key,
+            (*key, tenant_id, org_id),
         ).fetchone()
         if not balance_row:
             opening = _get_opening_balance(
@@ -400,16 +496,20 @@ def update_balance_for_voucher(conn, voucher_id: int, period: str) -> int:
                 period,
                 row["account_code"],
                 (dept_id, project_id, customer_id, supplier_id, employee_id),
+                tenant_id=tenant_id,
+                org_id=org_id,
             )
             conn.execute(
                 """
                 INSERT INTO balances (
-                  account_code, period, dept_id, project_id, customer_id, supplier_id, employee_id,
+                  tenant_id, org_id, account_code, period, dept_id, project_id, customer_id, supplier_id, employee_id,
                   opening_balance, debit_amount, credit_amount, closing_balance
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, 0, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, ?)
                 """,
                 (
+                    tenant_id,
+                    org_id,
                     row["account_code"],
                     period,
                     dept_id,
@@ -426,8 +526,9 @@ def update_balance_for_voucher(conn, voucher_id: int, period: str) -> int:
                 SELECT * FROM balances
                 WHERE account_code = ? AND period = ?
                   AND dept_id = ? AND project_id = ? AND customer_id = ? AND supplier_id = ? AND employee_id = ?
+                  AND tenant_id = ? AND org_id = ?
                 """,
-                key,
+                (*key, tenant_id, org_id),
             ).fetchone()
 
         debit = float(balance_row["debit_amount"]) + float(row["debit_amount"] or 0)
@@ -449,59 +550,107 @@ def update_balance_for_voucher(conn, voucher_id: int, period: str) -> int:
     return len(updated_keys)
 
 
-def fetch_voucher(conn, voucher_id: int) -> Optional[Dict[str, Any]]:
-    row = conn.execute("SELECT * FROM vouchers WHERE id = ?", (voucher_id,)).fetchone()
+def fetch_voucher(
+    conn,
+    voucher_id: int,
+    tenant_id: Optional[str] = None,
+    org_id: Optional[str] = None,
+    include_archived: bool = True,
+) -> Optional[Dict[str, Any]]:
+    tenant_id, org_id = _resolve_tenant(tenant_id, org_id)
+    archived_clause = "" if include_archived else " AND archived_at IS NULL"
+    row = conn.execute(
+        f"""
+        SELECT * FROM vouchers
+        WHERE id = ? AND tenant_id = ? AND org_id = ?{archived_clause}
+        """,
+        (voucher_id, tenant_id, org_id),
+    ).fetchone()
     return dict(row) if row else None
 
 
-def fetch_entries(conn, voucher_id: int) -> List[Dict[str, Any]]:
+def fetch_entries(
+    conn,
+    voucher_id: int,
+    tenant_id: Optional[str] = None,
+    org_id: Optional[str] = None,
+    include_archived: bool = True,
+) -> List[Dict[str, Any]]:
+    tenant_id, org_id = _resolve_tenant(tenant_id, org_id)
+    archived_clause = "" if include_archived else " AND archived_at IS NULL"
     rows = conn.execute(
-        "SELECT * FROM voucher_entries WHERE voucher_id = ? ORDER BY line_no",
-        (voucher_id,),
+        f"""
+        SELECT * FROM voucher_entries
+        WHERE voucher_id = ? AND tenant_id = ? AND org_id = ?{archived_clause}
+        ORDER BY line_no
+        """,
+        (voucher_id, tenant_id, org_id),
     ).fetchall()
     return [dict(r) for r in rows]
 
 
-def review_voucher(conn, voucher_id: int) -> Dict[str, Any]:
-    voucher = fetch_voucher(conn, voucher_id)
+def review_voucher(
+    conn,
+    voucher_id: int,
+    tenant_id: Optional[str] = None,
+    org_id: Optional[str] = None,
+) -> Dict[str, Any]:
+    voucher = fetch_voucher(conn, voucher_id, tenant_id=tenant_id, org_id=org_id)
     if not voucher:
         raise LedgerError("VOUCHER_NOT_FOUND", f"凭证不存在: {voucher_id}")
     if voucher["status"] != "draft":
         raise LedgerError("VOUCHER_STATUS_INVALID", "仅草稿凭证可审核")
     reviewed_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     conn.execute(
-        "UPDATE vouchers SET status = 'reviewed', reviewed_at = ? WHERE id = ?",
-        (reviewed_at, voucher_id),
+        """
+        UPDATE vouchers SET status = 'reviewed', reviewed_at = ?
+        WHERE id = ? AND tenant_id = ? AND org_id = ?
+        """,
+        (reviewed_at, voucher_id, *_resolve_tenant(tenant_id, org_id)),
     )
     voucher["status"] = "reviewed"
     voucher["reviewed_at"] = reviewed_at
     return voucher
 
 
-def unreview_voucher(conn, voucher_id: int) -> Dict[str, Any]:
-    voucher = fetch_voucher(conn, voucher_id)
+def unreview_voucher(
+    conn,
+    voucher_id: int,
+    tenant_id: Optional[str] = None,
+    org_id: Optional[str] = None,
+) -> Dict[str, Any]:
+    voucher = fetch_voucher(conn, voucher_id, tenant_id=tenant_id, org_id=org_id)
     if not voucher:
         raise LedgerError("VOUCHER_NOT_FOUND", f"凭证不存在: {voucher_id}")
     if voucher["status"] != "reviewed":
         raise LedgerError("VOUCHER_STATUS_INVALID", "仅已审核凭证可反审核")
     conn.execute(
-        "UPDATE vouchers SET status = 'draft', reviewed_at = NULL WHERE id = ?",
-        (voucher_id,),
+        """
+        UPDATE vouchers SET status = 'draft', reviewed_at = NULL
+        WHERE id = ? AND tenant_id = ? AND org_id = ?
+        """,
+        (voucher_id, *_resolve_tenant(tenant_id, org_id)),
     )
     voucher["status"] = "draft"
     voucher["reviewed_at"] = None
     return voucher
 
 
-def confirm_voucher(conn, voucher_id: int) -> Dict[str, Any]:
-    voucher = fetch_voucher(conn, voucher_id)
+def confirm_voucher(
+    conn,
+    voucher_id: int,
+    tenant_id: Optional[str] = None,
+    org_id: Optional[str] = None,
+) -> Dict[str, Any]:
+    tenant_id, org_id = _resolve_tenant(tenant_id, org_id)
+    voucher = fetch_voucher(conn, voucher_id, tenant_id=tenant_id, org_id=org_id)
     if not voucher:
         raise LedgerError("VOUCHER_NOT_FOUND", f"凭证不存在: {voucher_id}")
     if voucher["status"] != "reviewed":
         raise LedgerError("VOUCHER_NOT_REVIEWED", "未审核凭证不能记账")
-    assert_period_open(conn, voucher["period"])
+    assert_period_open(conn, voucher["period"], tenant_id=tenant_id, org_id=org_id)
 
-    entries = fetch_entries(conn, voucher_id)
+    entries = fetch_entries(conn, voucher_id, tenant_id=tenant_id, org_id=org_id)
     total_debit = sum(e["debit_amount"] for e in entries)
     total_credit = sum(e["credit_amount"] for e in entries)
     if abs(total_debit - total_credit) >= 0.01:
@@ -517,24 +666,36 @@ def confirm_voucher(conn, voucher_id: int) -> Dict[str, Any]:
 
     confirmed_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     conn.execute(
-        "UPDATE vouchers SET status = 'confirmed', confirmed_at = ? WHERE id = ?",
-        (confirmed_at, voucher_id),
+        """
+        UPDATE vouchers SET status = 'confirmed', confirmed_at = ?
+        WHERE id = ? AND tenant_id = ? AND org_id = ?
+        """,
+        (confirmed_at, voucher_id, tenant_id, org_id),
     )
-    balances_updated = update_balance_for_voucher(conn, voucher_id, voucher["period"])
+    balances_updated = update_balance_for_voucher(
+        conn, voucher_id, voucher["period"], tenant_id=tenant_id, org_id=org_id
+    )
     voucher["status"] = "confirmed"
     voucher["confirmed_at"] = confirmed_at
     voucher["balances_updated"] = balances_updated
     return voucher
 
 
-def void_voucher(conn, voucher_id: int, reason: str) -> Dict[str, Any]:
-    voucher = fetch_voucher(conn, voucher_id)
+def void_voucher(
+    conn,
+    voucher_id: int,
+    reason: str,
+    tenant_id: Optional[str] = None,
+    org_id: Optional[str] = None,
+) -> Dict[str, Any]:
+    tenant_id, org_id = _resolve_tenant(tenant_id, org_id)
+    voucher = fetch_voucher(conn, voucher_id, tenant_id=tenant_id, org_id=org_id)
     if not voucher:
         raise LedgerError("VOUCHER_NOT_FOUND", f"凭证不存在: {voucher_id}")
     if voucher["status"] != "confirmed":
         raise LedgerError("VOUCHER_NOT_CONFIRMED", "仅已确认凭证可冲销")
 
-    entries = fetch_entries(conn, voucher_id)
+    entries = fetch_entries(conn, voucher_id, tenant_id=tenant_id, org_id=org_id)
     reversed_entries = []
     for entry in entries:
         reversed_entries.append(
@@ -558,17 +719,29 @@ def void_voucher(conn, voucher_id: int, reason: str) -> Dict[str, Any]:
         "description": f"冲销:{voucher.get('description') or ''}".strip(),
     }
     void_id, void_no, period, _ = insert_voucher(
-        conn, void_data, reversed_entries, "confirmed", enforce_open=False
+        conn,
+        void_data,
+        reversed_entries,
+        "confirmed",
+        enforce_open=False,
+        tenant_id=tenant_id,
+        org_id=org_id,
     )
-    update_balance_for_voucher(conn, void_id, period)
+    update_balance_for_voucher(conn, void_id, period, tenant_id=tenant_id, org_id=org_id)
 
     conn.execute(
         """
         UPDATE vouchers
         SET status = 'voided', void_reason = ?, voided_at = ?
-        WHERE id = ?
+        WHERE id = ? AND tenant_id = ? AND org_id = ?
         """,
-        (reason, datetime.now().strftime("%Y-%m-%d %H:%M:%S"), voucher_id),
+        (
+            reason,
+            datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            voucher_id,
+            tenant_id,
+            org_id,
+        ),
     )
     conn.execute(
         """
@@ -585,11 +758,80 @@ def void_voucher(conn, voucher_id: int, reason: str) -> Dict[str, Any]:
     }
 
 
+def archive_vouchers(
+    conn,
+    before_period: str,
+    tenant_id: Optional[str] = None,
+    org_id: Optional[str] = None,
+) -> Dict[str, Any]:
+    tenant_id, org_id = _resolve_tenant(tenant_id, org_id)
+    voucher_row = conn.execute(
+        """
+        SELECT COUNT(*) AS cnt
+        FROM vouchers
+        WHERE period <= ? AND archived_at IS NULL AND tenant_id = ? AND org_id = ?
+        """,
+        (before_period, tenant_id, org_id),
+    ).fetchone()
+    entry_row = conn.execute(
+        """
+        SELECT COUNT(*) AS cnt
+        FROM voucher_entries
+        WHERE voucher_id IN (
+          SELECT id FROM vouchers
+          WHERE period <= ? AND archived_at IS NULL AND tenant_id = ? AND org_id = ?
+        )
+          AND tenant_id = ? AND org_id = ?
+        """,
+        (before_period, tenant_id, org_id, tenant_id, org_id),
+    ).fetchone()
+    voucher_count = int(voucher_row["cnt"] or 0)
+    entry_count = int(entry_row["cnt"] or 0)
+
+    conn.execute(
+        """
+        UPDATE vouchers
+        SET archived_at = CURRENT_TIMESTAMP
+        WHERE period <= ? AND archived_at IS NULL AND tenant_id = ? AND org_id = ?
+        """,
+        (before_period, tenant_id, org_id),
+    )
+    conn.execute(
+        """
+        UPDATE voucher_entries
+        SET archived_at = CURRENT_TIMESTAMP
+        WHERE voucher_id IN (
+          SELECT id FROM vouchers
+          WHERE period <= ? AND tenant_id = ? AND org_id = ?
+        )
+          AND tenant_id = ? AND org_id = ?
+        """,
+        (before_period, tenant_id, org_id, tenant_id, org_id),
+    )
+    conn.execute(
+        """
+        INSERT INTO archive_runs (tenant_id, org_id, cutoff_period, voucher_count, entry_count)
+        VALUES (?, ?, ?, ?, ?)
+        """,
+        (tenant_id, org_id, before_period, voucher_count, entry_count),
+    )
+    return {
+        "cutoff_period": before_period,
+        "voucher_count": voucher_count,
+        "entry_count": entry_count,
+    }
+
+
 def balances_for_period(
-    conn, period: str, dims: Optional[Dict[str, int]] = None
+    conn,
+    period: str,
+    dims: Optional[Dict[str, int]] = None,
+    tenant_id: Optional[str] = None,
+    org_id: Optional[str] = None,
 ) -> List[Dict[str, Any]]:
-    conditions = ["b.period = ?"]
-    params: List[Any] = [period]
+    tenant_id, org_id = _resolve_tenant(tenant_id, org_id)
+    conditions = ["b.period = ?", "b.tenant_id = ?", "b.org_id = ?"]
+    params: List[Any] = [period, tenant_id, org_id]
     if dims:
         for field in ("dept_id", "project_id", "customer_id", "supplier_id", "employee_id"):
             value = dims.get(field)
@@ -600,7 +842,10 @@ def balances_for_period(
         f"""
         SELECT b.*, a.name AS account_name, a.type AS account_type, a.direction AS account_direction
         FROM balances b
-        JOIN accounts a ON b.account_code = a.code
+        JOIN accounts a
+          ON b.account_code = a.code
+         AND b.tenant_id = a.tenant_id
+         AND b.org_id = a.org_id
         WHERE {' AND '.join(conditions)}
         """,
         params,
@@ -608,24 +853,31 @@ def balances_for_period(
     return [dict(r) for r in rows]
 
 
-def close_period(conn, period: str) -> Dict[str, Any]:
-    ensure_period(conn, period)
-    assert_period_open(conn, period)
+def close_period(
+    conn, period: str, tenant_id: Optional[str] = None, org_id: Optional[str] = None
+) -> Dict[str, Any]:
+    tenant_id, org_id = _resolve_tenant(tenant_id, org_id)
+    ensure_period(conn, period, tenant_id=tenant_id, org_id=org_id)
+    assert_period_open(conn, period, tenant_id=tenant_id, org_id=org_id)
 
     row = conn.execute(
-        "SELECT COUNT(*) AS cnt FROM vouchers WHERE period = ? AND status IN ('draft', 'reviewed')",
-        (period,),
+        """
+        SELECT COUNT(*) AS cnt FROM vouchers
+        WHERE period = ? AND status IN ('draft', 'reviewed')
+          AND tenant_id = ? AND org_id = ?
+        """,
+        (period, tenant_id, org_id),
     ).fetchone()
     if row and row["cnt"] > 0:
         raise LedgerError("PERIOD_HAS_UNPOSTED", "期间存在未记账凭证")
 
-    balances = balances_for_period(conn, period)
+    balances = balances_for_period(conn, period, tenant_id=tenant_id, org_id=org_id)
     config = _load_close_config()
     profit_account = config["profit_account"]
     retain_account = config.get("retain_account")
 
     closing_entries, net_by_dims = _build_income_close_entries(
-        conn, balances, profit_account
+        conn, balances, profit_account, tenant_id=tenant_id, org_id=org_id
     )
 
     closing_voucher_id = None
@@ -635,14 +887,26 @@ def close_period(conn, period: str) -> Dict[str, Any]:
             "description": f"{period} 期末结转",
         }
         closing_voucher_id, _, _, _ = insert_voucher(
-            conn, close_data, closing_entries, "confirmed"
+            conn,
+            close_data,
+            closing_entries,
+            "confirmed",
+            tenant_id=tenant_id,
+            org_id=org_id,
         )
-        update_balance_for_voucher(conn, closing_voucher_id, period)
+        update_balance_for_voucher(
+            conn, closing_voucher_id, period, tenant_id=tenant_id, org_id=org_id
+        )
 
     transfer_voucher_id = None
     if retain_account and retain_account != profit_account:
         transfer_entries = _build_profit_transfer_entries(
-            conn, period, profit_account, retain_account
+            conn,
+            period,
+            profit_account,
+            retain_account,
+            tenant_id=tenant_id,
+            org_id=org_id,
         )
         if transfer_entries:
             transfer_data = {
@@ -650,27 +914,39 @@ def close_period(conn, period: str) -> Dict[str, Any]:
                 "description": f"{period} 本年利润结转",
             }
             transfer_voucher_id, _, _, _ = insert_voucher(
-                conn, transfer_data, transfer_entries, "confirmed"
+                conn,
+                transfer_data,
+                transfer_entries,
+                "confirmed",
+                tenant_id=tenant_id,
+                org_id=org_id,
             )
-            update_balance_for_voucher(conn, transfer_voucher_id, period)
+            update_balance_for_voucher(
+                conn, transfer_voucher_id, period, tenant_id=tenant_id, org_id=org_id
+            )
 
     conn.execute(
-        "UPDATE periods SET status = 'closed', closed_at = CURRENT_TIMESTAMP WHERE period = ?",
-        (period,),
+        """
+        UPDATE periods SET status = 'closed', closed_at = CURRENT_TIMESTAMP
+        WHERE period = ? AND tenant_id = ? AND org_id = ?
+        """,
+        (period, tenant_id, org_id),
     )
     conn.execute(
         """
         INSERT OR REPLACE INTO period_closings (
-          period, closing_voucher_id, transfer_voucher_id, created_at, reopened_at
+          tenant_id, org_id, period, closing_voucher_id, transfer_voucher_id, created_at, reopened_at
         )
-        VALUES (?, ?, ?, CURRENT_TIMESTAMP, NULL)
+        VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP, NULL)
         """,
-        (period, closing_voucher_id, transfer_voucher_id),
+        (tenant_id, org_id, period, closing_voucher_id, transfer_voucher_id),
     )
 
     next_period = _next_period(period)
     if next_period:
-        _roll_forward_balances(conn, period, next_period)
+        _roll_forward_balances(
+            conn, period, next_period, tenant_id=tenant_id, org_id=org_id
+        )
 
     net_total = round(sum(net_by_dims.values()), 2)
     return {
@@ -682,11 +958,18 @@ def close_period(conn, period: str) -> Dict[str, Any]:
     }
 
 
-def _roll_forward_balances(conn, period: str, next_period: str) -> None:
-    ensure_period(conn, next_period)
+def _roll_forward_balances(
+    conn,
+    period: str,
+    next_period: str,
+    tenant_id: Optional[str] = None,
+    org_id: Optional[str] = None,
+) -> None:
+    tenant_id, org_id = _resolve_tenant(tenant_id, org_id)
+    ensure_period(conn, next_period, tenant_id=tenant_id, org_id=org_id)
     row = conn.execute(
-        "SELECT COUNT(*) AS cnt FROM vouchers WHERE period = ?",
-        (next_period,),
+        "SELECT COUNT(*) AS cnt FROM vouchers WHERE period = ? AND tenant_id = ? AND org_id = ?",
+        (next_period, tenant_id, org_id),
     ).fetchone()
     if row and row["cnt"] > 0:
         raise LedgerError("NEXT_PERIOD_HAS_VOUCHERS", f"下期已有凭证: {next_period}")
@@ -694,25 +977,31 @@ def _roll_forward_balances(conn, period: str, next_period: str) -> None:
         """
         SELECT COUNT(*) AS cnt FROM balances
         WHERE period = ? AND (debit_amount != 0 OR credit_amount != 0)
+          AND tenant_id = ? AND org_id = ?
         """,
-        (next_period,),
+        (next_period, tenant_id, org_id),
     ).fetchone()
     if row and row["cnt"] > 0:
         raise LedgerError("NEXT_PERIOD_HAS_BALANCES", f"下期已有发生额: {next_period}")
 
-    balances = balances_for_period(conn, period)
-    conn.execute("DELETE FROM balances WHERE period = ?", (next_period,))
+    balances = balances_for_period(conn, period, tenant_id=tenant_id, org_id=org_id)
+    conn.execute(
+        "DELETE FROM balances WHERE period = ? AND tenant_id = ? AND org_id = ?",
+        (next_period, tenant_id, org_id),
+    )
     for balance in balances:
         closing = float(balance.get("closing_balance") or 0)
         conn.execute(
             """
             INSERT INTO balances (
-              account_code, period, dept_id, project_id, customer_id, supplier_id, employee_id,
+              tenant_id, org_id, account_code, period, dept_id, project_id, customer_id, supplier_id, employee_id,
               opening_balance, debit_amount, credit_amount, closing_balance
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, 0, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, ?)
             """,
             (
+                tenant_id,
+                org_id,
                 balance["account_code"],
                 next_period,
                 balance.get("dept_id") or 0,
@@ -726,10 +1015,16 @@ def _roll_forward_balances(conn, period: str, next_period: str) -> None:
         )
 
 
-def _fetch_closing_voucher_ids(conn, period: str) -> Tuple[Optional[int], Optional[int]]:
+def _fetch_closing_voucher_ids(
+    conn, period: str, tenant_id: Optional[str] = None, org_id: Optional[str] = None
+) -> Tuple[Optional[int], Optional[int]]:
+    tenant_id, org_id = _resolve_tenant(tenant_id, org_id)
     row = conn.execute(
-        "SELECT closing_voucher_id, transfer_voucher_id FROM period_closings WHERE period = ?",
-        (period,),
+        """
+        SELECT closing_voucher_id, transfer_voucher_id FROM period_closings
+        WHERE period = ? AND tenant_id = ? AND org_id = ?
+        """,
+        (period, tenant_id, org_id),
     ).fetchone()
     if row:
         return row["closing_voucher_id"], row["transfer_voucher_id"]
@@ -737,19 +1032,21 @@ def _fetch_closing_voucher_ids(conn, period: str) -> Tuple[Optional[int], Option
         """
         SELECT id FROM vouchers
         WHERE period = ? AND description = ?
+          AND tenant_id = ? AND org_id = ?
         ORDER BY id DESC
         LIMIT 1
         """,
-        (period, f"{period} 期末结转"),
+        (period, f"{period} 期末结转", tenant_id, org_id),
     ).fetchone()
     transfer_row = conn.execute(
         """
         SELECT id FROM vouchers
         WHERE period = ? AND description = ?
+          AND tenant_id = ? AND org_id = ?
         ORDER BY id DESC
         LIMIT 1
         """,
-        (period, f"{period} 本年利润结转"),
+        (period, f"{period} 本年利润结转", tenant_id, org_id),
     ).fetchone()
     return (
         closing_row["id"] if closing_row else None,
@@ -757,15 +1054,18 @@ def _fetch_closing_voucher_ids(conn, period: str) -> Tuple[Optional[int], Option
     )
 
 
-def reopen_period(conn, period: str) -> Dict[str, Any]:
-    status = get_period_status(conn, period)
+def reopen_period(
+    conn, period: str, tenant_id: Optional[str] = None, org_id: Optional[str] = None
+) -> Dict[str, Any]:
+    tenant_id, org_id = _resolve_tenant(tenant_id, org_id)
+    status = get_period_status(conn, period, tenant_id=tenant_id, org_id=org_id)
     if status != "closed":
         raise LedgerError("PERIOD_NOT_CLOSED", f"期间未结账: {period}")
     next_period = _next_period(period)
     if next_period:
         row = conn.execute(
-            "SELECT COUNT(*) AS cnt FROM vouchers WHERE period = ?",
-            (next_period,),
+            "SELECT COUNT(*) AS cnt FROM vouchers WHERE period = ? AND tenant_id = ? AND org_id = ?",
+            (next_period, tenant_id, org_id),
         ).fetchone()
         if row and row["cnt"] > 0:
             raise LedgerError("NEXT_PERIOD_HAS_VOUCHERS", f"下期已有凭证: {next_period}")
@@ -773,31 +1073,49 @@ def reopen_period(conn, period: str) -> Dict[str, Any]:
             """
             SELECT COUNT(*) AS cnt FROM balances
             WHERE period = ? AND (debit_amount != 0 OR credit_amount != 0)
+              AND tenant_id = ? AND org_id = ?
             """,
-            (next_period,),
+            (next_period, tenant_id, org_id),
         ).fetchone()
         if row and row["cnt"] > 0:
             raise LedgerError("NEXT_PERIOD_HAS_BALANCES", f"下期已有发生额: {next_period}")
 
-    closing_id, transfer_id = _fetch_closing_voucher_ids(conn, period)
+    closing_id, transfer_id = _fetch_closing_voucher_ids(
+        conn, period, tenant_id=tenant_id, org_id=org_id
+    )
     voided_ids: List[int] = []
     for voucher_id in (closing_id, transfer_id):
         if not voucher_id:
             continue
-        voucher = fetch_voucher(conn, voucher_id)
+        voucher = fetch_voucher(conn, voucher_id, tenant_id=tenant_id, org_id=org_id)
         if voucher and voucher["status"] == "confirmed":
-            result = void_voucher(conn, voucher_id, f"reopen {period}")
+            result = void_voucher(
+                conn,
+                voucher_id,
+                f"reopen {period}",
+                tenant_id=tenant_id,
+                org_id=org_id,
+            )
             voided_ids.append(result["void_voucher_id"])
 
     conn.execute(
-        "UPDATE periods SET status = 'open', closed_at = NULL WHERE period = ?",
-        (period,),
+        """
+        UPDATE periods SET status = 'open', closed_at = NULL
+        WHERE period = ? AND tenant_id = ? AND org_id = ?
+        """,
+        (period, tenant_id, org_id),
     )
     if next_period:
-        conn.execute("DELETE FROM balances WHERE period = ?", (next_period,))
+        conn.execute(
+            "DELETE FROM balances WHERE period = ? AND tenant_id = ? AND org_id = ?",
+            (next_period, tenant_id, org_id),
+        )
     conn.execute(
-        "UPDATE period_closings SET reopened_at = CURRENT_TIMESTAMP WHERE period = ?",
-        (period,),
+        """
+        UPDATE period_closings SET reopened_at = CURRENT_TIMESTAMP
+        WHERE period = ? AND tenant_id = ? AND org_id = ?
+        """,
+        (period, tenant_id, org_id),
     )
     return {
         "period": period,
@@ -808,9 +1126,13 @@ def reopen_period(conn, period: str) -> Dict[str, Any]:
 
 
 def _build_income_close_entries(
-    conn, balances: List[Dict[str, Any]], profit_account: str
+    conn,
+    balances: List[Dict[str, Any]],
+    profit_account: str,
+    tenant_id: Optional[str] = None,
+    org_id: Optional[str] = None,
 ) -> Tuple[List[Dict[str, Any]], Dict[Tuple[int, int, int, int, int], float]]:
-    profit = find_account(conn, profit_account)
+    profit = find_account(conn, profit_account, tenant_id=tenant_id, org_id=org_id)
     entries: List[Dict[str, Any]] = []
     net_by_dims: Dict[Tuple[int, int, int, int, int], float] = {}
 
@@ -846,11 +1168,16 @@ def _build_income_close_entries(
 
 
 def _build_profit_transfer_entries(
-    conn, period: str, profit_account: str, retain_account: str
+    conn,
+    period: str,
+    profit_account: str,
+    retain_account: str,
+    tenant_id: Optional[str] = None,
+    org_id: Optional[str] = None,
 ) -> List[Dict[str, Any]]:
-    profit = find_account(conn, profit_account)
-    retain = find_account(conn, retain_account)
-    balances = balances_for_period(conn, period)
+    profit = find_account(conn, profit_account, tenant_id=tenant_id, org_id=org_id)
+    retain = find_account(conn, retain_account, tenant_id=tenant_id, org_id=org_id)
+    balances = balances_for_period(conn, period, tenant_id=tenant_id, org_id=org_id)
     entries: List[Dict[str, Any]] = []
 
     for balance in balances:
@@ -976,8 +1303,10 @@ def _build_entry_for_account(
     credit_amount: float,
     dims: Optional[Dict[str, Optional[int]]] = None,
     description: Optional[str] = None,
+    tenant_id: Optional[str] = None,
+    org_id: Optional[str] = None,
 ) -> Dict[str, Any]:
-    account = find_account(conn, account_code)
+    account = find_account(conn, account_code, tenant_id=tenant_id, org_id=org_id)
     entry = {
         "line_no": 0,
         "account_code": account["code"],
@@ -995,6 +1324,8 @@ def _build_entries(
     lines: List[Tuple[str, float, float]],
     dims: Optional[Dict[str, Optional[int]]] = None,
     description: Optional[str] = None,
+    tenant_id: Optional[str] = None,
+    org_id: Optional[str] = None,
 ) -> List[Dict[str, Any]]:
     entries: List[Dict[str, Any]] = []
     for account_code, debit_amount, credit_amount in lines:
@@ -1005,6 +1336,8 @@ def _build_entries(
             credit_amount,
             dims=dims,
             description=description,
+            tenant_id=tenant_id,
+            org_id=org_id,
         )
         entry["line_no"] = len(entries) + 1
         entries.append(entry)
@@ -1012,7 +1345,12 @@ def _build_entries(
 
 
 def _create_posted_voucher(
-    conn, date: str, description: str, entries: List[Dict[str, Any]]
+    conn,
+    date: str,
+    description: str,
+    entries: List[Dict[str, Any]],
+    tenant_id: Optional[str] = None,
+    org_id: Optional[str] = None,
 ) -> Dict[str, Any]:
     total_debit = sum(e["debit_amount"] for e in entries)
     total_credit = sum(e["credit_amount"] for e in entries)
@@ -1031,8 +1369,10 @@ def _create_posted_voucher(
         {"date": date, "description": description},
         entries,
         "reviewed",
+        tenant_id=tenant_id,
+        org_id=org_id,
     )
-    voucher = confirm_voucher(conn, voucher_id)
+    voucher = confirm_voucher(conn, voucher_id, tenant_id=tenant_id, org_id=org_id)
     return {
         "voucher_id": voucher_id,
         "voucher_no": voucher_no,
@@ -1042,11 +1382,19 @@ def _create_posted_voucher(
 
 
 def add_ar_item(
-    conn, customer_code: str, amount: float, date: str, description: Optional[str] = None
+    conn,
+    customer_code: str,
+    amount: float,
+    date: str,
+    description: Optional[str] = None,
+    tenant_id: Optional[str] = None,
+    org_id: Optional[str] = None,
 ) -> Dict[str, Any]:
     if amount <= 0:
         raise LedgerError("AR_AMOUNT_INVALID", "应收金额必须大于 0")
-    customer_id = find_dimension(conn, "customer", customer_code)
+    customer_id = find_dimension(
+        conn, "customer", customer_code, tenant_id=tenant_id, org_id=org_id
+    )
     mapping = _load_subledger_mapping()["ar"]
     description = description or "AR item"
     dims = {"customer_id": customer_id}
@@ -1058,14 +1406,25 @@ def add_ar_item(
         ],
         dims=dims,
         description=description,
+        tenant_id=tenant_id,
+        org_id=org_id,
     )
-    voucher = _create_posted_voucher(conn, date, description, entries)
+    voucher = _create_posted_voucher(
+        conn, date, description, entries, tenant_id=tenant_id, org_id=org_id
+    )
     cur = conn.execute(
         """
-        INSERT INTO ar_items (customer_id, voucher_id, amount, settled_amount, status)
-        VALUES (?, ?, ?, 0, 'open')
+        INSERT INTO ar_items (
+          tenant_id, org_id, customer_id, voucher_id, amount, settled_amount, status
+        )
+        VALUES (?, ?, ?, ?, ?, 0, 'open')
         """,
-        (customer_id, voucher["voucher_id"], round(amount, 2)),
+        (
+            *_resolve_tenant(tenant_id, org_id),
+            customer_id,
+            voucher["voucher_id"],
+            round(amount, 2),
+        ),
     )
     return {
         "item_id": cur.lastrowid,
@@ -1076,9 +1435,19 @@ def add_ar_item(
 
 
 def settle_ar_item(
-    conn, item_id: int, amount: float, date: str, description: Optional[str] = None
+    conn,
+    item_id: int,
+    amount: float,
+    date: str,
+    description: Optional[str] = None,
+    tenant_id: Optional[str] = None,
+    org_id: Optional[str] = None,
 ) -> Dict[str, Any]:
-    row = conn.execute("SELECT * FROM ar_items WHERE id = ?", (item_id,)).fetchone()
+    tenant_id, org_id = _resolve_tenant(tenant_id, org_id)
+    row = conn.execute(
+        "SELECT * FROM ar_items WHERE id = ? AND tenant_id = ? AND org_id = ?",
+        (item_id, tenant_id, org_id),
+    ).fetchone()
     if not row:
         raise LedgerError("AR_ITEM_NOT_FOUND", f"应收不存在: {item_id}")
     if amount <= 0:
@@ -1098,20 +1467,27 @@ def settle_ar_item(
         ],
         dims=dims,
         description=description,
+        tenant_id=tenant_id,
+        org_id=org_id,
     )
-    voucher = _create_posted_voucher(conn, date, description, entries)
+    voucher = _create_posted_voucher(
+        conn, date, description, entries, tenant_id=tenant_id, org_id=org_id
+    )
     conn.execute(
         """
-        INSERT INTO settlements (item_type, item_id, amount, voucher_id, date)
-        VALUES ('ar', ?, ?, ?, ?)
+        INSERT INTO settlements (tenant_id, org_id, item_type, item_id, amount, voucher_id, date)
+        VALUES (?, ?, 'ar', ?, ?, ?, ?)
         """,
-        (item_id, round(amount, 2), voucher["voucher_id"], date),
+        (tenant_id, org_id, item_id, round(amount, 2), voucher["voucher_id"], date),
     )
     new_settled = round(float(row["settled_amount"] or 0) + amount, 2)
     status = "settled" if new_settled >= float(row["amount"]) - 0.01 else "open"
     conn.execute(
-        "UPDATE ar_items SET settled_amount = ?, status = ? WHERE id = ?",
-        (new_settled, status, item_id),
+        """
+        UPDATE ar_items SET settled_amount = ?, status = ?
+        WHERE id = ? AND tenant_id = ? AND org_id = ?
+        """,
+        (new_settled, status, item_id, tenant_id, org_id),
     )
     return {
         "item_id": item_id,
@@ -1126,9 +1502,12 @@ def list_ar_items(
     status: Optional[str] = None,
     period: Optional[str] = None,
     customer_code: Optional[str] = None,
+    tenant_id: Optional[str] = None,
+    org_id: Optional[str] = None,
 ) -> List[Dict[str, Any]]:
-    conditions: List[str] = []
-    params: List[Any] = []
+    tenant_id, org_id = _resolve_tenant(tenant_id, org_id)
+    conditions: List[str] = ["ai.tenant_id = ? AND ai.org_id = ?"]
+    params: List[Any] = [tenant_id, org_id]
     if status and status != "all":
         conditions.append("ai.status = ?")
         params.append(status)
@@ -1136,7 +1515,9 @@ def list_ar_items(
         conditions.append("v.period = ?")
         params.append(period)
     if customer_code:
-        customer_id = find_dimension(conn, "customer", customer_code)
+        customer_id = find_dimension(
+            conn, "customer", customer_code, tenant_id=tenant_id, org_id=org_id
+        )
         conditions.append("ai.customer_id = ?")
         params.append(customer_id)
     where_clause = f"WHERE {' AND '.join(conditions)}" if conditions else ""
@@ -1144,7 +1525,10 @@ def list_ar_items(
         f"""
         SELECT ai.*, v.date AS voucher_date, v.period AS period
         FROM ar_items ai
-        JOIN vouchers v ON ai.voucher_id = v.id
+        JOIN vouchers v
+          ON ai.voucher_id = v.id
+         AND v.tenant_id = ai.tenant_id
+         AND v.org_id = ai.org_id
         {where_clause}
         ORDER BY ai.id
         """,
@@ -1153,14 +1537,19 @@ def list_ar_items(
     return [dict(row) for row in rows]
 
 
-def ar_aging(conn, as_of: str) -> Dict[str, float]:
+def ar_aging(
+    conn, as_of: str, tenant_id: Optional[str] = None, org_id: Optional[str] = None
+) -> Dict[str, float]:
+    tenant_id, org_id = _resolve_tenant(tenant_id, org_id)
     rows = conn.execute(
         """
         SELECT ai.amount, ai.settled_amount, v.date
         FROM ar_items ai
         JOIN vouchers v ON ai.voucher_id = v.id
-        WHERE ai.status = 'open'
-        """
+        WHERE ai.status = 'open' AND ai.tenant_id = ? AND ai.org_id = ?
+          AND v.tenant_id = ai.tenant_id AND v.org_id = ai.org_id
+        """,
+        (tenant_id, org_id),
     ).fetchall()
     buckets = {"0_30": 0.0, "31_60": 0.0, "61_90": 0.0, "90_plus": 0.0}
     as_of_date = datetime.strptime(as_of, "%Y-%m-%d")
@@ -1181,14 +1570,21 @@ def ar_aging(conn, as_of: str) -> Dict[str, float]:
 
 
 def reconcile_ar(
-    conn, period: str, customer_code: Optional[str] = None
+    conn,
+    period: str,
+    customer_code: Optional[str] = None,
+    tenant_id: Optional[str] = None,
+    org_id: Optional[str] = None,
 ) -> Dict[str, Any]:
+    tenant_id, org_id = _resolve_tenant(tenant_id, org_id)
     mapping = _load_subledger_mapping()["ar"]
     cutoff = _period_end_date(period)
-    conditions = ["v.date <= ?"]
-    params: List[Any] = [cutoff]
+    conditions = ["v.date <= ?", "ai.tenant_id = ? AND ai.org_id = ?"]
+    params: List[Any] = [cutoff, tenant_id, org_id]
     if customer_code:
-        customer_id = find_dimension(conn, "customer", customer_code)
+        customer_id = find_dimension(
+            conn, "customer", customer_code, tenant_id=tenant_id, org_id=org_id
+        )
         conditions.append("ai.customer_id = ?")
         params.append(customer_id)
     where_clause = f"WHERE {' AND '.join(conditions)}"
@@ -1201,6 +1597,8 @@ def reconcile_ar(
           ON s.item_type = 'ar'
          AND s.item_id = ai.id
          AND s.date <= ?
+         AND s.tenant_id = ai.tenant_id
+         AND s.org_id = ai.org_id
         {where_clause}
         GROUP BY ai.id
         """,
@@ -1212,9 +1610,9 @@ def reconcile_ar(
         """
         SELECT COALESCE(SUM(closing_balance), 0) AS total
         FROM balances
-        WHERE period = ? AND account_code = ?
+        WHERE period = ? AND account_code = ? AND tenant_id = ? AND org_id = ?
         """,
-        (period, mapping["ar_account"]),
+        (period, mapping["ar_account"], tenant_id, org_id),
     ).fetchone()
     ledger_balance = float(balance_row["total"] or 0)
     if customer_code:
@@ -1223,8 +1621,9 @@ def reconcile_ar(
             SELECT COALESCE(SUM(closing_balance), 0) AS total
             FROM balances
             WHERE period = ? AND account_code = ? AND customer_id = ?
+              AND tenant_id = ? AND org_id = ?
             """,
-            (period, mapping["ar_account"], customer_id),
+            (period, mapping["ar_account"], customer_id, tenant_id, org_id),
         ).fetchone()
         ledger_balance = float(balance_row["total"] or 0)
 
@@ -1237,11 +1636,19 @@ def reconcile_ar(
 
 
 def add_ap_item(
-    conn, supplier_code: str, amount: float, date: str, description: Optional[str] = None
+    conn,
+    supplier_code: str,
+    amount: float,
+    date: str,
+    description: Optional[str] = None,
+    tenant_id: Optional[str] = None,
+    org_id: Optional[str] = None,
 ) -> Dict[str, Any]:
     if amount <= 0:
         raise LedgerError("AP_AMOUNT_INVALID", "应付金额必须大于 0")
-    supplier_id = find_dimension(conn, "supplier", supplier_code)
+    supplier_id = find_dimension(
+        conn, "supplier", supplier_code, tenant_id=tenant_id, org_id=org_id
+    )
     mapping = _load_subledger_mapping()["ap"]
     description = description or "AP item"
     dims = {"supplier_id": supplier_id}
@@ -1253,14 +1660,25 @@ def add_ap_item(
         ],
         dims=dims,
         description=description,
+        tenant_id=tenant_id,
+        org_id=org_id,
     )
-    voucher = _create_posted_voucher(conn, date, description, entries)
+    voucher = _create_posted_voucher(
+        conn, date, description, entries, tenant_id=tenant_id, org_id=org_id
+    )
     cur = conn.execute(
         """
-        INSERT INTO ap_items (supplier_id, voucher_id, amount, settled_amount, status)
-        VALUES (?, ?, ?, 0, 'open')
+        INSERT INTO ap_items (
+          tenant_id, org_id, supplier_id, voucher_id, amount, settled_amount, status
+        )
+        VALUES (?, ?, ?, ?, ?, 0, 'open')
         """,
-        (supplier_id, voucher["voucher_id"], round(amount, 2)),
+        (
+            *_resolve_tenant(tenant_id, org_id),
+            supplier_id,
+            voucher["voucher_id"],
+            round(amount, 2),
+        ),
     )
     return {
         "item_id": cur.lastrowid,
@@ -1271,9 +1689,19 @@ def add_ap_item(
 
 
 def settle_ap_item(
-    conn, item_id: int, amount: float, date: str, description: Optional[str] = None
+    conn,
+    item_id: int,
+    amount: float,
+    date: str,
+    description: Optional[str] = None,
+    tenant_id: Optional[str] = None,
+    org_id: Optional[str] = None,
 ) -> Dict[str, Any]:
-    row = conn.execute("SELECT * FROM ap_items WHERE id = ?", (item_id,)).fetchone()
+    tenant_id, org_id = _resolve_tenant(tenant_id, org_id)
+    row = conn.execute(
+        "SELECT * FROM ap_items WHERE id = ? AND tenant_id = ? AND org_id = ?",
+        (item_id, tenant_id, org_id),
+    ).fetchone()
     if not row:
         raise LedgerError("AP_ITEM_NOT_FOUND", f"应付不存在: {item_id}")
     if amount <= 0:
@@ -1293,20 +1721,27 @@ def settle_ap_item(
         ],
         dims=dims,
         description=description,
+        tenant_id=tenant_id,
+        org_id=org_id,
     )
-    voucher = _create_posted_voucher(conn, date, description, entries)
+    voucher = _create_posted_voucher(
+        conn, date, description, entries, tenant_id=tenant_id, org_id=org_id
+    )
     conn.execute(
         """
-        INSERT INTO settlements (item_type, item_id, amount, voucher_id, date)
-        VALUES ('ap', ?, ?, ?, ?)
+        INSERT INTO settlements (tenant_id, org_id, item_type, item_id, amount, voucher_id, date)
+        VALUES (?, ?, 'ap', ?, ?, ?, ?)
         """,
-        (item_id, round(amount, 2), voucher["voucher_id"], date),
+        (tenant_id, org_id, item_id, round(amount, 2), voucher["voucher_id"], date),
     )
     new_settled = round(float(row["settled_amount"] or 0) + amount, 2)
     status = "settled" if new_settled >= float(row["amount"]) - 0.01 else "open"
     conn.execute(
-        "UPDATE ap_items SET settled_amount = ?, status = ? WHERE id = ?",
-        (new_settled, status, item_id),
+        """
+        UPDATE ap_items SET settled_amount = ?, status = ?
+        WHERE id = ? AND tenant_id = ? AND org_id = ?
+        """,
+        (new_settled, status, item_id, tenant_id, org_id),
     )
     return {
         "item_id": item_id,
@@ -1321,9 +1756,12 @@ def list_ap_items(
     status: Optional[str] = None,
     period: Optional[str] = None,
     supplier_code: Optional[str] = None,
+    tenant_id: Optional[str] = None,
+    org_id: Optional[str] = None,
 ) -> List[Dict[str, Any]]:
-    conditions: List[str] = []
-    params: List[Any] = []
+    tenant_id, org_id = _resolve_tenant(tenant_id, org_id)
+    conditions: List[str] = ["ai.tenant_id = ? AND ai.org_id = ?"]
+    params: List[Any] = [tenant_id, org_id]
     if status and status != "all":
         conditions.append("ai.status = ?")
         params.append(status)
@@ -1331,7 +1769,9 @@ def list_ap_items(
         conditions.append("v.period = ?")
         params.append(period)
     if supplier_code:
-        supplier_id = find_dimension(conn, "supplier", supplier_code)
+        supplier_id = find_dimension(
+            conn, "supplier", supplier_code, tenant_id=tenant_id, org_id=org_id
+        )
         conditions.append("ai.supplier_id = ?")
         params.append(supplier_id)
     where_clause = f"WHERE {' AND '.join(conditions)}" if conditions else ""
@@ -1339,7 +1779,10 @@ def list_ap_items(
         f"""
         SELECT ai.*, v.date AS voucher_date, v.period AS period
         FROM ap_items ai
-        JOIN vouchers v ON ai.voucher_id = v.id
+        JOIN vouchers v
+          ON ai.voucher_id = v.id
+         AND v.tenant_id = ai.tenant_id
+         AND v.org_id = ai.org_id
         {where_clause}
         ORDER BY ai.id
         """,
@@ -1348,14 +1791,19 @@ def list_ap_items(
     return [dict(row) for row in rows]
 
 
-def ap_aging(conn, as_of: str) -> Dict[str, float]:
+def ap_aging(
+    conn, as_of: str, tenant_id: Optional[str] = None, org_id: Optional[str] = None
+) -> Dict[str, float]:
+    tenant_id, org_id = _resolve_tenant(tenant_id, org_id)
     rows = conn.execute(
         """
         SELECT ai.amount, ai.settled_amount, v.date
         FROM ap_items ai
         JOIN vouchers v ON ai.voucher_id = v.id
-        WHERE ai.status = 'open'
-        """
+        WHERE ai.status = 'open' AND ai.tenant_id = ? AND ai.org_id = ?
+          AND v.tenant_id = ai.tenant_id AND v.org_id = ai.org_id
+        """,
+        (tenant_id, org_id),
     ).fetchall()
     buckets = {"0_30": 0.0, "31_60": 0.0, "61_90": 0.0, "90_plus": 0.0}
     as_of_date = datetime.strptime(as_of, "%Y-%m-%d")
@@ -1376,14 +1824,21 @@ def ap_aging(conn, as_of: str) -> Dict[str, float]:
 
 
 def reconcile_ap(
-    conn, period: str, supplier_code: Optional[str] = None
+    conn,
+    period: str,
+    supplier_code: Optional[str] = None,
+    tenant_id: Optional[str] = None,
+    org_id: Optional[str] = None,
 ) -> Dict[str, Any]:
+    tenant_id, org_id = _resolve_tenant(tenant_id, org_id)
     mapping = _load_subledger_mapping()["ap"]
     cutoff = _period_end_date(period)
-    conditions = ["v.date <= ?"]
-    params: List[Any] = [cutoff]
+    conditions = ["v.date <= ?", "ai.tenant_id = ? AND ai.org_id = ?"]
+    params: List[Any] = [cutoff, tenant_id, org_id]
     if supplier_code:
-        supplier_id = find_dimension(conn, "supplier", supplier_code)
+        supplier_id = find_dimension(
+            conn, "supplier", supplier_code, tenant_id=tenant_id, org_id=org_id
+        )
         conditions.append("ai.supplier_id = ?")
         params.append(supplier_id)
     where_clause = f"WHERE {' AND '.join(conditions)}"
@@ -1396,6 +1851,8 @@ def reconcile_ap(
           ON s.item_type = 'ap'
          AND s.item_id = ai.id
          AND s.date <= ?
+         AND s.tenant_id = ai.tenant_id
+         AND s.org_id = ai.org_id
         {where_clause}
         GROUP BY ai.id
         """,
@@ -1407,9 +1864,9 @@ def reconcile_ap(
         """
         SELECT COALESCE(SUM(closing_balance), 0) AS total
         FROM balances
-        WHERE period = ? AND account_code = ?
+        WHERE period = ? AND account_code = ? AND tenant_id = ? AND org_id = ?
         """,
-        (period, mapping["ap_account"]),
+        (period, mapping["ap_account"], tenant_id, org_id),
     ).fetchone()
     ledger_balance = float(balance_row["total"] or 0)
     if supplier_code:
@@ -1418,8 +1875,9 @@ def reconcile_ap(
             SELECT COALESCE(SUM(closing_balance), 0) AS total
             FROM balances
             WHERE period = ? AND account_code = ? AND supplier_id = ?
+              AND tenant_id = ? AND org_id = ?
             """,
-            (period, mapping["ap_account"], supplier_id),
+            (period, mapping["ap_account"], supplier_id, tenant_id, org_id),
         ).fetchone()
         ledger_balance = float(balance_row["total"] or 0)
 
@@ -1431,61 +1889,92 @@ def reconcile_ap(
     }
 
 
-def _get_inventory_item(conn, sku: str) -> Optional[Dict[str, Any]]:
+def _get_inventory_item(
+    conn, sku: str, tenant_id: Optional[str] = None, org_id: Optional[str] = None
+) -> Optional[Dict[str, Any]]:
+    tenant_id, org_id = _resolve_tenant(tenant_id, org_id)
     row = conn.execute(
-        "SELECT * FROM inventory_items WHERE sku = ?",
-        (sku,),
+        "SELECT * FROM inventory_items WHERE sku = ? AND tenant_id = ? AND org_id = ?",
+        (sku, tenant_id, org_id),
     ).fetchone()
     return dict(row) if row else None
 
 
 def _ensure_inventory_item(
-    conn, sku: str, name: Optional[str] = None, unit: Optional[str] = None
+    conn,
+    sku: str,
+    name: Optional[str] = None,
+    unit: Optional[str] = None,
+    tenant_id: Optional[str] = None,
+    org_id: Optional[str] = None,
 ) -> Dict[str, Any]:
-    existing = _get_inventory_item(conn, sku)
+    tenant_id, org_id = _resolve_tenant(tenant_id, org_id)
+    existing = _get_inventory_item(conn, sku, tenant_id=tenant_id, org_id=org_id)
     if existing:
         return existing
     final_name = name or sku
     final_unit = unit or "unit"
     conn.execute(
-        "INSERT INTO inventory_items (sku, name, unit) VALUES (?, ?, ?)",
-        (sku, final_name, final_unit),
+        """
+        INSERT INTO inventory_items (tenant_id, org_id, sku, name, unit)
+        VALUES (?, ?, ?, ?, ?)
+        """,
+        (tenant_id, org_id, sku, final_name, final_unit),
     )
     return {"sku": sku, "name": final_name, "unit": final_unit}
 
 
-def _get_inventory_balance(conn, sku: str, period: str) -> Tuple[float, float]:
+def _get_inventory_balance(
+    conn,
+    sku: str,
+    period: str,
+    tenant_id: Optional[str] = None,
+    org_id: Optional[str] = None,
+) -> Tuple[float, float]:
+    tenant_id, org_id = _resolve_tenant(tenant_id, org_id)
     row = conn.execute(
-        "SELECT qty, amount FROM inventory_balances WHERE sku = ? AND period = ?",
-        (sku, period),
+        """
+        SELECT qty, amount FROM inventory_balances
+        WHERE sku = ? AND period = ? AND tenant_id = ? AND org_id = ?
+        """,
+        (sku, period, tenant_id, org_id),
     ).fetchone()
     if row:
         return float(row["qty"]), float(row["amount"])
     prev = conn.execute(
         """
         SELECT qty, amount FROM inventory_balances
-        WHERE sku = ? AND period < ?
+        WHERE sku = ? AND period < ? AND tenant_id = ? AND org_id = ?
         ORDER BY period DESC
         LIMIT 1
         """,
-        (sku, period),
+        (sku, period, tenant_id, org_id),
     ).fetchone()
     if prev:
         return float(prev["qty"]), float(prev["amount"])
     return 0.0, 0.0
 
 
-def _upsert_inventory_balance(conn, sku: str, period: str, qty: float, amount: float) -> None:
+def _upsert_inventory_balance(
+    conn,
+    sku: str,
+    period: str,
+    qty: float,
+    amount: float,
+    tenant_id: Optional[str] = None,
+    org_id: Optional[str] = None,
+) -> None:
+    tenant_id, org_id = _resolve_tenant(tenant_id, org_id)
     conn.execute(
         """
-        INSERT INTO inventory_balances (sku, period, qty, amount, updated_at)
-        VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)
-        ON CONFLICT(sku, period) DO UPDATE SET
+        INSERT INTO inventory_balances (tenant_id, org_id, sku, period, qty, amount, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+        ON CONFLICT(tenant_id, org_id, sku, period) DO UPDATE SET
           qty = excluded.qty,
           amount = excluded.amount,
           updated_at = CURRENT_TIMESTAMP
         """,
-        (sku, period, round(qty, 2), round(amount, 2)),
+        (tenant_id, org_id, sku, period, round(qty, 2), round(amount, 2)),
     )
 
 
@@ -1498,10 +1987,12 @@ def inventory_move_in(
     description: Optional[str] = None,
     name: Optional[str] = None,
     unit: Optional[str] = None,
+    tenant_id: Optional[str] = None,
+    org_id: Optional[str] = None,
 ) -> Dict[str, Any]:
     if qty <= 0 or unit_cost < 0:
         raise LedgerError("INVENTORY_AMOUNT_INVALID", "入库数量或成本无效")
-    _ensure_inventory_item(conn, sku, name, unit)
+    _ensure_inventory_item(conn, sku, name, unit, tenant_id=tenant_id, org_id=org_id)
     mapping = _load_subledger_mapping()["inventory"]
     description = description or "Inventory in"
     total_cost = round(qty * unit_cost, 2)
@@ -1512,20 +2003,38 @@ def inventory_move_in(
             (mapping["offset_account"], 0.0, total_cost),
         ],
         description=description,
+        tenant_id=tenant_id,
+        org_id=org_id,
     )
-    voucher = _create_posted_voucher(conn, date, description, entries)
+    voucher = _create_posted_voucher(
+        conn, date, description, entries, tenant_id=tenant_id, org_id=org_id
+    )
     conn.execute(
         """
-        INSERT INTO inventory_moves (sku, direction, qty, unit_cost, total_cost, voucher_id, date)
-        VALUES (?, 'in', ?, ?, ?, ?, ?)
+        INSERT INTO inventory_moves (
+          tenant_id, org_id, sku, direction, qty, unit_cost, total_cost, voucher_id, date
+        )
+        VALUES (?, ?, ?, 'in', ?, ?, ?, ?, ?)
         """,
-        (sku, round(qty, 2), round(unit_cost, 2), total_cost, voucher["voucher_id"], date),
+        (
+            *_resolve_tenant(tenant_id, org_id),
+            sku,
+            round(qty, 2),
+            round(unit_cost, 2),
+            total_cost,
+            voucher["voucher_id"],
+            date,
+        ),
     )
     period = parse_period(date)
-    current_qty, current_amount = _get_inventory_balance(conn, sku, period)
+    current_qty, current_amount = _get_inventory_balance(
+        conn, sku, period, tenant_id=tenant_id, org_id=org_id
+    )
     new_qty = round(current_qty + qty, 2)
     new_amount = round(current_amount + total_cost, 2)
-    _upsert_inventory_balance(conn, sku, period, new_qty, new_amount)
+    _upsert_inventory_balance(
+        conn, sku, period, new_qty, new_amount, tenant_id=tenant_id, org_id=org_id
+    )
     return {
         "sku": sku,
         "voucher_id": voucher["voucher_id"],
@@ -1542,13 +2051,17 @@ def inventory_move_out(
     qty: float,
     date: str,
     description: Optional[str] = None,
+    tenant_id: Optional[str] = None,
+    org_id: Optional[str] = None,
 ) -> Dict[str, Any]:
     if qty <= 0:
         raise LedgerError("INVENTORY_AMOUNT_INVALID", "出库数量无效")
     mapping = _load_subledger_mapping()["inventory"]
     description = description or "Inventory out"
     period = parse_period(date)
-    current_qty, current_amount = _get_inventory_balance(conn, sku, period)
+    current_qty, current_amount = _get_inventory_balance(
+        conn, sku, period, tenant_id=tenant_id, org_id=org_id
+    )
     if current_qty <= 0 or qty - current_qty > 0.01:
         raise LedgerError("INVENTORY_INSUFFICIENT", "库存数量不足")
     avg_cost = current_amount / current_qty if current_qty else 0.0
@@ -1561,18 +2074,34 @@ def inventory_move_out(
             (mapping["inventory_account"], 0.0, total_cost),
         ],
         description=description,
+        tenant_id=tenant_id,
+        org_id=org_id,
     )
-    voucher = _create_posted_voucher(conn, date, description, entries)
+    voucher = _create_posted_voucher(
+        conn, date, description, entries, tenant_id=tenant_id, org_id=org_id
+    )
     conn.execute(
         """
-        INSERT INTO inventory_moves (sku, direction, qty, unit_cost, total_cost, voucher_id, date)
-        VALUES (?, 'out', ?, ?, ?, ?, ?)
+        INSERT INTO inventory_moves (
+          tenant_id, org_id, sku, direction, qty, unit_cost, total_cost, voucher_id, date
+        )
+        VALUES (?, ?, ?, 'out', ?, ?, ?, ?, ?)
         """,
-        (sku, round(qty, 2), unit_cost, total_cost, voucher["voucher_id"], date),
+        (
+            *_resolve_tenant(tenant_id, org_id),
+            sku,
+            round(qty, 2),
+            unit_cost,
+            total_cost,
+            voucher["voucher_id"],
+            date,
+        ),
     )
     new_qty = round(current_qty - qty, 2)
     new_amount = round(current_amount - total_cost, 2)
-    _upsert_inventory_balance(conn, sku, period, new_qty, new_amount)
+    _upsert_inventory_balance(
+        conn, sku, period, new_qty, new_amount, tenant_id=tenant_id, org_id=org_id
+    )
     return {
         "sku": sku,
         "voucher_id": voucher["voucher_id"],
@@ -1583,9 +2112,16 @@ def inventory_move_out(
     }
 
 
-def inventory_balance(conn, period: str, sku: Optional[str] = None) -> List[Dict[str, Any]]:
-    conditions = ["period = ?"]
-    params: List[Any] = [period]
+def inventory_balance(
+    conn,
+    period: str,
+    sku: Optional[str] = None,
+    tenant_id: Optional[str] = None,
+    org_id: Optional[str] = None,
+) -> List[Dict[str, Any]]:
+    tenant_id, org_id = _resolve_tenant(tenant_id, org_id)
+    conditions = ["period = ?", "tenant_id = ?", "org_id = ?"]
+    params: List[Any] = [period, tenant_id, org_id]
     if sku:
         conditions.append("sku = ?")
         params.append(sku)
@@ -1596,20 +2132,27 @@ def inventory_balance(conn, period: str, sku: Optional[str] = None) -> List[Dict
     return [dict(row) for row in rows]
 
 
-def reconcile_inventory(conn, period: str) -> Dict[str, Any]:
+def reconcile_inventory(
+    conn, period: str, tenant_id: Optional[str] = None, org_id: Optional[str] = None
+) -> Dict[str, Any]:
+    tenant_id, org_id = _resolve_tenant(tenant_id, org_id)
     mapping = _load_subledger_mapping()["inventory"]
     row = conn.execute(
-        "SELECT COALESCE(SUM(amount), 0) AS total FROM inventory_balances WHERE period = ?",
-        (period,),
+        """
+        SELECT COALESCE(SUM(amount), 0) AS total
+        FROM inventory_balances
+        WHERE period = ? AND tenant_id = ? AND org_id = ?
+        """,
+        (period, tenant_id, org_id),
     ).fetchone()
     inventory_total = float(row["total"] or 0)
     balance_row = conn.execute(
         """
         SELECT COALESCE(SUM(closing_balance), 0) AS total
         FROM balances
-        WHERE period = ? AND account_code = ?
+        WHERE period = ? AND account_code = ? AND tenant_id = ? AND org_id = ?
         """,
-        (period, mapping["inventory_account"]),
+        (period, mapping["inventory_account"], tenant_id, org_id),
     ).fetchone()
     ledger_balance = float(balance_row["total"] or 0)
     return {
@@ -1627,6 +2170,8 @@ def add_fixed_asset(
     life_years: int,
     salvage_value: float,
     acquired_at: str,
+    tenant_id: Optional[str] = None,
+    org_id: Optional[str] = None,
 ) -> Dict[str, Any]:
     if cost <= 0:
         raise LedgerError("ASSET_COST_INVALID", "固定资产成本必须大于 0")
@@ -1641,34 +2186,61 @@ def add_fixed_asset(
             (mapping["bank_account"], 0.0, cost),
         ],
         description=description,
+        tenant_id=tenant_id,
+        org_id=org_id,
     )
-    voucher = _create_posted_voucher(conn, acquired_at, description, entries)
+    voucher = _create_posted_voucher(
+        conn, acquired_at, description, entries, tenant_id=tenant_id, org_id=org_id
+    )
     cur = conn.execute(
         """
-        INSERT INTO fixed_assets (name, cost, acquired_at, life_years, salvage_value, status)
-        VALUES (?, ?, ?, ?, ?, 'active')
+        INSERT INTO fixed_assets (
+          tenant_id, org_id, name, cost, acquired_at, life_years, salvage_value, status
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, 'active')
         """,
-        (name, round(cost, 2), acquired_at, life_years, round(salvage_value, 2)),
+        (
+            *_resolve_tenant(tenant_id, org_id),
+            name,
+            round(cost, 2),
+            acquired_at,
+            life_years,
+            round(salvage_value, 2),
+        ),
     )
     return {"asset_id": cur.lastrowid, "voucher_id": voucher["voucher_id"]}
 
 
-def depreciate_assets(conn, period: str) -> Dict[str, Any]:
+def depreciate_assets(
+    conn, period: str, tenant_id: Optional[str] = None, org_id: Optional[str] = None
+) -> Dict[str, Any]:
+    tenant_id, org_id = _resolve_tenant(tenant_id, org_id)
     mapping = _load_subledger_mapping()["fixed_asset"]
     assets = conn.execute(
-        "SELECT * FROM fixed_assets WHERE status = 'active' ORDER BY id"
+        """
+        SELECT * FROM fixed_assets
+        WHERE status = 'active' AND tenant_id = ? AND org_id = ?
+        ORDER BY id
+        """,
+        (tenant_id, org_id),
     ).fetchall()
     entries: List[Tuple[int, float]] = []
     for asset in assets:
         existing = conn.execute(
-            "SELECT 1 FROM fixed_asset_depreciations WHERE asset_id = ? AND period = ?",
-            (asset["id"], period),
+            """
+            SELECT 1 FROM fixed_asset_depreciations
+            WHERE asset_id = ? AND period = ? AND tenant_id = ? AND org_id = ?
+            """,
+            (asset["id"], period, tenant_id, org_id),
         ).fetchone()
         if existing:
             continue
         total_depr_row = conn.execute(
-            "SELECT SUM(amount) AS total FROM fixed_asset_depreciations WHERE asset_id = ?",
-            (asset["id"],),
+            """
+            SELECT SUM(amount) AS total FROM fixed_asset_depreciations
+            WHERE asset_id = ? AND tenant_id = ? AND org_id = ?
+            """,
+            (asset["id"], tenant_id, org_id),
         ).fetchone()
         total_depr = float(total_depr_row["total"] or 0)
         depreciable = float(asset["cost"]) - float(asset["salvage_value"] or 0)
@@ -1694,20 +2266,26 @@ def depreciate_assets(conn, period: str) -> Dict[str, Any]:
             (mapping["accum_depreciation_account"], 0.0, total_amount),
         ],
         description=description,
+        tenant_id=tenant_id,
+        org_id=org_id,
     )
     voucher = _create_posted_voucher(
         conn,
         f"{period}-01",
         description,
         voucher_entries,
+        tenant_id=tenant_id,
+        org_id=org_id,
     )
     for asset_id, amount in entries:
         conn.execute(
             """
-            INSERT INTO fixed_asset_depreciations (asset_id, period, amount, voucher_id)
-            VALUES (?, ?, ?, ?)
+            INSERT INTO fixed_asset_depreciations (
+              tenant_id, org_id, asset_id, period, amount, voucher_id
+            )
+            VALUES (?, ?, ?, ?, ?, ?)
             """,
-            (asset_id, period, amount, voucher["voucher_id"]),
+            (tenant_id, org_id, asset_id, period, amount, voucher["voucher_id"]),
         )
     return {
         "voucher_id": voucher["voucher_id"],
@@ -1717,11 +2295,17 @@ def depreciate_assets(conn, period: str) -> Dict[str, Any]:
 
 
 def dispose_fixed_asset(
-    conn, asset_id: int, date: str, description: Optional[str] = None
+    conn,
+    asset_id: int,
+    date: str,
+    description: Optional[str] = None,
+    tenant_id: Optional[str] = None,
+    org_id: Optional[str] = None,
 ) -> Dict[str, Any]:
+    tenant_id, org_id = _resolve_tenant(tenant_id, org_id)
     asset = conn.execute(
-        "SELECT * FROM fixed_assets WHERE id = ?",
-        (asset_id,),
+        "SELECT * FROM fixed_assets WHERE id = ? AND tenant_id = ? AND org_id = ?",
+        (asset_id, tenant_id, org_id),
     ).fetchone()
     if not asset:
         raise LedgerError("ASSET_NOT_FOUND", f"固定资产不存在: {asset_id}")
@@ -1729,8 +2313,11 @@ def dispose_fixed_asset(
         raise LedgerError("ASSET_STATUS_INVALID", "固定资产已处置")
     mapping = _load_subledger_mapping()["fixed_asset"]
     total_depr_row = conn.execute(
-        "SELECT SUM(amount) AS total FROM fixed_asset_depreciations WHERE asset_id = ?",
-        (asset_id,),
+        """
+        SELECT SUM(amount) AS total FROM fixed_asset_depreciations
+        WHERE asset_id = ? AND tenant_id = ? AND org_id = ?
+        """,
+        (asset_id, tenant_id, org_id),
     ).fetchone()
     accumulated = round(float(total_depr_row["total"] or 0), 2)
     cost = round(float(asset["cost"]), 2)
@@ -1744,20 +2331,32 @@ def dispose_fixed_asset(
     else:
         lines.append((mapping["depreciation_expense_account"], 0.0, abs(net_value)))
     lines.append((mapping["asset_account"], 0.0, cost))
-    entries = _build_entries(conn, lines, description=description)
-    voucher = _create_posted_voucher(conn, date, description, entries)
+    entries = _build_entries(
+        conn, lines, description=description, tenant_id=tenant_id, org_id=org_id
+    )
+    voucher = _create_posted_voucher(
+        conn, date, description, entries, tenant_id=tenant_id, org_id=org_id
+    )
     conn.execute(
-        "UPDATE fixed_assets SET status = 'disposed' WHERE id = ?",
-        (asset_id,),
+        """
+        UPDATE fixed_assets SET status = 'disposed'
+        WHERE id = ? AND tenant_id = ? AND org_id = ?
+        """,
+        (asset_id, tenant_id, org_id),
     )
     return {"asset_id": asset_id, "voucher_id": voucher["voucher_id"], "status": "disposed"}
 
 
 def list_fixed_assets(
-    conn, status: Optional[str] = None, period: Optional[str] = None
+    conn,
+    status: Optional[str] = None,
+    period: Optional[str] = None,
+    tenant_id: Optional[str] = None,
+    org_id: Optional[str] = None,
 ) -> List[Dict[str, Any]]:
-    conditions: List[str] = []
-    params: List[Any] = []
+    tenant_id, org_id = _resolve_tenant(tenant_id, org_id)
+    conditions: List[str] = ["tenant_id = ? AND org_id = ?"]
+    params: List[Any] = [tenant_id, org_id]
     if status and status != "all":
         conditions.append("status = ?")
         params.append(status)
@@ -1772,7 +2371,10 @@ def list_fixed_assets(
     return [dict(row) for row in rows]
 
 
-def reconcile_fixed_assets(conn, period: str) -> Dict[str, Any]:
+def reconcile_fixed_assets(
+    conn, period: str, tenant_id: Optional[str] = None, org_id: Optional[str] = None
+) -> Dict[str, Any]:
+    tenant_id, org_id = _resolve_tenant(tenant_id, org_id)
     mapping = _load_subledger_mapping()["fixed_asset"]
     cutoff = _period_end_date(period)
     assets_row = conn.execute(
@@ -1780,8 +2382,9 @@ def reconcile_fixed_assets(conn, period: str) -> Dict[str, Any]:
         SELECT COALESCE(SUM(cost), 0) AS total
         FROM fixed_assets
         WHERE status = 'active' AND acquired_at <= ?
+          AND tenant_id = ? AND org_id = ?
         """,
-        (cutoff,),
+        (cutoff, tenant_id, org_id),
     ).fetchone()
     expected_asset = float(assets_row["total"] or 0)
     depr_row = conn.execute(
@@ -1790,8 +2393,10 @@ def reconcile_fixed_assets(conn, period: str) -> Dict[str, Any]:
         FROM fixed_asset_depreciations d
         JOIN fixed_assets a ON a.id = d.asset_id
         WHERE a.status = 'active' AND d.period <= ?
+          AND d.tenant_id = ? AND d.org_id = ?
+          AND a.tenant_id = d.tenant_id AND a.org_id = d.org_id
         """,
-        (period,),
+        (period, tenant_id, org_id),
     ).fetchone()
     expected_accum = float(depr_row["total"] or 0)
 
@@ -1799,18 +2404,18 @@ def reconcile_fixed_assets(conn, period: str) -> Dict[str, Any]:
         """
         SELECT COALESCE(SUM(closing_balance), 0) AS total
         FROM balances
-        WHERE period = ? AND account_code = ?
+        WHERE period = ? AND account_code = ? AND tenant_id = ? AND org_id = ?
         """,
-        (period, mapping["asset_account"]),
+        (period, mapping["asset_account"], tenant_id, org_id),
     ).fetchone()
     ledger_asset = float(asset_balance_row["total"] or 0)
     accum_balance_row = conn.execute(
         """
         SELECT COALESCE(SUM(closing_balance), 0) AS total
         FROM balances
-        WHERE period = ? AND account_code = ?
+        WHERE period = ? AND account_code = ? AND tenant_id = ? AND org_id = ?
         """,
-        (period, mapping["accum_depreciation_account"]),
+        (period, mapping["accum_depreciation_account"], tenant_id, org_id),
     ).fetchone()
     ledger_accum = float(accum_balance_row["total"] or 0)
     ledger_accum_value = abs(ledger_accum)
