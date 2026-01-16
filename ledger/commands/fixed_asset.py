@@ -19,6 +19,7 @@ from ledger.services import (
     set_fixed_asset_allocations,
     split_fixed_asset,
     transfer_cip_to_asset,
+    transfer_fixed_asset,
     upgrade_fixed_asset,
     reconcile_fixed_assets,
 )
@@ -39,6 +40,8 @@ def add_parser(subparsers, parents):
     add_cmd.add_argument("--life", type=int, required=True, help="使用年限")
     add_cmd.add_argument("--salvage", type=float, default=0, help="残值")
     add_cmd.add_argument("--date", default=_default_date(), help="购置日期")
+    add_cmd.add_argument("--department", help="使用部门代码")
+    add_cmd.add_argument("--project", help="项目代码")
     add_cmd.set_defaults(func=run_add)
 
     dep_cmd = sub.add_parser("depreciate", help="计提折旧", parents=parents)
@@ -61,6 +64,13 @@ def add_parser(subparsers, parents):
     split_cmd.add_argument("--asset-id", type=int, required=True, help="资产ID")
     split_cmd.add_argument("--ratios", required=True, help="比例列表，如 6,4")
     split_cmd.set_defaults(func=run_split)
+
+    transfer_cmd = sub.add_parser("transfer", help="资产转移", parents=parents)
+    transfer_cmd.add_argument("--asset-id", type=int, required=True, help="资产ID")
+    transfer_cmd.add_argument("--department", help="使用部门代码")
+    transfer_cmd.add_argument("--project", help="项目代码")
+    transfer_cmd.add_argument("--date", default=_default_date(), help="日期")
+    transfer_cmd.set_defaults(func=run_transfer)
 
     impair_cmd = sub.add_parser("impair", help="资产减值", parents=parents)
     impair_cmd.add_argument("--asset-id", type=int, required=True, help="资产ID")
@@ -118,6 +128,8 @@ def run_add(args):
             args.life,
             args.salvage,
             args.date,
+            args.department,
+            args.project,
         )
     print_json({"status": "success", **result})
 
@@ -156,6 +168,18 @@ def run_split(args):
     ratios = [float(r.strip()) for r in args.ratios.split(",") if r.strip()]
     with get_db(args.db_path) as conn:
         result = split_fixed_asset(conn, args.asset_id, ratios)
+    print_json({"status": "success", **result})
+
+
+def run_transfer(args):
+    with get_db(args.db_path) as conn:
+        result = transfer_fixed_asset(
+            conn,
+            args.asset_id,
+            args.department,
+            args.project,
+            args.date,
+        )
     print_json({"status": "success", **result})
 
 

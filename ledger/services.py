@@ -54,12 +54,14 @@ DEFAULT_SUBLEDGER_MAPPING = {
         "bill_account": "1123",
         "bad_debt_expense_account": "6702",
         "bad_debt_reserve_account": "1231",
+        "bill_endorse_account": "1002",
     },
     "ap": {
         "ap_account": "2202",
         "inventory_account": "1403",
         "bank_account": "1002",
         "bill_account": "2203",
+        "bill_endorse_account": "1002",
     },
     "inventory": {
         "inventory_account": "1403",
@@ -2359,17 +2361,19 @@ def update_bill_status(
         raise LedgerError("BILL_STATUS_INVALID", f"无效票据状态: {status}")
     mapping = _load_subledger_mapping()[bill["bill_type"]]
     voucher_id = None
-    if status == "settled":
-        description = description or f"Bill settle {bill_no}"
+    if status in {"endorsed", "discounted", "settled"}:
+        description = description or f"Bill {status} {bill_no}"
         if bill["bill_type"] == "ar":
+            target_account = mapping.get("bill_endorse_account") or mapping["bank_account"]
             lines = [
-                (mapping["bank_account"], bill["amount"], 0.0),
+                (target_account, bill["amount"], 0.0),
                 (mapping["bill_account"], 0.0, bill["amount"]),
             ]
         else:
+            target_account = mapping.get("bill_endorse_account") or mapping["bank_account"]
             lines = [
                 (mapping["bill_account"], bill["amount"], 0.0),
-                (mapping["bank_account"], 0.0, bill["amount"]),
+                (target_account, 0.0, bill["amount"]),
             ]
         entries = _build_entries(conn, lines, description=description)
         voucher = _create_posted_voucher(conn, date, description, entries)
@@ -2405,6 +2409,34 @@ def provision_bad_debt(
         VALUES (?, ?, ?, ?)
         """,
         (period, customer_id, round(amount, 2), voucher["voucher_id"]),
+    )
+    return {"provision_id": cur.lastrowid, "voucher_id": voucher["voucher_id"]}
+
+
+def reverse_bad_debt(
+    conn, period: str, customer_code: str, amount: float
+) -> Dict[str, Any]:
+    if amount <= 0:
+        raise LedgerError("BAD_DEBT_AMOUNT_INVALID", "冲回金额必须大于 0")
+    customer_id = find_dimension(conn, "customer", customer_code)
+    mapping = _load_subledger_mapping()["ar"]
+    description = f"Bad debt reverse {period}"
+    entries = _build_entries(
+        conn,
+        [
+            (mapping["bad_debt_reserve_account"], amount, 0.0),
+            (mapping["bad_debt_expense_account"], 0.0, amount),
+        ],
+        dims={"customer_id": customer_id},
+        description=description,
+    )
+    voucher = _create_posted_voucher(conn, f"{period}-01", description, entries)
+    cur = conn.execute(
+        """
+        INSERT INTO bad_debt_provisions (period, customer_id, amount, voucher_id)
+        VALUES (?, ?, ?, ?)
+        """,
+        (period, customer_id, round(-amount, 2), voucher["voucher_id"]),
     )
     return {"provision_id": cur.lastrowid, "voucher_id": voucher["voucher_id"]}
 
@@ -2935,11 +2967,19 @@ def add_fixed_asset(
     life_years: int,
     salvage_value: float,
     acquired_at: str,
+    department_code: Optional[str] = None,
+    project_code: Optional[str] = None,
 ) -> Dict[str, Any]:
     if cost <= 0:
         raise LedgerError("ASSET_COST_INVALID", "固定资产成本必须大于 0")
     if life_years <= 0:
         raise LedgerError("ASSET_LIFE_INVALID", "固定资产年限必须大于 0")
+    dept_id = None
+    project_id = None
+    if department_code:
+        dept_id = find_dimension(conn, "department", department_code)
+    if project_code:
+        project_id = find_dimension(conn, "project", project_code)
     mapping = _load_subledger_mapping()["fixed_asset"]
     description = f"Fixed asset: {name}"
     entries = _build_entries(
@@ -2953,10 +2993,20 @@ def add_fixed_asset(
     voucher = _create_posted_voucher(conn, acquired_at, description, entries)
     cur = conn.execute(
         """
-        INSERT INTO fixed_assets (name, cost, acquired_at, life_years, salvage_value, status)
-        VALUES (?, ?, ?, ?, ?, 'active')
+        INSERT INTO fixed_assets (
+          name, cost, acquired_at, life_years, salvage_value, dept_id, project_id, status
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, 'active')
         """,
-        (name, round(cost, 2), acquired_at, life_years, round(salvage_value, 2)),
+        (
+            name,
+            round(cost, 2),
+            acquired_at,
+            life_years,
+            round(salvage_value, 2),
+            dept_id,
+            project_id,
+        ),
     )
     return {"asset_id": cur.lastrowid, "voucher_id": voucher["voucher_id"]}
 
@@ -3137,6 +3187,39 @@ def upgrade_fixed_asset(conn, asset_id: int, amount: float, date: str) -> Dict[s
     return {"change_id": cur.lastrowid, "voucher_id": voucher["voucher_id"]}
 
 
+def transfer_fixed_asset(
+    conn,
+    asset_id: int,
+    department_code: Optional[str] = None,
+    project_code: Optional[str] = None,
+    date: Optional[str] = None,
+) -> Dict[str, Any]:
+    asset = conn.execute(
+        "SELECT * FROM fixed_assets WHERE id = ?",
+        (asset_id,),
+    ).fetchone()
+    if not asset:
+        raise LedgerError("ASSET_NOT_FOUND", f"固定资产不存在: {asset_id}")
+    dept_id = asset["dept_id"]
+    project_id = asset["project_id"]
+    if department_code:
+        dept_id = find_dimension(conn, "department", department_code)
+    if project_code:
+        project_id = find_dimension(conn, "project", project_code)
+    conn.execute(
+        "UPDATE fixed_assets SET dept_id = ?, project_id = ? WHERE id = ?",
+        (dept_id, project_id, asset_id),
+    )
+    cur = conn.execute(
+        """
+        INSERT INTO fixed_asset_changes (asset_id, change_type, amount, date, voucher_id)
+        VALUES (?, 'transfer', 0, ?, NULL)
+        """,
+        (asset_id, date or datetime.now().strftime("%Y-%m-%d")),
+    )
+    return {"change_id": cur.lastrowid, "asset_id": asset_id}
+
+
 def split_fixed_asset(conn, asset_id: int, ratios: List[float]) -> Dict[str, Any]:
     asset = conn.execute(
         "SELECT * FROM fixed_assets WHERE id = ?",
@@ -3155,8 +3238,10 @@ def split_fixed_asset(conn, asset_id: int, ratios: List[float]) -> Dict[str, Any
         new_salvage = round(original_salvage * ratio / total_ratio, 2)
         cur = conn.execute(
             """
-            INSERT INTO fixed_assets (name, cost, acquired_at, life_years, salvage_value, status)
-            VALUES (?, ?, ?, ?, ?, 'active')
+            INSERT INTO fixed_assets (
+              name, cost, acquired_at, life_years, salvage_value, dept_id, project_id, status
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, 'active')
             """,
             (
                 f"{asset['name']}-S{idx}",
@@ -3164,6 +3249,8 @@ def split_fixed_asset(conn, asset_id: int, ratios: List[float]) -> Dict[str, Any
                 asset["acquired_at"],
                 asset["life_years"],
                 new_salvage,
+                asset["dept_id"],
+                asset["project_id"],
             ),
         )
         new_assets.append(cur.lastrowid)
@@ -3174,6 +3261,13 @@ def split_fixed_asset(conn, asset_id: int, ratios: List[float]) -> Dict[str, Any
             round(original_salvage * ratios[0] / total_ratio, 2),
             asset_id,
         ),
+    )
+    conn.execute(
+        """
+        INSERT INTO fixed_asset_changes (asset_id, change_type, amount, date, voucher_id)
+        VALUES (?, 'split', 0, ?, NULL)
+        """,
+        (asset_id, datetime.now().strftime("%Y-%m-%d")),
     )
     return {"asset_id": asset_id, "new_asset_ids": new_assets}
 
@@ -3269,10 +3363,12 @@ def transfer_cip_to_asset(
     voucher = _create_posted_voucher(conn, date, description, entries)
     cur = conn.execute(
         """
-        INSERT INTO fixed_assets (name, cost, acquired_at, life_years, salvage_value, status)
-        VALUES (?, ?, ?, ?, ?, 'active')
+        INSERT INTO fixed_assets (
+          name, cost, acquired_at, life_years, salvage_value, dept_id, project_id, status
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, 'active')
         """,
-        (asset_name, transfer_amount, date, life_years, round(salvage_value, 2)),
+        (asset_name, transfer_amount, date, life_years, round(salvage_value, 2), None, None),
     )
     asset_id = cur.lastrowid
     conn.execute(

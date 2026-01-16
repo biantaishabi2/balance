@@ -12,11 +12,15 @@ from ledger.services import (
     inventory_move_in,
     inventory_move_out,
     provision_bad_debt,
+    reverse_bad_debt,
     set_credit_profile,
     set_standard_cost,
     settle_payment_plan,
+    split_fixed_asset,
     transfer_cip_to_asset,
+    transfer_fixed_asset,
     upgrade_fixed_asset,
+    update_bill_status,
     load_standard_accounts,
 )
 
@@ -76,9 +80,15 @@ def test_bill_and_bad_debt(tmp_path):
         row = conn.execute("SELECT status FROM bills WHERE bill_no = 'B001'").fetchone()
         assert row["status"] == "holding"
 
+        update_bill_status(conn, "B001", "endorsed", "2025-01-15")
+        row = conn.execute("SELECT status, voucher_id FROM bills WHERE bill_no = 'B001'").fetchone()
+        assert row["status"] == "endorsed"
+        assert row["voucher_id"] is not None
+
         provision_bad_debt(conn, "2025-01", "C200", 50)
+        reverse_bad_debt(conn, "2025-02", "C200", 20)
         row = conn.execute("SELECT COUNT(*) AS cnt FROM bad_debt_provisions").fetchone()
-        assert row["cnt"] == 1
+        assert row["cnt"] == 2
 
 
 def test_inventory_fifo_and_standard(tmp_path):
@@ -142,6 +152,21 @@ def test_fixed_asset_upgrade_impair_cip(tmp_path):
         impair_fixed_asset(conn, asset["asset_id"], "2025-01", 100)
         imp_row = conn.execute("SELECT COUNT(*) AS cnt FROM fixed_asset_impairments").fetchone()
         assert imp_row["cnt"] == 1
+
+        transfer_fixed_asset(conn, asset["asset_id"], None, None, "2025-01-03")
+        change_row = conn.execute(
+            "SELECT COUNT(*) AS cnt FROM fixed_asset_changes WHERE asset_id = ? AND change_type = 'transfer'",
+            (asset["asset_id"],),
+        ).fetchone()
+        assert change_row["cnt"] == 1
+
+        split_result = split_fixed_asset(conn, asset["asset_id"], [6, 4])
+        assert len(split_result["new_asset_ids"]) == 1
+        split_row = conn.execute(
+            "SELECT COUNT(*) AS cnt FROM fixed_asset_changes WHERE asset_id = ? AND change_type = 'split'",
+            (asset["asset_id"],),
+        ).fetchone()
+        assert split_row["cnt"] == 1
 
         project_id = create_cip_project(conn, "Plant")
         add_cip_cost(conn, project_id, 500, "2025-01-05")

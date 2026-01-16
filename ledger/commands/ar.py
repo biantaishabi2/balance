@@ -13,6 +13,7 @@ from ledger.services import (
     add_bill,
     create_payment_plan,
     provision_bad_debt,
+    reverse_bad_debt,
     set_credit_profile,
     settle_payment_plan,
     update_bill_status,
@@ -96,6 +97,12 @@ def add_parser(subparsers, parents):
     bad_debt_cmd.add_argument("--customer", required=True, help="客户维度代码")
     bad_debt_cmd.add_argument("--amount", type=float, required=True, help="金额")
     bad_debt_cmd.set_defaults(func=run_bad_debt)
+
+    bad_debt_rev_cmd = sub.add_parser("bad-debt-reverse", help="坏账冲回", parents=parents)
+    bad_debt_rev_cmd.add_argument("--period", required=True, help="期间")
+    bad_debt_rev_cmd.add_argument("--customer", required=True, help="客户维度代码")
+    bad_debt_rev_cmd.add_argument("--amount", type=float, required=True, help="金额")
+    bad_debt_rev_cmd.set_defaults(func=run_bad_debt_reverse)
 
     return parser
 
@@ -184,4 +191,10 @@ def run_bill_status(args):
 def run_bad_debt(args):
     with get_db(args.db_path) as conn:
         result = provision_bad_debt(conn, args.period, args.customer, args.amount)
+    print_json({"status": "success", **result})
+
+
+def run_bad_debt_reverse(args):
+    with get_db(args.db_path) as conn:
+        result = reverse_bad_debt(conn, args.period, args.customer, args.amount)
     print_json({"status": "success", **result})

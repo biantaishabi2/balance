@@ -46,6 +46,7 @@ feature
   - `id, bill_no, bill_type, amount, status, maturity_date, item_type, item_id`
 - 票据状态流转：持有 → 背书/贴现 → 结清
 - 票据流转生成凭证
+- 背书/贴现科目可配置（`bill_endorse_account`，默认银行存款）
 
 ### 4. 坏账计提
 - 新增 `bad_debt_provisions`：

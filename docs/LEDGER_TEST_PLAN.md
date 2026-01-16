@@ -11,7 +11,7 @@
 - [ ] 连接正常关闭
 
 #### database/schema.py
-- [ ] 所有7张表正确创建
+- [ ] 核心表与扩展表正确创建
 - [ ] 外键约束正确建立
 - [ ] 索引正确创建
 - [ ] 默认值正确设置
@@ -166,6 +166,32 @@ ledger reopen --period 2025-01
 
 ---
 
+## 多币种与汇兑
+
+- [ ] 币种新增/查询可用（`ledger fx currency add/list`）
+- [ ] 汇率新增/查询可用（`ledger fx rate add/list`）
+- [ ] 外币凭证可录入并折算本位币
+- [ ] 外币余额可查询（`ledger fx balance`）
+- [ ] 期末汇兑重估生成凭证（`ledger fx revalue`）
+
+---
+
+## 期间调整与结转模板
+
+- [ ] 期间可切到 `adjustment` 状态（`ledger period set-status`）
+- [ ] `adjustment` 期间拒绝 `normal` 凭证
+- [ ] 调整凭证影响本期余额并按规则滚动下期
+- [ ] `ledger close --template` 使用模板生成结转凭证
+
+---
+
+## 凭证模板与自动凭证
+
+- [ ] 模板新增/禁用/列表（`ledger template add/list/disable`）
+- [ ] `ledger auto --template` 生成平衡凭证
+- [ ] 表达式变量/函数校验（非法表达式返回错误）
+- [ ] 模板禁用后调用返回 `TEMPLATE_DISABLED`
+
 ## 子账模块
 
 ### 往来核销
@@ -220,6 +246,30 @@ ledger fixed-asset dispose --asset-id 1
 - [ ] 折旧凭证生成且借贷平衡
 - [ ] 处置凭证生成且资产状态变更
 - [ ] `ledger fixed-asset reconcile --period 2025-01` 差异为 0
+
+---
+
+### 子账深度能力
+
+- [ ] 信用额度占用与超额提示/阻断
+- [ ] 收付款计划录入与结算
+- [ ] 票据登记与结清生成凭证
+- [ ] 坏账计提凭证生成
+- [ ] 坏账冲回凭证生成
+
+### 存货高级
+
+- [ ] FIFO 出库成本正确
+- [ ] 标准成本入库差异入差异科目
+- [ ] 盘点差异生成盘盈/盘亏凭证
+- [ ] 负库存策略为 reject/allow 可配置
+
+### 固定资产扩展
+
+- [ ] 改扩建生成凭证且原值更新
+- [ ] 减值凭证生成
+- [ ] 在建工程转固凭证生成
+- [ ] 折旧按维度分摊
 
 ---
 

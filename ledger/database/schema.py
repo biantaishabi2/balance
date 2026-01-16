@@ -234,6 +234,8 @@ CREATE TABLE IF NOT EXISTS fixed_assets (
   acquired_at TEXT NOT NULL,
   life_years INTEGER NOT NULL,
   salvage_value REAL NOT NULL DEFAULT 0,
+  dept_id INTEGER,
+  project_id INTEGER,
   status TEXT NOT NULL DEFAULT 'active',
   created_at TEXT DEFAULT CURRENT_TIMESTAMP
 );

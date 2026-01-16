@@ -11,13 +11,25 @@ ledger - 记账系统
 
 命令:
   record     录入凭证
+  review     审核凭证
+  unreview   反审核
   confirm    确认草稿凭证
   delete     删除凭证
   void       作废凭证（红字冲销）
   query      查询凭证/余额
   report     生成三表
+  close      期末结账
+  reopen     反结账
   account    科目管理
   dimensions 辅助核算管理
+  ar         应收管理
+  ap         应付管理
+  inventory  存货核算
+  fixed-asset 固定资产
+  fx         多币种与汇兑
+  template   凭证模板
+  auto       模板自动凭证
+  period     期间状态管理
   init       初始化账套
 ```
 
@@ -40,7 +52,7 @@ ledger - 记账系统
 ### 1.2 核心原则
 
 1. **简单优先**：只实现核心记账功能，不做人用ERP的复杂特性
-2. **状态管理**：草稿→确认→作废，支持红字冲销
+2. **状态管理**：草稿→审核→记账→作废，支持红字冲销与调整凭证
 3. **自动生成**：确认凭证自动更新余额，自动生成三表
 4. **辅助核算**：支持部门、项目、客户、供应商、人员五个维度
 5. **SQLite存储**：单文件数据库，易于部署和备份
@@ -103,6 +115,9 @@ CREATE TABLE dimensions (
   name TEXT NOT NULL,                 -- 名称
   parent_id INTEGER,                 -- 上级（支持层级）
   extra TEXT,                        -- 额外信息（JSON格式）
+  credit_limit REAL DEFAULT 0,       -- 信用额度（客户/供应商）
+  credit_used REAL DEFAULT 0,        -- 信用占用
+  credit_days INTEGER DEFAULT 0,     -- 账期天数
   is_enabled INTEGER DEFAULT 1,
   created_at TEXT DEFAULT CURRENT_TIMESTAMP,
   UNIQUE(type, code)
@@ -131,9 +146,12 @@ CREATE TABLE vouchers (
   date TEXT NOT NULL,                -- 凭证日期（YYYY-MM-DD）
   period TEXT NOT NULL,              -- 会计期间（YYYY-MM）
   description TEXT,                  -- 摘要
-  status TEXT NOT NULL DEFAULT 'draft',  -- 状态: draft|confirmed|voided
+  status TEXT NOT NULL DEFAULT 'draft',  -- 状态: draft|reviewed|confirmed|voided
+  entry_type TEXT NOT NULL DEFAULT 'normal', -- 类型: normal|adjustment
+  source_template TEXT,              -- 模板来源（自动凭证）
   void_reason TEXT,                  -- 作废原因
   created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+  reviewed_at TEXT,
   confirmed_at TEXT,
   voided_at TEXT
 );
@@ -145,10 +163,11 @@ CREATE INDEX idx_vouchers_status ON vouchers(status);
 
 **状态流转：**
 ```
-draft（草稿） → confirmed（已确认） → voided（已作废）
-                                      ↓
-                                  可生成报表
+draft（草稿） → reviewed（已审核） → confirmed（已记账） → voided（已作废）
+                                                ↓
+                                            可生成报表
 ```
+**调整凭证：** `entry_type=adjustment` 可在 `period.status=adjustment` 的期间记账。
 
 #### voucher_entries - 凭证分录表
 
@@ -162,6 +181,10 @@ CREATE TABLE voucher_entries (
   description TEXT,                  -- 摘要
   debit_amount REAL DEFAULT 0,       -- 借方金额
   credit_amount REAL DEFAULT 0,      -- 贷方金额
+  currency_code TEXT DEFAULT 'CNY',  -- 币种
+  fx_rate REAL DEFAULT 1,            -- 折算汇率
+  foreign_debit_amount REAL DEFAULT 0,   -- 原币借方
+  foreign_credit_amount REAL DEFAULT 0,  -- 原币贷方
   dept_id INTEGER,                   -- 部门ID
   project_id INTEGER,                -- 项目ID
   customer_id INTEGER,               -- 客户ID
@@ -236,7 +259,7 @@ CREATE TABLE void_vouchers (
 ```sql
 CREATE TABLE periods (
   period TEXT PRIMARY KEY,                  -- 期间（YYYY-MM）
-  status TEXT NOT NULL DEFAULT 'open',      -- 状态: open|closed
+  status TEXT NOT NULL DEFAULT 'open',      -- 状态: open|closed|adjustment
   opened_at TEXT,
   closed_at TEXT
 );
@@ -268,6 +291,17 @@ periods (期间)
 ```
 
 ---
+
+### 2.4 扩展表（阶段1-4）
+
+为多币种、期间调整、模板引擎与子账深度能力新增以下表/配置：
+
+- 多币种：`currencies`、`exchange_rates`、`balances_fx`；配置 `data/forex_config.json`
+- 期间与模板：`closing_templates`、`voucher_templates`、`period_closings`
+- 往来深度：`payment_plans`、`bills`、`bad_debt_provisions`
+- 存货深度：`warehouses`、`locations`、`inventory_batches`、`inventory_move_lines`、`inventory_counts`、`standard_costs`；配置 `data/inventory_config.json`
+- 固定资产深度：`fixed_asset_changes`、`fixed_asset_impairments`、`cip_projects`、`cip_transfers`、`fixed_asset_allocations`
+- 信用管理：维度表新增 `credit_limit/credit_used/credit_days`；配置 `data/credit_config.json`
 
 ## 3. API设计
 
@@ -511,14 +545,14 @@ EOF
 
 ---
 
-### 3.5 ledger confirm - 确认草稿
+### 3.5 ledger confirm - 确认凭证
 
 ```bash
 ledger confirm 1
 ```
 
 **处理逻辑：**
-1. 更新凭证状态：`draft` → `confirmed`
+1. 更新凭证状态：`reviewed` → `confirmed`
 2. 校验借贷平衡
 3. 更新余额表
 4. 自动生成三表
@@ -930,12 +964,24 @@ balance/
 │   │   ├── __init__.py
 │   │   ├── init.py              # 初始化
 │   │   ├── record.py            # 录入凭证
-│   │   ├── confirm.py           # 确认草稿
+│   │   ├── review.py            # 审核凭证
+│   │   ├── unreview.py          # 反审核
+│   │   ├── confirm.py           # 确认凭证
+│   │   ├── close.py             # 期末结账
+│   │   ├── reopen.py            # 反结账
 │   │   ├── delete.py            # 删除草稿
 │   │   ├── query.py             # 查询
 │   │   ├── report.py            # 生成报表
 │   │   ├── account.py           # 科目管理
-│   │   └── dimension.py        # 辅助核算管理
+│   │   ├── dimension.py        # 辅助核算管理
+│   │   ├── ar.py                # 应收
+│   │   ├── ap.py                # 应付
+│   │   ├── inventory.py         # 存货
+│   │   ├── fixed_asset.py       # 固定资产
+│   │   ├── fx.py                # 多币种
+│   │   ├── template.py          # 凭证模板
+│   │   ├── auto.py              # 自动凭证
+│   │   └── period.py            # 期间状态
 │   ├── models/
 │   │   ├── __init__.py
 │   │   ├── voucher.py           # 凭证模型

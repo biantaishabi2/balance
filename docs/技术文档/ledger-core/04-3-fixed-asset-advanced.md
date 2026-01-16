@@ -35,8 +35,8 @@ feature
   - `asset_id, change_type, amount, date, voucher_id`
 - 变动类型：`upgrade`/`transfer`/`split`
 - `upgrade`：增加资产原值，凭证借“固定资产”，贷“银行存款/应付账款”
-- `transfer`：仅维度/使用部门变更，不改变金额
-- `split`：按比例拆分原值/累计折旧/净值
+- `transfer`：仅维度/使用部门变更，不改变金额（`fixed_assets.dept_id/project_id`）
+- `split`：按比例拆分原值/累计折旧/净值，记录变动但不生成金额凭证
 
 ### 2. 资产减值
 - `fixed_asset_impairments`：

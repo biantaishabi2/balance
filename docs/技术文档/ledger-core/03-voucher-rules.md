@@ -53,7 +53,7 @@ feature
 ### 3. CLI/接口
 - `ledger template add/list/disable`
 - `ledger auto --template <code>`
-- 记录模板来源字段（voucher.source）
+- 记录模板来源字段（voucher.source_template）
 
 ### 4. 校验
 - 生成凭证必须平衡

@@ -40,6 +40,8 @@ def run_migrations(conn: sqlite3.Connection) -> None:
     )
     _ensure_column("inventory_balances", "warehouse_id", "warehouse_id INTEGER DEFAULT 0")
     _ensure_column("inventory_balances", "location_id", "location_id INTEGER DEFAULT 0")
+    _ensure_column("fixed_assets", "dept_id", "dept_id INTEGER")
+    _ensure_column("fixed_assets", "project_id", "project_id INTEGER")
     conn.executescript(
         """
         CREATE TABLE IF NOT EXISTS period_closings (
