@@ -6,600 +6,97 @@ from __future__ import annotations
 
 import sqlite3
 
+from .schema import SCHEMA_SQL
+
+
+_DEFAULT_TENANT_COLUMN = "tenant_id TEXT NOT NULL DEFAULT 'default'"
+_DEFAULT_ORG_COLUMN = "org_id TEXT NOT NULL DEFAULT 'default'"
+
+
+def _table_exists(conn: sqlite3.Connection, table: str) -> bool:
+    row = conn.execute(
+        "SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?",
+        (table,),
+    ).fetchone()
+    return row is not None
+
+
+def _ensure_column(conn: sqlite3.Connection, table: str, column: str, ddl: str) -> None:
+    if not _table_exists(conn, table):
+        return
+    columns = [row[1] for row in conn.execute(f"PRAGMA table_info({table})").fetchall()]
+    if column not in columns:
+        conn.execute(f"ALTER TABLE {table} ADD COLUMN {ddl}")
+
 
 def run_migrations(conn: sqlite3.Connection) -> None:
     """Apply minimal schema migrations."""
-    def _ensure_column(table: str, column: str, ddl: str) -> None:
-        columns = [row[1] for row in conn.execute(f"PRAGMA table_info({table})").fetchall()]
-        if column not in columns:
-            conn.execute(f"ALTER TABLE {table} ADD COLUMN {ddl}")
-
-    columns = [row[1] for row in conn.execute("PRAGMA table_info(vouchers)").fetchall()]
-    if not columns:
+    if not _table_exists(conn, "vouchers"):
         return
-    if "reviewed_at" not in columns:
-        conn.execute("ALTER TABLE vouchers ADD COLUMN reviewed_at TEXT")
-    _ensure_column("vouchers", "entry_type", "entry_type TEXT NOT NULL DEFAULT 'normal'")
-    _ensure_column("vouchers", "source_template", "source_template TEXT")
-    _ensure_column("vouchers", "source_event_id", "source_event_id TEXT")
-    _ensure_column("dimensions", "credit_limit", "credit_limit REAL DEFAULT 0")
-    _ensure_column("dimensions", "credit_used", "credit_used REAL DEFAULT 0")
-    _ensure_column("dimensions", "credit_days", "credit_days INTEGER DEFAULT 0")
-    _ensure_column("voucher_entries", "currency_code", "currency_code TEXT DEFAULT 'CNY'")
-    _ensure_column("voucher_entries", "fx_rate", "fx_rate REAL DEFAULT 1")
+
+    _ensure_column(conn, "vouchers", "reviewed_at", "reviewed_at TEXT")
     _ensure_column(
-        "voucher_entries", "foreign_debit_amount", "foreign_debit_amount REAL DEFAULT 0"
+        conn, "vouchers", "entry_type", "entry_type TEXT NOT NULL DEFAULT 'normal'"
+    )
+    _ensure_column(conn, "vouchers", "source_template", "source_template TEXT")
+    _ensure_column(conn, "vouchers", "source_event_id", "source_event_id TEXT")
+    _ensure_column(conn, "vouchers", "archived_at", "archived_at TEXT")
+
+    _ensure_column(conn, "dimensions", "credit_limit", "credit_limit REAL DEFAULT 0")
+    _ensure_column(conn, "dimensions", "credit_used", "credit_used REAL DEFAULT 0")
+    _ensure_column(conn, "dimensions", "credit_days", "credit_days INTEGER DEFAULT 0")
+
+    _ensure_column(conn, "voucher_entries", "currency_code", "currency_code TEXT DEFAULT 'CNY'")
+    _ensure_column(conn, "voucher_entries", "fx_rate", "fx_rate REAL DEFAULT 1")
+    _ensure_column(
+        conn,
+        "voucher_entries",
+        "foreign_debit_amount",
+        "foreign_debit_amount REAL DEFAULT 0",
     )
     _ensure_column(
-        "voucher_entries", "foreign_credit_amount", "foreign_credit_amount REAL DEFAULT 0"
+        conn,
+        "voucher_entries",
+        "foreign_credit_amount",
+        "foreign_credit_amount REAL DEFAULT 0",
     )
-    _ensure_column("inventory_moves", "warehouse_id", "warehouse_id INTEGER")
-    _ensure_column("inventory_moves", "location_id", "location_id INTEGER")
-    _ensure_column("inventory_moves", "batch_id", "batch_id INTEGER")
+    _ensure_column(conn, "voucher_entries", "archived_at", "archived_at TEXT")
+
+    _ensure_column(conn, "inventory_moves", "warehouse_id", "warehouse_id INTEGER")
+    _ensure_column(conn, "inventory_moves", "location_id", "location_id INTEGER")
+    _ensure_column(conn, "inventory_moves", "batch_id", "batch_id INTEGER")
     _ensure_column(
-        "inventory_moves", "pending_cost_adjustment", "pending_cost_adjustment REAL DEFAULT 0"
+        conn,
+        "inventory_moves",
+        "pending_cost_adjustment",
+        "pending_cost_adjustment REAL DEFAULT 0",
     )
-    _ensure_column("inventory_balances", "warehouse_id", "warehouse_id INTEGER DEFAULT 0")
-    _ensure_column("inventory_balances", "location_id", "location_id INTEGER DEFAULT 0")
-    _ensure_column("fixed_assets", "dept_id", "dept_id INTEGER")
-    _ensure_column("fixed_assets", "project_id", "project_id INTEGER")
-    _ensure_column("accounts", "tenant_id", "tenant_id TEXT NOT NULL DEFAULT 'default'")
-    _ensure_column("accounts", "org_id", "org_id TEXT NOT NULL DEFAULT 'default'")
-    _ensure_column("dimensions", "tenant_id", "tenant_id TEXT NOT NULL DEFAULT 'default'")
-    _ensure_column("dimensions", "org_id", "org_id TEXT NOT NULL DEFAULT 'default'")
-    _ensure_column("vouchers", "tenant_id", "tenant_id TEXT NOT NULL DEFAULT 'default'")
-    _ensure_column("vouchers", "org_id", "org_id TEXT NOT NULL DEFAULT 'default'")
-    _ensure_column(
-        "voucher_entries", "tenant_id", "tenant_id TEXT NOT NULL DEFAULT 'default'"
-    )
-    _ensure_column("voucher_entries", "org_id", "org_id TEXT NOT NULL DEFAULT 'default'")
-    _ensure_column("balances", "tenant_id", "tenant_id TEXT NOT NULL DEFAULT 'default'")
-    _ensure_column("balances", "org_id", "org_id TEXT NOT NULL DEFAULT 'default'")
-    _ensure_column("periods", "tenant_id", "tenant_id TEXT NOT NULL DEFAULT 'default'")
-    _ensure_column("periods", "org_id", "org_id TEXT NOT NULL DEFAULT 'default'")
-    conn.executescript(
-        """
-        CREATE TABLE IF NOT EXISTS invoices (
-          id INTEGER PRIMARY KEY AUTOINCREMENT,
-          type TEXT NOT NULL,
-          code TEXT,
-          number TEXT NOT NULL,
-          date TEXT NOT NULL,
-          period TEXT NOT NULL,
-          amount REAL NOT NULL,
-          tax_rate REAL NOT NULL DEFAULT 0,
-          tax_amount REAL NOT NULL DEFAULT 0,
-          status TEXT NOT NULL DEFAULT 'issued',
-          voucher_id INTEGER,
-          created_at TEXT DEFAULT CURRENT_TIMESTAMP,
-          UNIQUE(code, number),
-          FOREIGN KEY (voucher_id) REFERENCES vouchers(id)
-        );
+    _ensure_column(conn, "inventory_balances", "warehouse_id", "warehouse_id INTEGER DEFAULT 0")
+    _ensure_column(conn, "inventory_balances", "location_id", "location_id INTEGER DEFAULT 0")
 
-        CREATE INDEX IF NOT EXISTS idx_invoices_period ON invoices(period);
-        CREATE INDEX IF NOT EXISTS idx_invoices_type ON invoices(type);
-        CREATE INDEX IF NOT EXISTS idx_invoices_voucher ON invoices(voucher_id);
+    _ensure_column(conn, "fixed_assets", "dept_id", "dept_id INTEGER")
+    _ensure_column(conn, "fixed_assets", "project_id", "project_id INTEGER")
 
-        CREATE TABLE IF NOT EXISTS period_closings (
-          period TEXT PRIMARY KEY,
-          closing_voucher_id INTEGER,
-          transfer_voucher_id INTEGER,
-          created_at TEXT DEFAULT CURRENT_TIMESTAMP,
-          reopened_at TEXT,
-          FOREIGN KEY (closing_voucher_id) REFERENCES vouchers(id),
-          FOREIGN KEY (transfer_voucher_id) REFERENCES vouchers(id)
-        );
+    for table in (
+        "accounts",
+        "dimensions",
+        "vouchers",
+        "voucher_entries",
+        "balances",
+        "balances_fx",
+        "void_vouchers",
+        "period_closings",
+        "ar_items",
+        "ap_items",
+        "settlements",
+        "inventory_items",
+        "inventory_moves",
+        "inventory_balances",
+        "fixed_assets",
+        "fixed_asset_depreciations",
+        "periods",
+    ):
+        _ensure_column(conn, table, "tenant_id", _DEFAULT_TENANT_COLUMN)
+        _ensure_column(conn, table, "org_id", _DEFAULT_ORG_COLUMN)
 
-        CREATE TABLE IF NOT EXISTS ar_items (
-          id INTEGER PRIMARY KEY AUTOINCREMENT,
-          customer_id INTEGER NOT NULL,
-          voucher_id INTEGER NOT NULL,
-          amount REAL NOT NULL,
-          settled_amount REAL DEFAULT 0,
-          status TEXT NOT NULL DEFAULT 'open',
-          created_at TEXT DEFAULT CURRENT_TIMESTAMP,
-          FOREIGN KEY (customer_id) REFERENCES dimensions(id),
-          FOREIGN KEY (voucher_id) REFERENCES vouchers(id)
-        );
-
-        CREATE INDEX IF NOT EXISTS idx_ar_items_customer ON ar_items(customer_id);
-
-        CREATE TABLE IF NOT EXISTS ap_items (
-          id INTEGER PRIMARY KEY AUTOINCREMENT,
-          supplier_id INTEGER NOT NULL,
-          voucher_id INTEGER NOT NULL,
-          amount REAL NOT NULL,
-          settled_amount REAL DEFAULT 0,
-          status TEXT NOT NULL DEFAULT 'open',
-          created_at TEXT DEFAULT CURRENT_TIMESTAMP,
-          FOREIGN KEY (supplier_id) REFERENCES dimensions(id),
-          FOREIGN KEY (voucher_id) REFERENCES vouchers(id)
-        );
-
-        CREATE INDEX IF NOT EXISTS idx_ap_items_supplier ON ap_items(supplier_id);
-
-        CREATE TABLE IF NOT EXISTS settlements (
-          id INTEGER PRIMARY KEY AUTOINCREMENT,
-          item_type TEXT NOT NULL,
-          item_id INTEGER NOT NULL,
-          amount REAL NOT NULL,
-          voucher_id INTEGER NOT NULL,
-          date TEXT NOT NULL,
-          created_at TEXT DEFAULT CURRENT_TIMESTAMP,
-          FOREIGN KEY (voucher_id) REFERENCES vouchers(id)
-        );
-
-        CREATE INDEX IF NOT EXISTS idx_settlements_item ON settlements(item_type, item_id);
-
-        CREATE TABLE IF NOT EXISTS inventory_items (
-          id INTEGER PRIMARY KEY AUTOINCREMENT,
-          sku TEXT NOT NULL UNIQUE,
-          name TEXT NOT NULL,
-          unit TEXT NOT NULL,
-          created_at TEXT DEFAULT CURRENT_TIMESTAMP
-        );
-
-        CREATE TABLE IF NOT EXISTS inventory_moves (
-          id INTEGER PRIMARY KEY AUTOINCREMENT,
-          sku TEXT NOT NULL,
-          direction TEXT NOT NULL,
-          qty REAL NOT NULL,
-          unit_cost REAL NOT NULL,
-          total_cost REAL NOT NULL,
-          voucher_id INTEGER NOT NULL,
-          date TEXT NOT NULL,
-          created_at TEXT DEFAULT CURRENT_TIMESTAMP,
-          FOREIGN KEY (voucher_id) REFERENCES vouchers(id)
-        );
-
-        CREATE INDEX IF NOT EXISTS idx_inventory_moves_sku ON inventory_moves(sku);
-        CREATE INDEX IF NOT EXISTS idx_inventory_moves_date ON inventory_moves(date);
-
-        CREATE TABLE IF NOT EXISTS inventory_balances (
-          sku TEXT NOT NULL,
-          period TEXT NOT NULL,
-          qty REAL NOT NULL,
-          amount REAL NOT NULL,
-          updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
-          UNIQUE(sku, period)
-        );
-
-        CREATE INDEX IF NOT EXISTS idx_inventory_balances_sku ON inventory_balances(sku);
-
-        CREATE TABLE IF NOT EXISTS tax_adjustments (
-          id INTEGER PRIMARY KEY AUTOINCREMENT,
-          period TEXT NOT NULL,
-          adjustment_type TEXT NOT NULL,
-          amount REAL NOT NULL,
-          description TEXT,
-          voucher_id INTEGER,
-          created_at TEXT DEFAULT CURRENT_TIMESTAMP,
-          FOREIGN KEY (voucher_id) REFERENCES vouchers(id)
-        );
-
-        CREATE INDEX IF NOT EXISTS idx_tax_adjustments_period ON tax_adjustments(period);
-        CREATE INDEX IF NOT EXISTS idx_tax_adjustments_type ON tax_adjustments(adjustment_type);
-
-        CREATE TABLE IF NOT EXISTS fixed_assets (
-          id INTEGER PRIMARY KEY AUTOINCREMENT,
-          name TEXT NOT NULL,
-          cost REAL NOT NULL,
-          acquired_at TEXT NOT NULL,
-          life_years INTEGER NOT NULL,
-          salvage_value REAL NOT NULL DEFAULT 0,
-          status TEXT NOT NULL DEFAULT 'active',
-          created_at TEXT DEFAULT CURRENT_TIMESTAMP
-        );
-
-        CREATE TABLE IF NOT EXISTS fixed_asset_depreciations (
-          id INTEGER PRIMARY KEY AUTOINCREMENT,
-          asset_id INTEGER NOT NULL,
-          period TEXT NOT NULL,
-          amount REAL NOT NULL,
-          voucher_id INTEGER NOT NULL,
-          created_at TEXT DEFAULT CURRENT_TIMESTAMP,
-          FOREIGN KEY (asset_id) REFERENCES fixed_assets(id),
-          FOREIGN KEY (voucher_id) REFERENCES vouchers(id)
-        );
-
-        CREATE INDEX IF NOT EXISTS idx_fixed_asset_depr_asset ON fixed_asset_depreciations(asset_id);
-
-        CREATE TABLE IF NOT EXISTS currencies (
-          code TEXT PRIMARY KEY,
-          name TEXT NOT NULL,
-          symbol TEXT,
-          precision INTEGER NOT NULL DEFAULT 2,
-          is_active INTEGER DEFAULT 1
-        );
-
-        CREATE TABLE IF NOT EXISTS exchange_rates (
-          id INTEGER PRIMARY KEY AUTOINCREMENT,
-          currency_code TEXT NOT NULL,
-          date TEXT NOT NULL,
-          rate REAL NOT NULL,
-          rate_type TEXT NOT NULL DEFAULT 'spot',
-          source TEXT,
-          created_at TEXT DEFAULT CURRENT_TIMESTAMP,
-          UNIQUE(currency_code, date, rate_type),
-          FOREIGN KEY (currency_code) REFERENCES currencies(code)
-        );
-
-        CREATE TABLE IF NOT EXISTS balances_fx (
-          id INTEGER PRIMARY KEY AUTOINCREMENT,
-          account_code TEXT NOT NULL,
-          period TEXT NOT NULL,
-          currency_code TEXT NOT NULL,
-          dept_id INTEGER NOT NULL DEFAULT 0,
-          project_id INTEGER NOT NULL DEFAULT 0,
-          customer_id INTEGER NOT NULL DEFAULT 0,
-          supplier_id INTEGER NOT NULL DEFAULT 0,
-          employee_id INTEGER NOT NULL DEFAULT 0,
-          foreign_opening REAL DEFAULT 0,
-          foreign_debit REAL DEFAULT 0,
-          foreign_credit REAL DEFAULT 0,
-          foreign_closing REAL DEFAULT 0,
-          updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
-          UNIQUE(
-            account_code,
-            period,
-            currency_code,
-            dept_id,
-            project_id,
-            customer_id,
-            supplier_id,
-            employee_id
-          )
-        );
-
-        CREATE TABLE IF NOT EXISTS closing_templates (
-          code TEXT PRIMARY KEY,
-          name TEXT NOT NULL,
-          rule_json TEXT NOT NULL,
-          is_active INTEGER DEFAULT 1,
-          created_at TEXT DEFAULT CURRENT_TIMESTAMP
-        );
-
-        CREATE TABLE IF NOT EXISTS voucher_templates (
-          code TEXT PRIMARY KEY,
-          name TEXT NOT NULL,
-          rule_json TEXT NOT NULL,
-          is_active INTEGER DEFAULT 1,
-          created_at TEXT DEFAULT CURRENT_TIMESTAMP
-        );
-
-        CREATE TABLE IF NOT EXISTS allocation_rules (
-          id INTEGER PRIMARY KEY AUTOINCREMENT,
-          name TEXT NOT NULL,
-          source_accounts TEXT NOT NULL,
-          target_dim TEXT NOT NULL,
-          basis TEXT NOT NULL,
-          period TEXT,
-          created_at TEXT DEFAULT CURRENT_TIMESTAMP
-        );
-
-        CREATE TABLE IF NOT EXISTS allocation_rule_lines (
-          id INTEGER PRIMARY KEY AUTOINCREMENT,
-          rule_id INTEGER NOT NULL,
-          target_dim_id INTEGER NOT NULL,
-          ratio REAL NOT NULL,
-          created_at TEXT DEFAULT CURRENT_TIMESTAMP,
-          FOREIGN KEY (rule_id) REFERENCES allocation_rules(id)
-        );
-
-        CREATE INDEX IF NOT EXISTS idx_allocation_rule_lines_rule ON allocation_rule_lines(rule_id);
-
-        CREATE TABLE IF NOT EXISTS budgets (
-          id INTEGER PRIMARY KEY AUTOINCREMENT,
-          period TEXT NOT NULL,
-          dim_type TEXT NOT NULL,
-          dim_id INTEGER NOT NULL,
-          amount REAL NOT NULL,
-          created_at TEXT DEFAULT CURRENT_TIMESTAMP,
-          UNIQUE(period, dim_type, dim_id)
-        );
-
-        CREATE TABLE IF NOT EXISTS budget_controls (
-          id INTEGER PRIMARY KEY AUTOINCREMENT,
-          period TEXT NOT NULL,
-          dim_type TEXT NOT NULL,
-          dim_id INTEGER NOT NULL,
-          used_amount REAL NOT NULL DEFAULT 0,
-          locked_amount REAL NOT NULL DEFAULT 0,
-          updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
-          UNIQUE(period, dim_type, dim_id)
-        );
-
-        CREATE TABLE IF NOT EXISTS budget_locks (
-          id INTEGER PRIMARY KEY AUTOINCREMENT,
-          voucher_id INTEGER NOT NULL,
-          period TEXT NOT NULL,
-          dim_type TEXT NOT NULL,
-          dim_id INTEGER NOT NULL,
-          amount REAL NOT NULL,
-          created_at TEXT DEFAULT CURRENT_TIMESTAMP,
-          UNIQUE(voucher_id, dim_type, dim_id),
-          FOREIGN KEY (voucher_id) REFERENCES vouchers(id)
-        );
-
-        CREATE INDEX IF NOT EXISTS idx_budget_locks_voucher ON budget_locks(voucher_id);
-
-        CREATE TABLE IF NOT EXISTS voucher_events (
-          event_id TEXT PRIMARY KEY,
-          template_code TEXT NOT NULL,
-          voucher_id INTEGER NOT NULL,
-          created_at TEXT DEFAULT CURRENT_TIMESTAMP,
-          FOREIGN KEY (voucher_id) REFERENCES vouchers(id)
-        );
-
-        CREATE TABLE IF NOT EXISTS payment_plans (
-          id INTEGER PRIMARY KEY AUTOINCREMENT,
-          item_type TEXT NOT NULL,
-          item_id INTEGER NOT NULL,
-          due_date TEXT NOT NULL,
-          amount REAL NOT NULL,
-          status TEXT NOT NULL DEFAULT 'pending',
-          voucher_id INTEGER,
-          created_at TEXT DEFAULT CURRENT_TIMESTAMP
-        );
-
-        CREATE TABLE IF NOT EXISTS bills (
-          id INTEGER PRIMARY KEY AUTOINCREMENT,
-          bill_no TEXT NOT NULL,
-          bill_type TEXT NOT NULL,
-          amount REAL NOT NULL,
-          status TEXT NOT NULL DEFAULT 'holding',
-          maturity_date TEXT,
-          item_type TEXT,
-          item_id INTEGER,
-          voucher_id INTEGER,
-          created_at TEXT DEFAULT CURRENT_TIMESTAMP,
-          UNIQUE(bill_no)
-        );
-
-        CREATE TABLE IF NOT EXISTS bad_debt_provisions (
-          id INTEGER PRIMARY KEY AUTOINCREMENT,
-          period TEXT NOT NULL,
-          customer_id INTEGER NOT NULL,
-          amount REAL NOT NULL,
-          voucher_id INTEGER NOT NULL,
-          created_at TEXT DEFAULT CURRENT_TIMESTAMP,
-          FOREIGN KEY (customer_id) REFERENCES dimensions(id),
-          FOREIGN KEY (voucher_id) REFERENCES vouchers(id)
-        );
-
-        CREATE TABLE IF NOT EXISTS warehouses (
-          id INTEGER PRIMARY KEY AUTOINCREMENT,
-          code TEXT NOT NULL,
-          name TEXT NOT NULL,
-          created_at TEXT DEFAULT CURRENT_TIMESTAMP,
-          UNIQUE(code)
-        );
-
-        CREATE TABLE IF NOT EXISTS locations (
-          id INTEGER PRIMARY KEY AUTOINCREMENT,
-          warehouse_id INTEGER NOT NULL,
-          code TEXT NOT NULL,
-          name TEXT NOT NULL,
-          created_at TEXT DEFAULT CURRENT_TIMESTAMP,
-          UNIQUE(warehouse_id, code),
-          FOREIGN KEY (warehouse_id) REFERENCES warehouses(id)
-        );
-
-        CREATE TABLE IF NOT EXISTS inventory_batches (
-          id INTEGER PRIMARY KEY AUTOINCREMENT,
-          sku TEXT NOT NULL,
-          batch_no TEXT,
-          qty REAL NOT NULL,
-          remaining_qty REAL NOT NULL,
-          unit_cost REAL NOT NULL,
-          total_cost REAL NOT NULL,
-          warehouse_id INTEGER,
-          location_id INTEGER,
-          status TEXT NOT NULL DEFAULT 'open',
-          created_at TEXT DEFAULT CURRENT_TIMESTAMP
-        );
-
-        CREATE TABLE IF NOT EXISTS inventory_serials (
-          serial_no TEXT PRIMARY KEY,
-          sku TEXT NOT NULL,
-          status TEXT NOT NULL DEFAULT 'in',
-          move_in_id INTEGER,
-          move_out_id INTEGER,
-          warehouse_id INTEGER,
-          location_id INTEGER,
-          created_at TEXT DEFAULT CURRENT_TIMESTAMP,
-          updated_at TEXT,
-          FOREIGN KEY (move_in_id) REFERENCES inventory_moves(id),
-          FOREIGN KEY (move_out_id) REFERENCES inventory_moves(id)
-        );
-
-        CREATE INDEX IF NOT EXISTS idx_inventory_serials_sku ON inventory_serials(sku);
-
-        CREATE INDEX IF NOT EXISTS idx_inventory_batches_sku ON inventory_batches(sku);
-
-        CREATE TABLE IF NOT EXISTS inventory_move_lines (
-          id INTEGER PRIMARY KEY AUTOINCREMENT,
-          move_id INTEGER NOT NULL,
-          batch_id INTEGER,
-          qty REAL NOT NULL,
-          unit_cost REAL NOT NULL,
-          total_cost REAL NOT NULL,
-          FOREIGN KEY (move_id) REFERENCES inventory_moves(id),
-          FOREIGN KEY (batch_id) REFERENCES inventory_batches(id)
-        );
-
-        CREATE TABLE IF NOT EXISTS inventory_counts (
-          id INTEGER PRIMARY KEY AUTOINCREMENT,
-          sku TEXT NOT NULL,
-          warehouse_id INTEGER,
-          counted_qty REAL NOT NULL,
-          book_qty REAL NOT NULL,
-          diff_qty REAL NOT NULL,
-          date TEXT NOT NULL,
-          voucher_id INTEGER,
-          created_at TEXT DEFAULT CURRENT_TIMESTAMP
-        );
-
-        CREATE TABLE IF NOT EXISTS standard_costs (
-          sku TEXT NOT NULL,
-          period TEXT NOT NULL,
-          cost REAL NOT NULL,
-          variance_account TEXT,
-          UNIQUE(sku, period)
-        );
-
-        CREATE TABLE IF NOT EXISTS fixed_asset_changes (
-          id INTEGER PRIMARY KEY AUTOINCREMENT,
-          asset_id INTEGER NOT NULL,
-          change_type TEXT NOT NULL,
-          amount REAL NOT NULL,
-          date TEXT NOT NULL,
-          voucher_id INTEGER,
-          created_at TEXT DEFAULT CURRENT_TIMESTAMP,
-          FOREIGN KEY (asset_id) REFERENCES fixed_assets(id)
-        );
-
-        CREATE TABLE IF NOT EXISTS fixed_asset_impairments (
-          id INTEGER PRIMARY KEY AUTOINCREMENT,
-          asset_id INTEGER NOT NULL,
-          period TEXT NOT NULL,
-          amount REAL NOT NULL,
-          voucher_id INTEGER NOT NULL,
-          created_at TEXT DEFAULT CURRENT_TIMESTAMP,
-          FOREIGN KEY (asset_id) REFERENCES fixed_assets(id),
-          FOREIGN KEY (voucher_id) REFERENCES vouchers(id)
-        );
-
-        CREATE TABLE IF NOT EXISTS cip_projects (
-          id INTEGER PRIMARY KEY AUTOINCREMENT,
-          name TEXT NOT NULL,
-          cost REAL NOT NULL DEFAULT 0,
-          status TEXT NOT NULL DEFAULT 'ongoing',
-          created_at TEXT DEFAULT CURRENT_TIMESTAMP
-        );
-
-        CREATE TABLE IF NOT EXISTS cip_transfers (
-          id INTEGER PRIMARY KEY AUTOINCREMENT,
-          project_id INTEGER NOT NULL,
-          asset_id INTEGER NOT NULL,
-          amount REAL NOT NULL,
-          date TEXT NOT NULL,
-          voucher_id INTEGER,
-          created_at TEXT DEFAULT CURRENT_TIMESTAMP,
-          FOREIGN KEY (project_id) REFERENCES cip_projects(id),
-          FOREIGN KEY (asset_id) REFERENCES fixed_assets(id)
-        );
-
-        CREATE TABLE IF NOT EXISTS fixed_asset_allocations (
-          id INTEGER PRIMARY KEY AUTOINCREMENT,
-          asset_id INTEGER NOT NULL,
-          dim_type TEXT NOT NULL,
-          dim_id INTEGER NOT NULL,
-          ratio REAL NOT NULL,
-          created_at TEXT DEFAULT CURRENT_TIMESTAMP,
-          UNIQUE(asset_id, dim_type, dim_id),
-          FOREIGN KEY (asset_id) REFERENCES fixed_assets(id)
-        );
-
-        CREATE TABLE IF NOT EXISTS allocation_basis_values (
-          id INTEGER PRIMARY KEY AUTOINCREMENT,
-          period TEXT NOT NULL,
-          dim_type TEXT NOT NULL,
-          dim_id INTEGER NOT NULL,
-          value REAL NOT NULL,
-          created_at TEXT DEFAULT CURRENT_TIMESTAMP,
-          UNIQUE(period, dim_type, dim_id)
-        );
-
-        CREATE TABLE IF NOT EXISTS companies (
-          id INTEGER PRIMARY KEY AUTOINCREMENT,
-          code TEXT NOT NULL UNIQUE,
-          name TEXT NOT NULL,
-          base_currency TEXT NOT NULL,
-          is_enabled INTEGER DEFAULT 1,
-          created_at TEXT DEFAULT CURRENT_TIMESTAMP
-        );
-
-        CREATE TABLE IF NOT EXISTS ledgers (
-          id INTEGER PRIMARY KEY AUTOINCREMENT,
-          company_id INTEGER NOT NULL,
-          code TEXT NOT NULL,
-          name TEXT NOT NULL,
-          base_currency TEXT NOT NULL,
-          db_path TEXT,
-          is_enabled INTEGER DEFAULT 1,
-          created_at TEXT DEFAULT CURRENT_TIMESTAMP,
-          UNIQUE(company_id, code),
-          FOREIGN KEY (company_id) REFERENCES companies(id)
-        );
-
-        CREATE INDEX IF NOT EXISTS idx_ledgers_company ON ledgers(company_id);
-
-        CREATE TABLE IF NOT EXISTS consolidation_rules (
-          id INTEGER PRIMARY KEY AUTOINCREMENT,
-          name TEXT NOT NULL UNIQUE,
-          group_currency TEXT,
-          elimination_accounts TEXT,
-          ownership TEXT,
-          created_at TEXT DEFAULT CURRENT_TIMESTAMP
-        );
-
-        CREATE TABLE IF NOT EXISTS report_templates (
-          code TEXT PRIMARY KEY,
-          name TEXT NOT NULL,
-          fields TEXT NOT NULL,
-          formula TEXT
-        );
-
-        CREATE TABLE IF NOT EXISTS fx_rates (
-          date TEXT NOT NULL,
-          base_currency TEXT NOT NULL,
-          quote_currency TEXT NOT NULL,
-          rate REAL NOT NULL,
-          rate_type TEXT NOT NULL,
-          PRIMARY KEY (date, base_currency, quote_currency, rate_type)
-        );
-
-        CREATE INDEX IF NOT EXISTS idx_accounts_tenant ON accounts(tenant_id, org_id);
-        CREATE INDEX IF NOT EXISTS idx_dimensions_tenant ON dimensions(tenant_id, org_id);
-        CREATE INDEX IF NOT EXISTS idx_vouchers_tenant ON vouchers(tenant_id, org_id);
-        CREATE INDEX IF NOT EXISTS idx_entries_tenant ON voucher_entries(tenant_id, org_id);
-        CREATE INDEX IF NOT EXISTS idx_balances_tenant ON balances(tenant_id, org_id);
-        CREATE INDEX IF NOT EXISTS idx_periods_tenant ON periods(tenant_id, org_id);
-
-        CREATE TABLE IF NOT EXISTS audit_logs (
-          id INTEGER PRIMARY KEY AUTOINCREMENT,
-          actor_type TEXT NOT NULL,
-          actor_id TEXT NOT NULL,
-          action TEXT NOT NULL,
-          target_type TEXT,
-          target_id TEXT,
-          detail TEXT,
-          tenant_id TEXT NOT NULL,
-          org_id TEXT,
-          ip TEXT,
-          user_agent TEXT,
-          request_id TEXT NOT NULL,
-          created_at TEXT DEFAULT CURRENT_TIMESTAMP
-        );
-
-        CREATE INDEX IF NOT EXISTS idx_audit_logs_action ON audit_logs(action);
-        CREATE INDEX IF NOT EXISTS idx_audit_logs_target ON audit_logs(target_type, target_id);
-
-        CREATE TABLE IF NOT EXISTS approvals (
-          id INTEGER PRIMARY KEY AUTOINCREMENT,
-          target_type TEXT NOT NULL,
-          target_id TEXT NOT NULL,
-          status TEXT NOT NULL DEFAULT 'pending',
-          created_at TEXT DEFAULT CURRENT_TIMESTAMP,
-          UNIQUE(target_type, target_id)
-        );
-
-        CREATE TABLE IF NOT EXISTS audit_rules (
-          id INTEGER PRIMARY KEY AUTOINCREMENT,
-          code TEXT NOT NULL UNIQUE,
-          name TEXT NOT NULL,
-          rule_json TEXT NOT NULL
-        );
-        """
-    )
+    conn.executescript(SCHEMA_SQL)
