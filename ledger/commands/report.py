@@ -7,7 +7,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from ledger.database import get_db
-from ledger.reporting import generate_statements
+from ledger.reporting import generate_group_statements, generate_statements, generate_tax_report
 from ledger.utils import LedgerError, print_json
 
 
@@ -21,6 +21,12 @@ def add_parser(subparsers, parents):
         default="balance",
         help="报表引擎",
     )
+    parser.add_argument("--consolidate", action="store_true", help="生成合并报表")
+    parser.add_argument("--ledger-codes", help="账套代码列表，逗号分隔")
+    parser.add_argument("--rule", dest="rule_name", help="合并规则名称")
+    parser.add_argument("--template", dest="template_code", help="报表模板代码")
+    parser.add_argument("--group-currency", help="集团本位币")
+    parser.add_argument("--rate-date", help="汇率日期(YYYY-MM-DD)")
     parser.add_argument("--dept-id", type=int)
     parser.add_argument("--project-id", type=int)
     parser.add_argument("--customer-id", type=int)
@@ -36,6 +42,15 @@ def add_parser(subparsers, parents):
     parser.add_argument("--tax-rate", type=float, default=0.0, help="税率假设")
     parser.add_argument("--fixed-asset-life", type=float, default=0.0, help="折旧年限(年)")
     parser.add_argument("--fixed-asset-salvage", type=float, default=0.0, help="固定资产残值")
+    parser.add_argument("--tax", action="store_true", help="输出税务报表")
+    parser.add_argument("--accounting-profit", type=float, help="会计利润")
+    parser.add_argument("--prior-year-loss", type=float, default=0.0, help="以前年度亏损")
+    parser.add_argument(
+        "--taxpayer-type",
+        choices=["general", "small_scale"],
+        default="general",
+        help="纳税人类型",
+    )
     parser.set_defaults(func=run)
     return parser
 
@@ -55,14 +70,32 @@ def run(args):
         "employee_id": args.employee_id,
     }
     with get_db(args.db_path) as conn:
-        report = generate_statements(
-            conn,
-            args.period,
-            assumptions=assumptions,
-            dims=dims,
-            engine=args.engine,
-            scope=args.scope,
-        )
+        if args.consolidate:
+            ledger_codes = None
+            if args.ledger_codes:
+                ledger_codes = [
+                    code.strip()
+                    for code in args.ledger_codes.split(",")
+                    if code.strip()
+                ]
+            report = generate_group_statements(
+                conn,
+                args.period,
+                ledger_codes=ledger_codes,
+                rule_name=args.rule_name,
+                template_code=args.template_code,
+                group_currency=args.group_currency,
+                rate_date=args.rate_date,
+            )
+        else:
+            report = generate_statements(
+                conn,
+                args.period,
+                assumptions=assumptions,
+                dims=dims,
+                engine=args.engine,
+                scope=args.scope,
+            )
 
     if args.output:
         out_path = Path(args.output)

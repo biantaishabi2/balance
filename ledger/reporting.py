@@ -8,8 +8,15 @@ from typing import Any, Dict, Optional
 
 from balance import run_calc
 
+from ledger.reporting_consolidation import generate_consolidated_statements
 from ledger.reporting_engine import generate_ledger_statements
-from ledger.services import balances_for_period, build_balance_input
+from ledger.services import (
+    balances_for_period,
+    build_balance_input,
+    calculate_income_tax,
+    summarize_tax_adjustments,
+    vat_summary,
+)
 
 
 def generate_statements(
@@ -19,7 +26,12 @@ def generate_statements(
     dims: Optional[Dict[str, int]] = None,
     engine: str = "balance",
     scope: str = "all",
+    consolidation_args: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
+    if engine == "consolidation":
+        return generate_consolidated_statements(
+            conn, period, **(consolidation_args or {})
+        )
     if engine == "ledger":
         return generate_ledger_statements(conn, period, dims=dims, scope=scope)
 
@@ -55,3 +67,66 @@ def generate_statements(
     if assumptions:
         output["assumptions"] = assumptions
     return output
+
+
+def generate_group_statements(
+    conn,
+    period: str,
+    *,
+    ledger_codes: Optional[list[str]] = None,
+    rule_name: Optional[str] = None,
+    template_code: Optional[str] = None,
+    group_currency: Optional[str] = None,
+    rate_type_map: Optional[Dict[str, str]] = None,
+    rate_date: Optional[str] = None,
+) -> Dict[str, Any]:
+    return generate_consolidated_statements(
+        conn,
+        period,
+        ledger_codes=ledger_codes,
+        rule_name=rule_name,
+        template_code=template_code,
+        group_currency=group_currency,
+        rate_type_map=rate_type_map,
+        rate_date=rate_date,
+    )
+
+
+def generate_tax_report(
+    conn,
+    period: str,
+    *,
+    accounting_profit: Optional[float] = None,
+    tax_rate: float = 0.25,
+    prior_year_loss: float = 0.0,
+    taxpayer_type: str = "general",
+) -> Dict[str, Any]:
+    vat = vat_summary(conn, period, taxpayer_type=taxpayer_type)
+    adjustments_bundle = summarize_tax_adjustments(conn, period)
+    if accounting_profit is None:
+        statements = generate_ledger_statements(conn, period)
+        accounting_profit = statements["income_statement"]["net_income"]
+    income_tax = calculate_income_tax(
+        accounting_profit,
+        adjustments=adjustments_bundle["adjustments"],
+        tax_rate=tax_rate,
+        prior_year_loss=prior_year_loss,
+    )
+    temp_net = adjustments_bundle["summary"]["temporary"]["net"]
+    deferred_tax_asset = abs(temp_net * tax_rate) if temp_net < 0 else 0.0
+    deferred_tax_liability = temp_net * tax_rate if temp_net > 0 else 0.0
+    return {
+        "period": period,
+        "vat": vat,
+        "income_tax": income_tax,
+        "tax_adjustments": {
+            "summary": adjustments_bundle["summary"],
+            "items": adjustments_bundle["items"],
+        },
+        "deferred_tax": {
+            "temporary_difference": temp_net,
+            "tax_rate": round(tax_rate, 4),
+            "deferred_tax_asset": round(deferred_tax_asset, 2),
+            "deferred_tax_liability": round(deferred_tax_liability, 2),
+        },
+    }
