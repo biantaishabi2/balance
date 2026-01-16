@@ -7,7 +7,7 @@ from __future__ import annotations
 from datetime import datetime
 
 from ledger.database import get_db
-from ledger.services import add_ap_item, list_ap_items, settle_ap_item
+from ledger.services import add_ap_item, ap_aging, list_ap_items, settle_ap_item
 from ledger.utils import print_json
 
 
@@ -35,7 +35,13 @@ def add_parser(subparsers, parents):
 
     list_cmd = sub.add_parser("list", help="应付列表", parents=parents)
     list_cmd.add_argument("--status", default="open", help="状态: open/settled/all")
+    list_cmd.add_argument("--period", help="期间")
+    list_cmd.add_argument("--supplier", help="供应商维度代码")
     list_cmd.set_defaults(func=run_list)
+
+    aging_cmd = sub.add_parser("aging", help="应付账龄", parents=parents)
+    aging_cmd.add_argument("--as-of", default=_default_date(), help="截止日期")
+    aging_cmd.set_defaults(func=run_aging)
 
     return parser
 
@@ -66,5 +72,11 @@ def run_settle(args):
 
 def run_list(args):
     with get_db(args.db_path) as conn:
-        rows = list_ap_items(conn, args.status)
+        rows = list_ap_items(conn, args.status, args.period, args.supplier)
     print_json({"items": rows})
+
+
+def run_aging(args):
+    with get_db(args.db_path) as conn:
+        buckets = ap_aging(conn, args.as_of)
+    print_json({"as_of": args.as_of, "aging": buckets})

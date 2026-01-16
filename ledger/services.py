@@ -601,7 +601,7 @@ def close_period(conn, period: str) -> Dict[str, Any]:
 
     next_period = _next_period(period)
     if next_period:
-        ensure_period(conn, next_period)
+        _roll_forward_balances(conn, period, next_period)
 
     net_total = round(sum(net_by_dims.values()), 2)
     return {
@@ -611,6 +611,50 @@ def close_period(conn, period: str) -> Dict[str, Any]:
         "transfer_voucher_id": transfer_voucher_id,
         "net_income": net_total,
     }
+
+
+def _roll_forward_balances(conn, period: str, next_period: str) -> None:
+    ensure_period(conn, next_period)
+    row = conn.execute(
+        "SELECT COUNT(*) AS cnt FROM vouchers WHERE period = ?",
+        (next_period,),
+    ).fetchone()
+    if row and row["cnt"] > 0:
+        raise LedgerError("NEXT_PERIOD_HAS_VOUCHERS", f"下期已有凭证: {next_period}")
+    row = conn.execute(
+        """
+        SELECT COUNT(*) AS cnt FROM balances
+        WHERE period = ? AND (debit_amount != 0 OR credit_amount != 0)
+        """,
+        (next_period,),
+    ).fetchone()
+    if row and row["cnt"] > 0:
+        raise LedgerError("NEXT_PERIOD_HAS_BALANCES", f"下期已有发生额: {next_period}")
+
+    balances = balances_for_period(conn, period)
+    conn.execute("DELETE FROM balances WHERE period = ?", (next_period,))
+    for balance in balances:
+        closing = float(balance.get("closing_balance") or 0)
+        conn.execute(
+            """
+            INSERT INTO balances (
+              account_code, period, dept_id, project_id, customer_id, supplier_id, employee_id,
+              opening_balance, debit_amount, credit_amount, closing_balance
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, 0, ?)
+            """,
+            (
+                balance["account_code"],
+                next_period,
+                balance.get("dept_id") or 0,
+                balance.get("project_id") or 0,
+                balance.get("customer_id") or 0,
+                balance.get("supplier_id") or 0,
+                balance.get("employee_id") or 0,
+                closing,
+                closing,
+            ),
+        )
 
 
 def reopen_period(conn, period: str) -> Dict[str, Any]:
@@ -938,15 +982,33 @@ def settle_ar_item(
     }
 
 
-def list_ar_items(conn, status: Optional[str] = None) -> List[Dict[str, Any]]:
+def list_ar_items(
+    conn,
+    status: Optional[str] = None,
+    period: Optional[str] = None,
+    customer_code: Optional[str] = None,
+) -> List[Dict[str, Any]]:
     conditions: List[str] = []
     params: List[Any] = []
     if status and status != "all":
-        conditions.append("status = ?")
+        conditions.append("ai.status = ?")
         params.append(status)
+    if period:
+        conditions.append("v.period = ?")
+        params.append(period)
+    if customer_code:
+        customer_id = find_dimension(conn, "customer", customer_code)
+        conditions.append("ai.customer_id = ?")
+        params.append(customer_id)
     where_clause = f"WHERE {' AND '.join(conditions)}" if conditions else ""
     rows = conn.execute(
-        f"SELECT * FROM ar_items {where_clause} ORDER BY id",
+        f"""
+        SELECT ai.*, v.date AS voucher_date, v.period AS period
+        FROM ar_items ai
+        JOIN vouchers v ON ai.voucher_id = v.id
+        {where_clause}
+        ORDER BY ai.id
+        """,
         params,
     ).fetchall()
     return [dict(row) for row in rows]
@@ -1059,18 +1121,63 @@ def settle_ap_item(
     }
 
 
-def list_ap_items(conn, status: Optional[str] = None) -> List[Dict[str, Any]]:
+def list_ap_items(
+    conn,
+    status: Optional[str] = None,
+    period: Optional[str] = None,
+    supplier_code: Optional[str] = None,
+) -> List[Dict[str, Any]]:
     conditions: List[str] = []
     params: List[Any] = []
     if status and status != "all":
-        conditions.append("status = ?")
+        conditions.append("ai.status = ?")
         params.append(status)
+    if period:
+        conditions.append("v.period = ?")
+        params.append(period)
+    if supplier_code:
+        supplier_id = find_dimension(conn, "supplier", supplier_code)
+        conditions.append("ai.supplier_id = ?")
+        params.append(supplier_id)
     where_clause = f"WHERE {' AND '.join(conditions)}" if conditions else ""
     rows = conn.execute(
-        f"SELECT * FROM ap_items {where_clause} ORDER BY id",
+        f"""
+        SELECT ai.*, v.date AS voucher_date, v.period AS period
+        FROM ap_items ai
+        JOIN vouchers v ON ai.voucher_id = v.id
+        {where_clause}
+        ORDER BY ai.id
+        """,
         params,
     ).fetchall()
     return [dict(row) for row in rows]
+
+
+def ap_aging(conn, as_of: str) -> Dict[str, float]:
+    rows = conn.execute(
+        """
+        SELECT ai.amount, ai.settled_amount, v.date
+        FROM ap_items ai
+        JOIN vouchers v ON ai.voucher_id = v.id
+        WHERE ai.status = 'open'
+        """
+    ).fetchall()
+    buckets = {"0_30": 0.0, "31_60": 0.0, "61_90": 0.0, "90_plus": 0.0}
+    as_of_date = datetime.strptime(as_of, "%Y-%m-%d")
+    for row in rows:
+        remaining = float(row["amount"]) - float(row["settled_amount"] or 0)
+        if remaining <= 0:
+            continue
+        delta = (as_of_date - datetime.strptime(row["date"], "%Y-%m-%d")).days
+        if delta <= 30:
+            buckets["0_30"] += remaining
+        elif delta <= 60:
+            buckets["31_60"] += remaining
+        elif delta <= 90:
+            buckets["61_90"] += remaining
+        else:
+            buckets["90_plus"] += remaining
+    return {k: round(v, 2) for k, v in buckets.items()}
 
 
 def _get_inventory_item(conn, sku: str) -> Optional[Dict[str, Any]]:

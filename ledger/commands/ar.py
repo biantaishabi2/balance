@@ -35,6 +35,8 @@ def add_parser(subparsers, parents):
 
     list_cmd = sub.add_parser("list", help="应收列表", parents=parents)
     list_cmd.add_argument("--status", default="open", help="状态: open/settled/all")
+    list_cmd.add_argument("--period", help="期间")
+    list_cmd.add_argument("--customer", help="客户维度代码")
     list_cmd.set_defaults(func=run_list)
 
     aging_cmd = sub.add_parser("aging", help="应收账龄", parents=parents)
@@ -70,7 +72,7 @@ def run_settle(args):
 
 def run_list(args):
     with get_db(args.db_path) as conn:
-        rows = list_ar_items(conn, args.status)
+        rows = list_ar_items(conn, args.status, args.period, args.customer)
     print_json({"items": rows})
 
 
