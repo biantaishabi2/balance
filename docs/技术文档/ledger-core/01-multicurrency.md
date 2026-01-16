@@ -37,6 +37,7 @@ feature
   - `base_currency`: 本位币代码（默认 CNY）
   - `fx_gain_account`: 汇兑收益科目（如 6051）
   - `fx_loss_account`: 汇兑损失科目（如 6603）
+  - `revaluable_accounts`: 可重估科目列表（或通过科目属性标记）
 - 新增币种表：`currencies(code, name, symbol, precision, is_active)`
 - 新增汇率表：`exchange_rates(currency, date, rate, source)`
 
@@ -49,6 +50,13 @@ feature
 - 外币分录录入规则：
   - 若传入 `fx_rate`，直接折算
   - 否则根据 `date` 从 `exchange_rates` 取数
+
+### 2.1 汇率类型与舍入
+- `rate_type` 建议支持：`spot`/`closing`/`average`
+- 录入凭证默认用 `spot`，期末重估用 `closing`
+- 舍入规则：
+  - 汇率保留 6 位小数
+  - 金额保留 2 位小数（四舍五入）
 
 ### 3. 余额与外币余额
 - 现有 `balances` 继续保存本位币余额
@@ -102,20 +110,22 @@ ledger init --db-path /tmp/ledger_fx.db
 ```
 
 ### TC-FX-01: 外币凭证录入
-- **操作**：录入 USD 外币凭证（含 fx_rate）
-- **预期**：本位币与外币余额同步更新
+- **操作**：录入 USD 外币凭证（fx_rate=7.0）
+  - 借：应收账款 100 USD（本位币 700）
+  - 贷：主营业务收入 100 USD（本位币 700）
+- **预期**：本位币余额更新 700；外币余额更新 100
 
 ### TC-FX-02: 汇率自动取数
-- **操作**：先写入汇率，再录入外币凭证不传 fx_rate
-- **预期**：自动折算且凭证平衡
+- **操作**：先写入 2025-01-10 USD 汇率=7.1，再录入外币凭证不传 fx_rate
+- **预期**：自动折算为 7.1，凭证平衡
 
 ### TC-FX-03: 外币余额查询
 - **操作**：`ledger fx balance --period 2025-01`
 - **预期**：外币余额与凭证一致
 
 ### TC-FX-04: 期末汇兑重估
-- **操作**：写入期末汇率并执行重估
-- **预期**：生成汇兑损益凭证
+- **操作**：期末汇率 7.2，外币余额 100 USD，本位币余额 700
+- **预期**：重估差额 20，生成汇兑损益凭证
 
 ### TC-FX-05: 结账后口径
 - **操作**：重估后结账

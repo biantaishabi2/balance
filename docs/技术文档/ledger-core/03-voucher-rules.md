@@ -36,6 +36,12 @@ feature
   - `lines`: [{`account`, `debit`, `credit`, `dims`, `description`}] 
   - `formula`: 支持基础表达式（金额、比例、取反）
 
+### 1.1 表达式语法与边界
+- 变量：`amount`/`qty`/`rate`/`tax`
+- 运算：`+ - * / ( )`
+- 函数：`round(x, n)`、`abs(x)`
+- 禁止任意代码执行与外部函数
+
 ### 2. 规则引擎
 - 输入：`event_type` + `payload`
 - 输出：凭证 JSON（与现有 `record` 结构一致）
@@ -85,8 +91,8 @@ ledger init --db-path /tmp/ledger_template.db
 - **预期**：模板可读写
 
 ### TC-TPL-02: 自动凭证生成
-- **操作**：`ledger auto --template cash_in` + payload
-- **预期**：生成凭证并记账
+- **操作**：`ledger auto --template cash_in` + `{"amount":100}`
+- **预期**：生成凭证，借贷均为 100
 
 ### TC-TPL-03: 模板禁用
 - **操作**：禁用后再次调用

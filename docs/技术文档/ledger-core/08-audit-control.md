@@ -29,8 +29,13 @@ feature
 
 ### 1. 操作日志
 - `audit_logs`：
-  - `id, actor, action, target_type, target_id, detail, created_at`
+  - `id, actor_type, actor_id, action, target_type, target_id, detail, tenant_id, org_id, ip, user_agent, request_id, created_at`
 - 关键操作均写日志
+- `actor_type` 取值：`user` / `system` / `integration`
+- 事件模型：
+  - `voucher.create` / `voucher.post` / `voucher.void`
+  - `period.close` / `period.reopen`
+  - `ledger.delete`
 
 ### 2. 审批流
 - `approvals`：
@@ -69,7 +74,9 @@ ledger init --db-path /tmp/ledger_audit.db
 
 ### TC-AUDIT-01: 操作日志
 - **操作**：录入凭证、结账
-- **预期**：audit_logs 有记录
+- **预期**：
+  - `audit_logs` 有记录
+  - `actor_type/actor_id/request_id/tenant_id` 非空
 
 ### TC-AUDIT-02: 审批流
 - **操作**：提交审批并通过
