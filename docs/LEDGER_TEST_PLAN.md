@@ -170,9 +170,11 @@ ledger reopen --period 2025-01
 
 - [ ] 币种新增/查询可用（`ledger fx currency add/list`）
 - [ ] 汇率新增/查询可用（`ledger fx rate add/list`）
+- [ ] 汇率支持 `spot/avg/closing` 类型取数
 - [ ] 外币凭证可录入并折算本位币
 - [ ] 外币余额可查询（`ledger fx balance`）
 - [ ] 期末汇兑重估生成凭证（`ledger fx revalue`）
+- [ ] `revaluable_accounts` 生效，仅重估指定科目
 
 ---
 
@@ -182,6 +184,7 @@ ledger reopen --period 2025-01
 - [ ] `adjustment` 期间拒绝 `normal` 凭证
 - [ ] 调整凭证影响本期余额并按规则滚动下期
 - [ ] `ledger close --template` 使用模板生成结转凭证
+- [ ] 报表支持 normal/adjustment/all 口径输出
 
 ---
 
@@ -190,7 +193,9 @@ ledger reopen --period 2025-01
 - [ ] 模板新增/禁用/列表（`ledger template add/list/disable`）
 - [ ] `ledger auto --template` 生成平衡凭证
 - [ ] 表达式变量/函数校验（非法表达式返回错误）
+- [ ] 条件表达式 `if` 生效
 - [ ] 模板禁用后调用返回 `TEMPLATE_DISABLED`
+- [ ] 同一 `event_id` 幂等返回同一凭证
 
 ## 子账模块
 
@@ -256,6 +261,7 @@ ledger fixed-asset dispose --asset-id 1
 - [ ] 票据登记与结清生成凭证
 - [ ] 坏账计提凭证生成
 - [ ] 坏账冲回凭证生成
+- [ ] 子账科目映射配置生效
 
 ### 存货高级
 
@@ -264,6 +270,7 @@ ledger fixed-asset dispose --asset-id 1
 - [ ] 盘点差异生成盘盈/盘亏凭证
 - [ ] 负库存策略为 reject/allow 可配置
 - [ ] 负库存允许路径生成成本调整凭证并清理 pending
+- [ ] 序列号出入库可追溯
 
 ### 固定资产扩展
 
@@ -272,6 +279,7 @@ ledger fixed-asset dispose --asset-id 1
 - [ ] 在建工程转固凭证生成
 - [ ] 在建工程支持部分转固与状态更新
 - [ ] 折旧按维度分摊
+- [ ] 固定资产业务映射配置生效
 
 ---
 

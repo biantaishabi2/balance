@@ -63,6 +63,13 @@ feature
   - 常用口径：面积/人数/收入
   - 分摊维度优先级：department → project → customer → supplier → employee
 
+### 5. 子账科目映射
+- 固定资产业务科目映射通过 `data/subledger_mapping.json` 配置
+- 关键键位：
+  - `fixed_asset.asset_account` / `fixed_asset.accum_depreciation_account`
+  - `fixed_asset.depreciation_expense_account` / `fixed_asset.cip_account`
+  - `fixed_asset.impairment_loss_account` / `fixed_asset.impairment_reserve_account`
+
 ## 方案差异（相对现状）
 - 从“折旧为主”升级为“全生命周期管理”
 
@@ -121,6 +128,10 @@ ledger init --db-path /tmp/ledger_fa.db
   2) 成本中心 A:60，B:40
 - **预期**：
   - 分摊凭证：借“制造费用(A)”6,000，借“制造费用(B)”4,000，贷“累计折旧”10,000
+
+### TC-FA-05: 映射配置生效
+- **操作**：调整固定资产映射科目后生成折旧/减值凭证
+- **预期**：分录科目按新映射落账
 
 ## 备注
 - 成本中心可使用现有维度（department/project）

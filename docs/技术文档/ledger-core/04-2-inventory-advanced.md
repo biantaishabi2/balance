@@ -23,9 +23,8 @@ feature
 - 支持多种成本法
 - 盘点差异可入账
 
-## 当前问题（需要解决）
-- 只有汇总库存，无仓库与批次
-- 成本法固定为移动平均
+## 当前问题（部分已解决）
+- 序列号追溯尚未落地
 
 ## 核心设计
 
@@ -37,6 +36,9 @@ feature
 ### 2. 批次/序列号
 - `inventory_batches(id, sku, batch_no, qty, cost, status)`
 - 入库生成批次，出库消耗批次
+- 序列号追溯：
+  - `inventory_serials(serial_no, sku, status, move_in_id, move_out_id, warehouse_id, location_id)`
+  - 入库登记序列号，出库时校验并占用
 
 ### 3. 盘点
 - `inventory_counts(id, sku, warehouse_id, counted_qty, book_qty, diff_qty)`
@@ -57,13 +59,17 @@ feature
 - `allow`：按最近一次有效成本出库，记录负数部分 `pending_cost_adjustment` 待后续入库冲回
 - 负库存被入库覆盖时，按实际入库成本与预估成本差额生成“负库存成本调整”凭证并清理 `pending_cost_adjustment`
 
+### 6. 子账科目映射
+- 存货科目映射通过 `data/subledger_mapping.json` 配置
+- 关键键位：`inventory.inventory_account` / `inventory.cost_account` / `inventory.offset_account`
+
 ## 方案差异（相对现状）
 - 从“汇总库存”升级为“仓库/批次/盘点”
 - 从“移动平均”升级为“多成本法”
 
 ## 落地步骤与测试（统一版）
 
-0. **仓库与批次（已完成）**
+0. **仓库/批次（已完成）**
    - 做什么：新增仓库、批次表
    - 测试：入库生成批次
 
@@ -78,6 +84,10 @@ feature
 3. **负库存策略（已完成）**
    - 做什么：配置负库存策略，允许路径在入库时生成调整凭证并清理 pending
    - 测试：拒绝/允许路径符合预期
+
+4. **序列号追溯（待做）**
+   - 做什么：入库登记序列号并在出库时校验/占用
+   - 测试：序列号出入库状态可追溯
 
 ## 可执行测试用例
 
@@ -123,6 +133,10 @@ ledger init --db-path /tmp/ledger_inventory.db
   - `reject`：报错并拒绝出库
   - `allow`：按最近成本出库并记录 `pending_cost_adjustment`
   - 入库后生成“负库存成本调整”凭证，库存数量与金额归零
+
+### TC-INV-05: 序列号追溯
+- **操作**：入库登记序列号 SN001/SN002，出库指定 SN001
+- **预期**：SN001 状态为已出库且关联出库记录，SN002 仍在库
 
 ## 备注
 - 成本法切换需限定期间与库存状态
