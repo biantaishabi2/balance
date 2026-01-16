@@ -7,7 +7,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from ledger.database import get_db
-from ledger.reporting import generate_statements
+from ledger.reporting import generate_group_statements, generate_statements
 from ledger.utils import LedgerError, print_json
 
 
@@ -21,6 +21,12 @@ def add_parser(subparsers, parents):
         default="balance",
         help="报表引擎",
     )
+    parser.add_argument("--consolidate", action="store_true", help="生成合并报表")
+    parser.add_argument("--ledger-codes", help="账套代码列表，逗号分隔")
+    parser.add_argument("--rule", dest="rule_name", help="合并规则名称")
+    parser.add_argument("--template", dest="template_code", help="报表模板代码")
+    parser.add_argument("--group-currency", help="集团本位币")
+    parser.add_argument("--rate-date", help="汇率日期(YYYY-MM-DD)")
     parser.add_argument("--dept-id", type=int)
     parser.add_argument("--project-id", type=int)
     parser.add_argument("--customer-id", type=int)
@@ -49,13 +55,31 @@ def run(args):
         "employee_id": args.employee_id,
     }
     with get_db(args.db_path) as conn:
-        report = generate_statements(
-            conn,
-            args.period,
-            assumptions=assumptions,
-            dims=dims,
-            engine=args.engine,
-        )
+        if args.consolidate:
+            ledger_codes = None
+            if args.ledger_codes:
+                ledger_codes = [
+                    code.strip()
+                    for code in args.ledger_codes.split(",")
+                    if code.strip()
+                ]
+            report = generate_group_statements(
+                conn,
+                args.period,
+                ledger_codes=ledger_codes,
+                rule_name=args.rule_name,
+                template_code=args.template_code,
+                group_currency=args.group_currency,
+                rate_date=args.rate_date,
+            )
+        else:
+            report = generate_statements(
+                conn,
+                args.period,
+                assumptions=assumptions,
+                dims=dims,
+                engine=args.engine,
+            )
 
     if args.output:
         out_path = Path(args.output)

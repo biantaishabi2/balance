@@ -43,12 +43,3 @@ feature
 
 ## Notes
 详细设计见 `docs/技术文档/ledger-core/07-reporting-consolidation.md`
-
-## Progress
-- ✅ 合并报表与折算规则落地
-- ✅ 内部抵销规则支持
-- ✅ 报表模板输出支持
-- ✅ 自动化测试覆盖 TC-CON-01 ~ TC-CON-03
-
-## Next
-- 无（本阶段完成）

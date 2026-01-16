@@ -244,6 +244,55 @@ CREATE TABLE IF NOT EXISTS periods (
 );
 
 CREATE INDEX IF NOT EXISTS idx_periods_status ON periods(status);
+
+CREATE TABLE IF NOT EXISTS companies (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  code TEXT NOT NULL UNIQUE,
+  name TEXT NOT NULL,
+  base_currency TEXT NOT NULL,
+  is_enabled INTEGER DEFAULT 1,
+  created_at TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS ledgers (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  company_id INTEGER NOT NULL,
+  code TEXT NOT NULL,
+  name TEXT NOT NULL,
+  base_currency TEXT NOT NULL,
+  db_path TEXT,
+  is_enabled INTEGER DEFAULT 1,
+  created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE(company_id, code),
+  FOREIGN KEY (company_id) REFERENCES companies(id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_ledgers_company ON ledgers(company_id);
+
+CREATE TABLE IF NOT EXISTS consolidation_rules (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  name TEXT NOT NULL UNIQUE,
+  group_currency TEXT,
+  elimination_accounts TEXT,
+  ownership TEXT,
+  created_at TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS report_templates (
+  code TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  fields TEXT NOT NULL,
+  formula TEXT
+);
+
+CREATE TABLE IF NOT EXISTS fx_rates (
+  date TEXT NOT NULL,
+  base_currency TEXT NOT NULL,
+  quote_currency TEXT NOT NULL,
+  rate REAL NOT NULL,
+  rate_type TEXT NOT NULL,
+  PRIMARY KEY (date, base_currency, quote_currency, rate_type)
+);
 """
 
 
