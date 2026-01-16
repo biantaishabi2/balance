@@ -735,11 +735,15 @@ def build_entries(
             "supplier_id": None,
             "employee_id": None,
         }
+        for dim_field in dims:
+            if dim_field in entry and entry[dim_field] is not None:
+                dims[dim_field] = int(entry[dim_field])
         for key, dim_type in DIMENSION_FIELDS.items():
             code = entry.get(key)
-            if code:
+            dim_field = f"{key}_id" if key != "department" else "dept_id"
+            if code and dims[dim_field] is None:
                 dim_id = find_dimension(conn, dim_type, code)
-                dims[f"{key}_id" if key != "department" else "dept_id"] = dim_id
+                dims[dim_field] = dim_id
 
         entries.append(
             {
@@ -1135,11 +1139,7 @@ def _budget_dim_from_entry(entry: Dict[str, Any]) -> Tuple[Optional[str], Option
     return None, None
 
 
-def _apply_budget_controls(conn, voucher_id: int, period: str) -> List[Dict[str, Any]]:
-    config = _load_budget_config()
-    mode = (config.get("mode") or "warn").lower()
-    if mode not in {"warn", "block"}:
-        return []
+def _budget_entries(conn, voucher_id: int) -> List[Tuple[str, int, float]]:
     rows = conn.execute(
         """
         SELECT ve.*, a.type AS account_type
@@ -1149,7 +1149,7 @@ def _apply_budget_controls(conn, voucher_id: int, period: str) -> List[Dict[str,
         """,
         (voucher_id,),
     ).fetchall()
-    warnings: List[Dict[str, Any]] = []
+    entries: List[Tuple[str, int, float]] = []
     for row in rows:
         if row["account_type"] != "expense":
             continue
@@ -1157,63 +1157,248 @@ def _apply_budget_controls(conn, voucher_id: int, period: str) -> List[Dict[str,
         if abs(amount) < 0.01:
             continue
         dim_type, dim_id = _budget_dim_from_entry(row)
-        if not dim_type:
+        if not dim_type or not dim_id:
             continue
-        budget_row = conn.execute(
+        entries.append((dim_type, dim_id, amount))
+    return entries
+
+
+def _fetch_budget_amount(
+    conn, period: str, dim_type: str, dim_id: int
+) -> Optional[float]:
+    budget_row = conn.execute(
+        """
+        SELECT amount FROM budgets
+        WHERE period = ? AND dim_type = ? AND dim_id = ?
+        """,
+        (period, dim_type, dim_id),
+    ).fetchone()
+    if not budget_row:
+        return None
+    return float(budget_row["amount"] or 0)
+
+
+def _ensure_budget_control_row(
+    conn, period: str, dim_type: str, dim_id: int
+) -> Dict[str, Any]:
+    ctrl_row = conn.execute(
+        """
+        SELECT id, used_amount, locked_amount FROM budget_controls
+        WHERE period = ? AND dim_type = ? AND dim_id = ?
+        """,
+        (period, dim_type, dim_id),
+    ).fetchone()
+    if not ctrl_row:
+        conn.execute(
             """
-            SELECT amount FROM budgets
-            WHERE period = ? AND dim_type = ? AND dim_id = ?
+            INSERT INTO budget_controls (period, dim_type, dim_id, used_amount, locked_amount)
+            VALUES (?, ?, ?, 0, 0)
             """,
             (period, dim_type, dim_id),
-        ).fetchone()
-        if not budget_row:
-            continue
-        budget_amount = float(budget_row["amount"] or 0)
+        )
         ctrl_row = conn.execute(
             """
-            SELECT id, used_amount FROM budget_controls
+            SELECT id, used_amount, locked_amount FROM budget_controls
             WHERE period = ? AND dim_type = ? AND dim_id = ?
             """,
             (period, dim_type, dim_id),
         ).fetchone()
-        if not ctrl_row:
-            conn.execute(
-                """
-                INSERT INTO budget_controls (period, dim_type, dim_id, used_amount, locked_amount)
-                VALUES (?, ?, ?, 0, 0)
-                """,
-                (period, dim_type, dim_id),
-            )
-            ctrl_row = conn.execute(
-                """
-                SELECT id, used_amount FROM budget_controls
-                WHERE period = ? AND dim_type = ? AND dim_id = ?
-                """,
-                (period, dim_type, dim_id),
-            ).fetchone()
-        used_amount = float(ctrl_row["used_amount"] or 0)
-        new_used = used_amount + amount
-        if new_used < 0:
-            new_used = 0.0
-        if amount > 0 and new_used - budget_amount > 0.01:
+    return dict(ctrl_row)
+
+
+def _apply_budget_delta(
+    conn,
+    period: str,
+    dim_type: str,
+    dim_id: int,
+    amount: float,
+    delta_used: float,
+    delta_locked: float,
+    mode: str,
+    check: bool,
+    warnings: List[Dict[str, Any]],
+) -> bool:
+    budget_amount = _fetch_budget_amount(conn, period, dim_type, dim_id)
+    if budget_amount is None:
+        return False
+    ctrl_row = _ensure_budget_control_row(conn, period, dim_type, dim_id)
+    used_amount = float(ctrl_row["used_amount"] or 0)
+    locked_amount = float(ctrl_row["locked_amount"] or 0)
+    new_used = used_amount + delta_used
+    new_locked = locked_amount + delta_locked
+    if new_used < 0:
+        new_used = 0.0
+    if new_locked < 0:
+        new_locked = 0.0
+    if check and amount > 0 and mode in {"warn", "block"}:
+        projected_total = new_used + new_locked
+        if projected_total - budget_amount > 0.01:
             warning = {
                 "dim_type": dim_type,
                 "dim_id": dim_id,
                 "budget": round(budget_amount, 2),
                 "used": round(new_used, 2),
-                "exceeded": round(new_used - budget_amount, 2),
+                "exceeded": round(projected_total - budget_amount, 2),
             }
             if mode == "block":
                 raise LedgerError("BUDGET_EXCEEDED", "超预算")
             warnings.append(warning)
+    conn.execute(
+        """
+        UPDATE budget_controls
+        SET used_amount = ?, locked_amount = ?, updated_at = CURRENT_TIMESTAMP
+        WHERE id = ?
+        """,
+        (round(new_used, 2), round(new_locked, 2), ctrl_row["id"]),
+    )
+    return True
+
+
+def _load_budget_locks(conn, voucher_id: int) -> List[Tuple[str, int, float]]:
+    rows = conn.execute(
+        """
+        SELECT dim_type, dim_id, amount
+        FROM budget_locks
+        WHERE voucher_id = ?
+        """,
+        (voucher_id,),
+    ).fetchall()
+    return [(row["dim_type"], int(row["dim_id"]), float(row["amount"] or 0)) for row in rows]
+
+
+def _store_budget_locks(
+    conn,
+    voucher_id: int,
+    period: str,
+    entries: List[Tuple[str, int, float]],
+) -> None:
+    conn.execute("DELETE FROM budget_locks WHERE voucher_id = ?", (voucher_id,))
+    for dim_type, dim_id, amount in entries:
         conn.execute(
             """
-            UPDATE budget_controls SET used_amount = ?, updated_at = CURRENT_TIMESTAMP
-            WHERE id = ?
+            INSERT OR REPLACE INTO budget_locks (voucher_id, period, dim_type, dim_id, amount)
+            VALUES (?, ?, ?, ?, ?)
             """,
-            (round(new_used, 2), ctrl_row["id"]),
+            (voucher_id, period, dim_type, dim_id, round(amount, 2)),
+        )
+
+
+def _apply_budget_freeze(conn, voucher_id: int, period: str) -> List[Dict[str, Any]]:
+    config = _load_budget_config()
+    mode = (config.get("mode") or "warn").lower()
+    if mode not in {"warn", "block"}:
+        return []
+    entries = _budget_entries(conn, voucher_id)
+    warnings: List[Dict[str, Any]] = []
+    locked_entries: List[Tuple[str, int, float]] = []
+    for dim_type, dim_id, amount in entries:
+        applied = _apply_budget_delta(
+            conn,
+            period,
+            dim_type,
+            dim_id,
+            amount,
+            0.0,
+            amount,
+            mode,
+            True,
+            warnings,
+        )
+        if applied:
+            locked_entries.append((dim_type, dim_id, amount))
+    if locked_entries:
+        _store_budget_locks(conn, voucher_id, period, locked_entries)
+    return warnings
+
+
+def _apply_budget_release(conn, voucher_id: int, period: str) -> None:
+    entries = _load_budget_locks(conn, voucher_id)
+    if not entries:
+        return
+    config = _load_budget_config()
+    mode = (config.get("mode") or "warn").lower()
+    if mode not in {"warn", "block"}:
+        conn.execute("DELETE FROM budget_locks WHERE voucher_id = ?", (voucher_id,))
+        return
+    warnings: List[Dict[str, Any]] = []
+    for dim_type, dim_id, amount in entries:
+        _apply_budget_delta(
+            conn,
+            period,
+            dim_type,
+            dim_id,
+            amount,
+            0.0,
+            -amount,
+            mode,
+            False,
+            warnings,
+        )
+    conn.execute("DELETE FROM budget_locks WHERE voucher_id = ?", (voucher_id,))
+
+
+def _apply_budget_confirm(conn, voucher_id: int, period: str) -> List[Dict[str, Any]]:
+    config = _load_budget_config()
+    mode = (config.get("mode") or "warn").lower()
+    if mode not in {"warn", "block"}:
+        return []
+    locked_entries = _load_budget_locks(conn, voucher_id)
+    warnings: List[Dict[str, Any]] = []
+    if locked_entries:
+        for dim_type, dim_id, amount in locked_entries:
+            _apply_budget_delta(
+                conn,
+                period,
+                dim_type,
+                dim_id,
+                amount,
+                amount,
+                -amount,
+                mode,
+                True,
+                warnings,
+            )
+        conn.execute("DELETE FROM budget_locks WHERE voucher_id = ?", (voucher_id,))
+        return warnings
+
+    entries = _budget_entries(conn, voucher_id)
+    for dim_type, dim_id, amount in entries:
+        _apply_budget_delta(
+            conn,
+            period,
+            dim_type,
+            dim_id,
+            amount,
+            amount,
+            0.0,
+            mode,
+            True,
+            warnings,
         )
     return warnings
+
+
+def _apply_budget_void(conn, voucher_id: int, period: str) -> None:
+    config = _load_budget_config()
+    mode = (config.get("mode") or "warn").lower()
+    if mode not in {"warn", "block"}:
+        return
+    entries = _budget_entries(conn, voucher_id)
+    warnings: List[Dict[str, Any]] = []
+    for dim_type, dim_id, amount in entries:
+        _apply_budget_delta(
+            conn,
+            period,
+            dim_type,
+            dim_id,
+            amount,
+            -amount,
+            0.0,
+            mode,
+            False,
+            warnings,
+        )
+    conn.execute("DELETE FROM budget_locks WHERE voucher_id = ?", (voucher_id,))
 
 
 def review_voucher(conn, voucher_id: int) -> Dict[str, Any]:
@@ -1222,6 +1407,7 @@ def review_voucher(conn, voucher_id: int) -> Dict[str, Any]:
         raise LedgerError("VOUCHER_NOT_FOUND", f"凭证不存在: {voucher_id}")
     if voucher["status"] != "draft":
         raise LedgerError("VOUCHER_STATUS_INVALID", "仅草稿凭证可审核")
+    budget_warnings = _apply_budget_freeze(conn, voucher_id, voucher["period"])
     reviewed_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     conn.execute(
         "UPDATE vouchers SET status = 'reviewed', reviewed_at = ? WHERE id = ?",
@@ -1230,6 +1416,8 @@ def review_voucher(conn, voucher_id: int) -> Dict[str, Any]:
     voucher["status"] = "reviewed"
     voucher["reviewed_at"] = reviewed_at
     request_approval(conn, "voucher", voucher_id)
+    if budget_warnings:
+        voucher["budget_warnings"] = budget_warnings
     return voucher
 
 
@@ -1239,6 +1427,7 @@ def unreview_voucher(conn, voucher_id: int) -> Dict[str, Any]:
         raise LedgerError("VOUCHER_NOT_FOUND", f"凭证不存在: {voucher_id}")
     if voucher["status"] != "reviewed":
         raise LedgerError("VOUCHER_STATUS_INVALID", "仅已审核凭证可反审核")
+    _apply_budget_release(conn, voucher_id, voucher["period"])
     conn.execute(
         "UPDATE vouchers SET status = 'draft', reviewed_at = NULL WHERE id = ?",
         (voucher_id,),
@@ -1270,7 +1459,7 @@ def confirm_voucher(conn, voucher_id: int) -> Dict[str, Any]:
             },
         )
 
-    budget_warnings = _apply_budget_controls(conn, voucher_id, voucher["period"])
+    budget_warnings = _apply_budget_confirm(conn, voucher_id, voucher["period"])
     confirmed_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     conn.execute(
         "UPDATE vouchers SET status = 'confirmed', confirmed_at = ? WHERE id = ?",
@@ -1297,6 +1486,8 @@ def confirm_voucher(conn, voucher_id: int) -> Dict[str, Any]:
     )
     if voucher.get("entry_type") == "adjustment":
         _apply_adjustment_rollforward(conn, voucher["period"])
+    if budget_warnings:
+        voucher["budget_warnings"] = budget_warnings
     return voucher
 
 
@@ -1307,6 +1498,7 @@ def void_voucher(conn, voucher_id: int, reason: str) -> Dict[str, Any]:
     if voucher["status"] != "confirmed":
         raise LedgerError("VOUCHER_NOT_CONFIRMED", "仅已确认凭证可冲销")
 
+    _apply_budget_void(conn, voucher_id, voucher["period"])
     entries = fetch_entries(conn, voucher_id)
     reversed_entries = []
     for entry in entries:
@@ -4538,6 +4730,54 @@ def list_allocation_rules(conn) -> List[Dict[str, Any]]:
     return rules
 
 
+def _allocation_basis_dim_type(dim_type: str) -> str:
+    base_type = dim_type.split("_", 1)[0]
+    if base_type not in {"department", "project", "customer", "supplier", "employee"}:
+        raise LedgerError("ALLOCATION_BASIS_DIM_INVALID", "分摊基础维度无效")
+    return base_type
+
+
+def set_allocation_basis_value(
+    conn, period: str, dim_type: str, dim_code: str, value: float
+) -> Dict[str, Any]:
+    if value < 0:
+        raise LedgerError("ALLOCATION_BASIS_VALUE_INVALID", "分摊基础值无效")
+    base_type = _allocation_basis_dim_type(dim_type)
+    dim_id = find_dimension(conn, base_type, dim_code)
+    conn.execute(
+        """
+        INSERT OR REPLACE INTO allocation_basis_values (period, dim_type, dim_id, value)
+        VALUES (?, ?, ?, ?)
+        """,
+        (period, dim_type, dim_id, round(value, 2)),
+    )
+    return {
+        "period": period,
+        "dim_type": dim_type,
+        "dim_id": dim_id,
+        "value": round(value, 2),
+    }
+
+
+def list_allocation_basis_values(
+    conn, period: Optional[str] = None, dim_type: Optional[str] = None
+) -> List[Dict[str, Any]]:
+    conditions: List[str] = []
+    params: List[Any] = []
+    if period:
+        conditions.append("period = ?")
+        params.append(period)
+    if dim_type:
+        conditions.append("dim_type = ?")
+        params.append(dim_type)
+    where_clause = f"WHERE {' AND '.join(conditions)}" if conditions else ""
+    rows = conn.execute(
+        f"SELECT * FROM allocation_basis_values {where_clause} ORDER BY period, dim_type, dim_id",
+        params,
+    ).fetchall()
+    return [dict(row) for row in rows]
+
+
 def _allocation_basis_ratios(
     conn, period: str, target_dim: str, basis: str, rule_id: int
 ) -> List[Tuple[int, float]]:
@@ -4614,7 +4854,7 @@ def run_allocation(
     description = description or f"Allocation {rule['name']} {period}"
     for account_code in source_accounts:
         amount_row = conn.execute(
-            f"""
+            """
             SELECT COALESCE(SUM(debit_amount - credit_amount), 0) AS total
             FROM balances
             WHERE period = ? AND account_code = ?
@@ -4759,7 +4999,6 @@ def budget_variance(
         "actual": round(actual, 2),
         "variance": round(budget - actual, 2),
     }
-
 
 def _normalize_invoice_type(value: str) -> str:
     if not value:

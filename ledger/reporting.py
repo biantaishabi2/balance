@@ -12,6 +12,7 @@ from ledger.reporting_consolidation import generate_consolidated_statements
 from ledger.reporting_engine import generate_ledger_statements
 from ledger.services import (
     balances_for_period,
+    budget_variance,
     build_balance_input,
     calculate_income_tax,
     summarize_tax_adjustments,
@@ -27,6 +28,7 @@ def generate_statements(
     engine: str = "balance",
     scope: str = "all",
     consolidation_args: Optional[Dict[str, Any]] = None,
+    budget: Optional[Dict[str, Optional[str]]] = None,
 ) -> Dict[str, Any]:
     if engine == "consolidation":
         return generate_consolidated_statements(
@@ -66,6 +68,13 @@ def generate_statements(
     }
     if assumptions:
         output["assumptions"] = assumptions
+    if budget:
+        output["budget_variance"] = budget_variance(
+            conn,
+            period,
+            budget.get("dim_type") or "department",
+            budget.get("dim_code"),
+        )
     return output
 
 
