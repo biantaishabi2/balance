@@ -6,7 +6,7 @@ from __future__ import annotations
 
 from ledger.database import get_db
 from ledger.reporting import generate_statements
-from ledger.services import build_entries, insert_voucher, update_balance_for_voucher
+from ledger.services import build_entries, confirm_voucher, insert_voucher
 from ledger.utils import LedgerError, load_json_input, print_json
 
 
@@ -39,21 +39,21 @@ def run(args):
                 },
             )
 
-        status = "confirmed" if args.auto else "draft"
+        status = "reviewed" if args.auto else "draft"
         voucher_id, voucher_no, period, confirmed_at = insert_voucher(
             conn, data, entries, status
         )
 
-        if status == "confirmed":
-            balances_updated = update_balance_for_voucher(conn, voucher_id, period)
+        if status == "reviewed":
+            voucher = confirm_voucher(conn, voucher_id)
             _ = generate_statements(conn, period)
             output = {
                 "voucher_id": voucher_id,
                 "voucher_no": voucher_no,
                 "status": "confirmed",
                 "message": "凭证已确认，余额已更新，三表已生成",
-                "confirmed_at": confirmed_at,
-                "balances_updated": balances_updated,
+                "confirmed_at": voucher.get("confirmed_at"),
+                "balances_updated": voucher.get("balances_updated"),
                 "reports_generated": True,
             }
         else:
