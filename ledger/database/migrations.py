@@ -16,6 +16,16 @@ def run_migrations(conn: sqlite3.Connection) -> None:
         conn.execute("ALTER TABLE vouchers ADD COLUMN reviewed_at TEXT")
     conn.executescript(
         """
+        CREATE TABLE IF NOT EXISTS period_closings (
+          period TEXT PRIMARY KEY,
+          closing_voucher_id INTEGER,
+          transfer_voucher_id INTEGER,
+          created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+          reopened_at TEXT,
+          FOREIGN KEY (closing_voucher_id) REFERENCES vouchers(id),
+          FOREIGN KEY (transfer_voucher_id) REFERENCES vouchers(id)
+        );
+
         CREATE TABLE IF NOT EXISTS ar_items (
           id INTEGER PRIMARY KEY AUTOINCREMENT,
           customer_id INTEGER NOT NULL,

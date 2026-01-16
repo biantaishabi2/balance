@@ -1324,6 +1324,7 @@ def generate_statements(period):
 2. 汇总损益类科目余额，生成结转凭证
 3. 标记期间为 closed
 4. 生成下期余额（期末=下期期初）
+5. 记录结账凭证用于反结账冲销
 
 结转配置（`data/close_config.json`）：
 - `profit_account`: 本年利润（默认 4103）
@@ -1337,6 +1338,7 @@ def generate_statements(period):
 
 - `vouchers`：新增 `reviewed_at` 字段（可选）
 - `periods`：使用现有 status(open/closed) 与 closed_at
+- `period_closings`：记录结账凭证
 
 ---
 

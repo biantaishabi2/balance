@@ -7,7 +7,12 @@ from __future__ import annotations
 from datetime import datetime
 
 from ledger.database import get_db
-from ledger.services import inventory_balance, inventory_move_in, inventory_move_out
+from ledger.services import (
+    inventory_balance,
+    inventory_move_in,
+    inventory_move_out,
+    reconcile_inventory,
+)
 from ledger.utils import print_json
 
 
@@ -40,6 +45,10 @@ def add_parser(subparsers, parents):
     balance_cmd.add_argument("--period", required=True, help="期间")
     balance_cmd.add_argument("--sku", help="物料编码")
     balance_cmd.set_defaults(func=run_balance)
+
+    reconcile_cmd = sub.add_parser("reconcile", help="存货对平", parents=parents)
+    reconcile_cmd.add_argument("--period", required=True, help="期间")
+    reconcile_cmd.set_defaults(func=run_reconcile)
 
     return parser
 
@@ -75,3 +84,9 @@ def run_balance(args):
     with get_db(args.db_path) as conn:
         rows = inventory_balance(conn, args.period, args.sku)
     print_json({"period": args.period, "balances": rows})
+
+
+def run_reconcile(args):
+    with get_db(args.db_path) as conn:
+        result = reconcile_inventory(conn, args.period)
+    print_json({"status": "success", **result})

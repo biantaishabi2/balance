@@ -14,6 +14,10 @@ from ledger.services import (
     list_ap_items,
     list_ar_items,
     load_standard_accounts,
+    reconcile_ap,
+    reconcile_ar,
+    reconcile_fixed_assets,
+    reconcile_inventory,
     settle_ap_item,
     settle_ar_item,
 )
@@ -163,3 +167,66 @@ def test_ap_aging(tmp_path):
         add_ap_item(conn, "S002", 500, "2025-01-03", "purchase")
         aging = ap_aging(conn, "2025-01-20")
         assert aging["0_30"] == pytest.approx(500.0, rel=0.01)
+
+
+def test_reconcile_ar_ap(tmp_path):
+    db_path = tmp_path / "ledger.db"
+    accounts = [
+        {"code": "1002", "name": "Bank", "level": 1, "type": "asset", "direction": "debit"},
+        {"code": "1122", "name": "AR", "level": 1, "type": "asset", "direction": "debit"},
+        {"code": "2202", "name": "AP", "level": 1, "type": "liability", "direction": "credit"},
+        {"code": "6001", "name": "Revenue", "level": 1, "type": "revenue", "direction": "credit"},
+        {"code": "1403", "name": "Inventory", "level": 1, "type": "asset", "direction": "debit"},
+    ]
+
+    with get_db(str(db_path)) as conn:
+        init_db(conn)
+        load_standard_accounts(conn, accounts)
+        _seed_dimension(conn, "customer", "C010", "Customer X")
+        _seed_dimension(conn, "supplier", "S010", "Supplier X")
+
+        add_ar_item(conn, "C010", 300, "2025-01-10", "sale")
+        add_ap_item(conn, "S010", 200, "2025-01-12", "purchase")
+
+        ar_recon = reconcile_ar(conn, "2025-01", "C010")
+        assert ar_recon["difference"] == pytest.approx(0.0, rel=0.01)
+
+        ap_recon = reconcile_ap(conn, "2025-01", "S010")
+        assert ap_recon["difference"] == pytest.approx(0.0, rel=0.01)
+
+def test_reconcile_inventory(tmp_path):
+    db_path = tmp_path / "ledger.db"
+    accounts = [
+        {"code": "1002", "name": "Bank", "level": 1, "type": "asset", "direction": "debit"},
+        {"code": "1403", "name": "Inventory", "level": 1, "type": "asset", "direction": "debit"},
+        {"code": "6401", "name": "COGS", "level": 1, "type": "expense", "direction": "debit"},
+    ]
+
+    with get_db(str(db_path)) as conn:
+        init_db(conn)
+        load_standard_accounts(conn, accounts)
+        inventory_move_in(conn, "A100", 5, 20, "2025-01-15", "in")
+        inventory_move_out(conn, "A100", 2, "2025-01-20", "out")
+
+        inv_recon = reconcile_inventory(conn, "2025-01")
+        assert inv_recon["difference"] == pytest.approx(0.0, rel=0.01)
+
+
+def test_reconcile_fixed_assets(tmp_path):
+    db_path = tmp_path / "ledger.db"
+    accounts = [
+        {"code": "1002", "name": "Bank", "level": 1, "type": "asset", "direction": "debit"},
+        {"code": "1601", "name": "FA", "level": 1, "type": "asset", "direction": "debit"},
+        {"code": "1602", "name": "Accum", "level": 1, "type": "asset", "direction": "credit"},
+        {"code": "6602", "name": "Expense", "level": 1, "type": "expense", "direction": "debit"},
+    ]
+
+    with get_db(str(db_path)) as conn:
+        init_db(conn)
+        load_standard_accounts(conn, accounts)
+        add_fixed_asset(conn, "Tool", 600, 3, 0, "2025-01-05")
+        depreciate_assets(conn, "2025-01")
+
+        fa_recon = reconcile_fixed_assets(conn, "2025-01")
+        assert fa_recon["asset_difference"] == pytest.approx(0.0, rel=0.01)
+        assert fa_recon["accum_difference"] == pytest.approx(0.0, rel=0.01)

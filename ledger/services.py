@@ -274,11 +274,13 @@ def insert_voucher(
     voucher_data: Dict[str, Any],
     entries: List[Dict[str, Any]],
     status: str,
+    enforce_open: bool = True,
 ) -> Tuple[int, str, str, Optional[str]]:
     voucher_no = generate_voucher_no(conn, voucher_data["date"])
     period = parse_period(voucher_data["date"])
     ensure_period(conn, period)
-    assert_period_open(conn, period)
+    if enforce_open:
+        assert_period_open(conn, period)
     confirmed_at = None
     reviewed_at = None
     if status == "reviewed":
@@ -525,6 +527,64 @@ def confirm_voucher(conn, voucher_id: int) -> Dict[str, Any]:
     return voucher
 
 
+def void_voucher(conn, voucher_id: int, reason: str) -> Dict[str, Any]:
+    voucher = fetch_voucher(conn, voucher_id)
+    if not voucher:
+        raise LedgerError("VOUCHER_NOT_FOUND", f"凭证不存在: {voucher_id}")
+    if voucher["status"] != "confirmed":
+        raise LedgerError("VOUCHER_NOT_CONFIRMED", "仅已确认凭证可冲销")
+
+    entries = fetch_entries(conn, voucher_id)
+    reversed_entries = []
+    for entry in entries:
+        reversed_entries.append(
+            {
+                "line_no": entry["line_no"],
+                "account_code": entry["account_code"],
+                "account_name": entry["account_name"],
+                "description": f"冲销:{entry.get('description') or ''}".strip(),
+                "debit_amount": entry["credit_amount"],
+                "credit_amount": entry["debit_amount"],
+                "dept_id": entry.get("dept_id"),
+                "project_id": entry.get("project_id"),
+                "customer_id": entry.get("customer_id"),
+                "supplier_id": entry.get("supplier_id"),
+                "employee_id": entry.get("employee_id"),
+            }
+        )
+
+    void_data = {
+        "date": voucher["date"],
+        "description": f"冲销:{voucher.get('description') or ''}".strip(),
+    }
+    void_id, void_no, period, _ = insert_voucher(
+        conn, void_data, reversed_entries, "confirmed", enforce_open=False
+    )
+    update_balance_for_voucher(conn, void_id, period)
+
+    conn.execute(
+        """
+        UPDATE vouchers
+        SET status = 'voided', void_reason = ?, voided_at = ?
+        WHERE id = ?
+        """,
+        (reason, datetime.now().strftime("%Y-%m-%d %H:%M:%S"), voucher_id),
+    )
+    conn.execute(
+        """
+        INSERT INTO void_vouchers (original_voucher_id, void_voucher_id, void_reason)
+        VALUES (?, ?, ?)
+        """,
+        (voucher_id, void_id, reason),
+    )
+    return {
+        "original_voucher_id": voucher_id,
+        "void_voucher_id": void_id,
+        "void_voucher_no": void_no,
+        "period": period,
+    }
+
+
 def balances_for_period(
     conn, period: str, dims: Optional[Dict[str, int]] = None
 ) -> List[Dict[str, Any]]:
@@ -598,6 +658,15 @@ def close_period(conn, period: str) -> Dict[str, Any]:
         "UPDATE periods SET status = 'closed', closed_at = CURRENT_TIMESTAMP WHERE period = ?",
         (period,),
     )
+    conn.execute(
+        """
+        INSERT OR REPLACE INTO period_closings (
+          period, closing_voucher_id, transfer_voucher_id, created_at, reopened_at
+        )
+        VALUES (?, ?, ?, CURRENT_TIMESTAMP, NULL)
+        """,
+        (period, closing_voucher_id, transfer_voucher_id),
+    )
 
     next_period = _next_period(period)
     if next_period:
@@ -657,15 +726,85 @@ def _roll_forward_balances(conn, period: str, next_period: str) -> None:
         )
 
 
+def _fetch_closing_voucher_ids(conn, period: str) -> Tuple[Optional[int], Optional[int]]:
+    row = conn.execute(
+        "SELECT closing_voucher_id, transfer_voucher_id FROM period_closings WHERE period = ?",
+        (period,),
+    ).fetchone()
+    if row:
+        return row["closing_voucher_id"], row["transfer_voucher_id"]
+    closing_row = conn.execute(
+        """
+        SELECT id FROM vouchers
+        WHERE period = ? AND description = ?
+        ORDER BY id DESC
+        LIMIT 1
+        """,
+        (period, f"{period} 期末结转"),
+    ).fetchone()
+    transfer_row = conn.execute(
+        """
+        SELECT id FROM vouchers
+        WHERE period = ? AND description = ?
+        ORDER BY id DESC
+        LIMIT 1
+        """,
+        (period, f"{period} 本年利润结转"),
+    ).fetchone()
+    return (
+        closing_row["id"] if closing_row else None,
+        transfer_row["id"] if transfer_row else None,
+    )
+
+
 def reopen_period(conn, period: str) -> Dict[str, Any]:
     status = get_period_status(conn, period)
     if status != "closed":
         raise LedgerError("PERIOD_NOT_CLOSED", f"期间未结账: {period}")
+    next_period = _next_period(period)
+    if next_period:
+        row = conn.execute(
+            "SELECT COUNT(*) AS cnt FROM vouchers WHERE period = ?",
+            (next_period,),
+        ).fetchone()
+        if row and row["cnt"] > 0:
+            raise LedgerError("NEXT_PERIOD_HAS_VOUCHERS", f"下期已有凭证: {next_period}")
+        row = conn.execute(
+            """
+            SELECT COUNT(*) AS cnt FROM balances
+            WHERE period = ? AND (debit_amount != 0 OR credit_amount != 0)
+            """,
+            (next_period,),
+        ).fetchone()
+        if row and row["cnt"] > 0:
+            raise LedgerError("NEXT_PERIOD_HAS_BALANCES", f"下期已有发生额: {next_period}")
+
+    closing_id, transfer_id = _fetch_closing_voucher_ids(conn, period)
+    voided_ids: List[int] = []
+    for voucher_id in (closing_id, transfer_id):
+        if not voucher_id:
+            continue
+        voucher = fetch_voucher(conn, voucher_id)
+        if voucher and voucher["status"] == "confirmed":
+            result = void_voucher(conn, voucher_id, f"reopen {period}")
+            voided_ids.append(result["void_voucher_id"])
+
     conn.execute(
         "UPDATE periods SET status = 'open', closed_at = NULL WHERE period = ?",
         (period,),
     )
-    return {"period": period, "status": "open"}
+    if next_period:
+        conn.execute("DELETE FROM balances WHERE period = ?", (next_period,))
+    conn.execute(
+        "UPDATE period_closings SET reopened_at = CURRENT_TIMESTAMP WHERE period = ?",
+        (period,),
+    )
+    return {
+        "period": period,
+        "status": "open",
+        "void_voucher_ids": voided_ids,
+        "next_period": next_period,
+    }
 
 
 def _build_income_close_entries(
@@ -1041,6 +1180,62 @@ def ar_aging(conn, as_of: str) -> Dict[str, float]:
     return {k: round(v, 2) for k, v in buckets.items()}
 
 
+def reconcile_ar(
+    conn, period: str, customer_code: Optional[str] = None
+) -> Dict[str, Any]:
+    mapping = _load_subledger_mapping()["ar"]
+    cutoff = _period_end_date(period)
+    conditions = ["v.date <= ?"]
+    params: List[Any] = [cutoff]
+    if customer_code:
+        customer_id = find_dimension(conn, "customer", customer_code)
+        conditions.append("ai.customer_id = ?")
+        params.append(customer_id)
+    where_clause = f"WHERE {' AND '.join(conditions)}"
+    rows = conn.execute(
+        f"""
+        SELECT ai.id, ai.amount, COALESCE(SUM(s.amount), 0) AS settled
+        FROM ar_items ai
+        JOIN vouchers v ON ai.voucher_id = v.id
+        LEFT JOIN settlements s
+          ON s.item_type = 'ar'
+         AND s.item_id = ai.id
+         AND s.date <= ?
+        {where_clause}
+        GROUP BY ai.id
+        """,
+        [cutoff, *params],
+    ).fetchall()
+    outstanding = sum(float(row["amount"]) - float(row["settled"]) for row in rows)
+
+    balance_row = conn.execute(
+        """
+        SELECT COALESCE(SUM(closing_balance), 0) AS total
+        FROM balances
+        WHERE period = ? AND account_code = ?
+        """,
+        (period, mapping["ar_account"]),
+    ).fetchone()
+    ledger_balance = float(balance_row["total"] or 0)
+    if customer_code:
+        balance_row = conn.execute(
+            """
+            SELECT COALESCE(SUM(closing_balance), 0) AS total
+            FROM balances
+            WHERE period = ? AND account_code = ? AND customer_id = ?
+            """,
+            (period, mapping["ar_account"], customer_id),
+        ).fetchone()
+        ledger_balance = float(balance_row["total"] or 0)
+
+    return {
+        "period": period,
+        "outstanding": round(outstanding, 2),
+        "ledger_balance": round(ledger_balance, 2),
+        "difference": round(ledger_balance - outstanding, 2),
+    }
+
+
 def add_ap_item(
     conn, supplier_code: str, amount: float, date: str, description: Optional[str] = None
 ) -> Dict[str, Any]:
@@ -1178,6 +1373,62 @@ def ap_aging(conn, as_of: str) -> Dict[str, float]:
         else:
             buckets["90_plus"] += remaining
     return {k: round(v, 2) for k, v in buckets.items()}
+
+
+def reconcile_ap(
+    conn, period: str, supplier_code: Optional[str] = None
+) -> Dict[str, Any]:
+    mapping = _load_subledger_mapping()["ap"]
+    cutoff = _period_end_date(period)
+    conditions = ["v.date <= ?"]
+    params: List[Any] = [cutoff]
+    if supplier_code:
+        supplier_id = find_dimension(conn, "supplier", supplier_code)
+        conditions.append("ai.supplier_id = ?")
+        params.append(supplier_id)
+    where_clause = f"WHERE {' AND '.join(conditions)}"
+    rows = conn.execute(
+        f"""
+        SELECT ai.id, ai.amount, COALESCE(SUM(s.amount), 0) AS settled
+        FROM ap_items ai
+        JOIN vouchers v ON ai.voucher_id = v.id
+        LEFT JOIN settlements s
+          ON s.item_type = 'ap'
+         AND s.item_id = ai.id
+         AND s.date <= ?
+        {where_clause}
+        GROUP BY ai.id
+        """,
+        [cutoff, *params],
+    ).fetchall()
+    outstanding = sum(float(row["amount"]) - float(row["settled"]) for row in rows)
+
+    balance_row = conn.execute(
+        """
+        SELECT COALESCE(SUM(closing_balance), 0) AS total
+        FROM balances
+        WHERE period = ? AND account_code = ?
+        """,
+        (period, mapping["ap_account"]),
+    ).fetchone()
+    ledger_balance = float(balance_row["total"] or 0)
+    if supplier_code:
+        balance_row = conn.execute(
+            """
+            SELECT COALESCE(SUM(closing_balance), 0) AS total
+            FROM balances
+            WHERE period = ? AND account_code = ? AND supplier_id = ?
+            """,
+            (period, mapping["ap_account"], supplier_id),
+        ).fetchone()
+        ledger_balance = float(balance_row["total"] or 0)
+
+    return {
+        "period": period,
+        "outstanding": round(outstanding, 2),
+        "ledger_balance": round(ledger_balance, 2),
+        "difference": round(ledger_balance - outstanding, 2),
+    }
 
 
 def _get_inventory_item(conn, sku: str) -> Optional[Dict[str, Any]]:
@@ -1345,6 +1596,30 @@ def inventory_balance(conn, period: str, sku: Optional[str] = None) -> List[Dict
     return [dict(row) for row in rows]
 
 
+def reconcile_inventory(conn, period: str) -> Dict[str, Any]:
+    mapping = _load_subledger_mapping()["inventory"]
+    row = conn.execute(
+        "SELECT COALESCE(SUM(amount), 0) AS total FROM inventory_balances WHERE period = ?",
+        (period,),
+    ).fetchone()
+    inventory_total = float(row["total"] or 0)
+    balance_row = conn.execute(
+        """
+        SELECT COALESCE(SUM(closing_balance), 0) AS total
+        FROM balances
+        WHERE period = ? AND account_code = ?
+        """,
+        (period, mapping["inventory_account"]),
+    ).fetchone()
+    ledger_balance = float(balance_row["total"] or 0)
+    return {
+        "period": period,
+        "inventory_total": round(inventory_total, 2),
+        "ledger_balance": round(ledger_balance, 2),
+        "difference": round(ledger_balance - inventory_total, 2),
+    }
+
+
 def add_fixed_asset(
     conn,
     name: str,
@@ -1490,6 +1765,59 @@ def list_fixed_assets(conn, status: Optional[str] = None) -> List[Dict[str, Any]
         params,
     ).fetchall()
     return [dict(row) for row in rows]
+
+
+def reconcile_fixed_assets(conn, period: str) -> Dict[str, Any]:
+    mapping = _load_subledger_mapping()["fixed_asset"]
+    cutoff = _period_end_date(period)
+    assets_row = conn.execute(
+        """
+        SELECT COALESCE(SUM(cost), 0) AS total
+        FROM fixed_assets
+        WHERE status = 'active' AND acquired_at <= ?
+        """,
+        (cutoff,),
+    ).fetchone()
+    expected_asset = float(assets_row["total"] or 0)
+    depr_row = conn.execute(
+        """
+        SELECT COALESCE(SUM(d.amount), 0) AS total
+        FROM fixed_asset_depreciations d
+        JOIN fixed_assets a ON a.id = d.asset_id
+        WHERE a.status = 'active' AND d.period <= ?
+        """,
+        (period,),
+    ).fetchone()
+    expected_accum = float(depr_row["total"] or 0)
+
+    asset_balance_row = conn.execute(
+        """
+        SELECT COALESCE(SUM(closing_balance), 0) AS total
+        FROM balances
+        WHERE period = ? AND account_code = ?
+        """,
+        (period, mapping["asset_account"]),
+    ).fetchone()
+    ledger_asset = float(asset_balance_row["total"] or 0)
+    accum_balance_row = conn.execute(
+        """
+        SELECT COALESCE(SUM(closing_balance), 0) AS total
+        FROM balances
+        WHERE period = ? AND account_code = ?
+        """,
+        (period, mapping["accum_depreciation_account"]),
+    ).fetchone()
+    ledger_accum = float(accum_balance_row["total"] or 0)
+
+    return {
+        "period": period,
+        "asset_total": round(expected_asset, 2),
+        "ledger_asset": round(ledger_asset, 2),
+        "asset_difference": round(ledger_asset - expected_asset, 2),
+        "accum_depreciation": round(expected_accum, 2),
+        "ledger_accum": round(ledger_accum, 2),
+        "accum_difference": round(ledger_accum - expected_accum, 2),
+    }
 
 
 def build_balance_input(balances: List[Dict[str, Any]]) -> Dict[str, Any]:

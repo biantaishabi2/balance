@@ -12,6 +12,7 @@ from ledger.services import (
     depreciate_assets,
     dispose_fixed_asset,
     list_fixed_assets,
+    reconcile_fixed_assets,
 )
 from ledger.utils import print_json
 
@@ -46,6 +47,10 @@ def add_parser(subparsers, parents):
     list_cmd.add_argument("--status", default="active", help="状态: active/disposed/all")
     list_cmd.set_defaults(func=run_list)
 
+    reconcile_cmd = sub.add_parser("reconcile", help="固定资产对平", parents=parents)
+    reconcile_cmd.add_argument("--period", required=True, help="期间")
+    reconcile_cmd.set_defaults(func=run_reconcile)
+
     return parser
 
 
@@ -78,3 +83,9 @@ def run_list(args):
     with get_db(args.db_path) as conn:
         rows = list_fixed_assets(conn, args.status)
     print_json({"items": rows})
+
+
+def run_reconcile(args):
+    with get_db(args.db_path) as conn:
+        result = reconcile_fixed_assets(conn, args.period)
+    print_json({"status": "success", **result})

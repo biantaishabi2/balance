@@ -151,6 +151,7 @@ ledger confirm 1
 - [ ] 期末损益结转到权益科目
 - [ ] 下期余额生成正确
 - [ ] 反结账恢复可记账状态
+- [ ] 反结账冲销结账凭证并清除下期余额（无下期凭证）
 
 **运行命令：**
 ```bash
@@ -183,6 +184,8 @@ ledger ap settle --item-id 1 --amount 800
 **预期结果：**
 - [ ] 生成凭证且借贷平衡
 - [ ] 子账已核销，余额为 0
+- [ ] `ledger ar reconcile --period 2025-01` 差异为 0
+- [ ] `ledger ap reconcile --period 2025-01` 差异为 0
 
 ### 存货核算
 - [ ] 入库/出库生成凭证
@@ -199,6 +202,7 @@ ledger inventory balance --period 2025-01
 **预期结果：**
 - [ ] 生成入库/出库凭证
 - [ ] 结存数量与金额正确
+- [ ] `ledger inventory reconcile --period 2025-01` 差异为 0
 
 ### 固定资产
 - [ ] 资产卡片创建
@@ -215,6 +219,7 @@ ledger fixed-asset dispose --asset-id 1
 **预期结果：**
 - [ ] 折旧凭证生成且借贷平衡
 - [ ] 处置凭证生成且资产状态变更
+- [ ] `ledger fixed-asset reconcile --period 2025-01` 差异为 0
 
 ---
 

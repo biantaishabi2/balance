@@ -7,7 +7,7 @@ from __future__ import annotations
 from datetime import datetime
 
 from ledger.database import get_db
-from ledger.services import add_ap_item, ap_aging, list_ap_items, settle_ap_item
+from ledger.services import add_ap_item, ap_aging, list_ap_items, reconcile_ap, settle_ap_item
 from ledger.utils import print_json
 
 
@@ -42,6 +42,11 @@ def add_parser(subparsers, parents):
     aging_cmd = sub.add_parser("aging", help="应付账龄", parents=parents)
     aging_cmd.add_argument("--as-of", default=_default_date(), help="截止日期")
     aging_cmd.set_defaults(func=run_aging)
+
+    reconcile_cmd = sub.add_parser("reconcile", help="应付对平", parents=parents)
+    reconcile_cmd.add_argument("--period", required=True, help="期间")
+    reconcile_cmd.add_argument("--supplier", help="供应商维度代码")
+    reconcile_cmd.set_defaults(func=run_reconcile)
 
     return parser
 
@@ -80,3 +85,9 @@ def run_aging(args):
     with get_db(args.db_path) as conn:
         buckets = ap_aging(conn, args.as_of)
     print_json({"as_of": args.as_of, "aging": buckets})
+
+
+def run_reconcile(args):
+    with get_db(args.db_path) as conn:
+        result = reconcile_ap(conn, args.period, args.supplier)
+    print_json({"status": "success", **result})

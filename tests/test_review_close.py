@@ -1,9 +1,11 @@
 import pytest
 
 from ledger.database import get_db, init_db
+from ledger import services
 from ledger.services import (
     close_period,
     confirm_voucher,
+    ensure_period,
     insert_voucher,
     load_standard_accounts,
     reopen_period,
@@ -306,3 +308,207 @@ def test_close_period_blocks_new_voucher(tmp_path):
                 "draft",
             )
         assert exc.value.code == "PERIOD_CLOSED"
+
+
+def test_close_period_blocks_next_period_vouchers(tmp_path):
+    db_path = tmp_path / "ledger.db"
+
+    with get_db(str(db_path)) as conn:
+        init_db(conn)
+        load_standard_accounts(conn, BASIC_ACCOUNTS)
+
+        voucher_id, _, _, _ = insert_voucher(
+            conn,
+            {"date": "2025-02-05", "description": "next"},
+            [
+                {
+                    "line_no": 1,
+                    "account_code": "1001",
+                    "account_name": "Cash",
+                    "debit_amount": 200,
+                    "credit_amount": 0,
+                },
+                {
+                    "line_no": 2,
+                    "account_code": "2001",
+                    "account_name": "Short Loan",
+                    "debit_amount": 0,
+                    "credit_amount": 200,
+                },
+            ],
+            "reviewed",
+        )
+        confirm_voucher(conn, voucher_id)
+
+        voucher_id, _, _, _ = insert_voucher(
+            conn,
+            {"date": "2025-01-10", "description": "income"},
+            [
+                {
+                    "line_no": 1,
+                    "account_code": "1001",
+                    "account_name": "Cash",
+                    "debit_amount": 100,
+                    "credit_amount": 0,
+                },
+                {
+                    "line_no": 2,
+                    "account_code": "6001",
+                    "account_name": "Revenue",
+                    "debit_amount": 0,
+                    "credit_amount": 100,
+                },
+            ],
+            "reviewed",
+        )
+        confirm_voucher(conn, voucher_id)
+
+        with pytest.raises(LedgerError) as exc:
+            close_period(conn, "2025-01")
+        assert exc.value.code == "NEXT_PERIOD_HAS_VOUCHERS"
+
+
+def test_close_period_blocks_next_period_balances(tmp_path):
+    db_path = tmp_path / "ledger.db"
+
+    with get_db(str(db_path)) as conn:
+        init_db(conn)
+        load_standard_accounts(conn, BASIC_ACCOUNTS)
+        ensure_period(conn, "2025-02")
+        conn.execute(
+            """
+            INSERT INTO balances (
+              account_code, period, dept_id, project_id, customer_id, supplier_id, employee_id,
+              opening_balance, debit_amount, credit_amount, closing_balance
+            )
+            VALUES (?, ?, 0, 0, 0, 0, 0, 0, 100, 0, 100)
+            """,
+            ("1001", "2025-02"),
+        )
+
+        voucher_id, _, _, _ = insert_voucher(
+            conn,
+            {"date": "2025-01-10", "description": "income"},
+            [
+                {
+                    "line_no": 1,
+                    "account_code": "1001",
+                    "account_name": "Cash",
+                    "debit_amount": 100,
+                    "credit_amount": 0,
+                },
+                {
+                    "line_no": 2,
+                    "account_code": "6001",
+                    "account_name": "Revenue",
+                    "debit_amount": 0,
+                    "credit_amount": 100,
+                },
+            ],
+            "reviewed",
+        )
+        confirm_voucher(conn, voucher_id)
+
+        with pytest.raises(LedgerError) as exc:
+            close_period(conn, "2025-01")
+        assert exc.value.code == "NEXT_PERIOD_HAS_BALANCES"
+
+
+def test_reopen_voids_closing_vouchers(tmp_path):
+    db_path = tmp_path / "ledger.db"
+
+    with get_db(str(db_path)) as conn:
+        init_db(conn)
+        load_standard_accounts(conn, BASIC_ACCOUNTS)
+
+        voucher_id, _, _, _ = insert_voucher(
+            conn,
+            {"date": "2025-01-10", "description": "income"},
+            [
+                {
+                    "line_no": 1,
+                    "account_code": "1001",
+                    "account_name": "Cash",
+                    "debit_amount": 1000,
+                    "credit_amount": 0,
+                },
+                {
+                    "line_no": 2,
+                    "account_code": "6001",
+                    "account_name": "Revenue",
+                    "debit_amount": 0,
+                    "credit_amount": 1000,
+                },
+            ],
+            "reviewed",
+        )
+        confirm_voucher(conn, voucher_id)
+
+        close_result = close_period(conn, "2025-01")
+        closing_id = close_result["closing_voucher_id"]
+        transfer_id = close_result["transfer_voucher_id"]
+
+        reopen_result = reopen_period(conn, "2025-01")
+        assert reopen_result["status"] == "open"
+        if closing_id:
+            row = conn.execute(
+                "SELECT status FROM vouchers WHERE id = ?",
+                (closing_id,),
+            ).fetchone()
+            assert row["status"] == "voided"
+        if transfer_id:
+            row = conn.execute(
+                "SELECT status FROM vouchers WHERE id = ?",
+                (transfer_id,),
+            ).fetchone()
+            assert row["status"] == "voided"
+        next_rows = conn.execute(
+            "SELECT COUNT(*) AS cnt FROM balances WHERE period = ?",
+            ("2025-02",),
+        ).fetchone()
+        assert next_rows["cnt"] == 0
+
+
+def test_close_period_custom_config(tmp_path, monkeypatch):
+    db_path = tmp_path / "ledger.db"
+    accounts = BASIC_ACCOUNTS + [
+        {"code": "4105", "name": "Alt Profit", "level": 1, "type": "equity", "direction": "credit"},
+        {"code": "4106", "name": "Alt Retained", "level": 1, "type": "equity", "direction": "credit"},
+    ]
+
+    def _mock_config():
+        return {"profit_account": "4105", "retain_account": "4106"}
+
+    with get_db(str(db_path)) as conn:
+        init_db(conn)
+        load_standard_accounts(conn, accounts)
+        monkeypatch.setattr(services, "_load_close_config", _mock_config)
+
+        voucher_id, _, _, _ = insert_voucher(
+            conn,
+            {"date": "2025-01-10", "description": "income"},
+            [
+                {
+                    "line_no": 1,
+                    "account_code": "1001",
+                    "account_name": "Cash",
+                    "debit_amount": 500,
+                    "credit_amount": 0,
+                },
+                {
+                    "line_no": 2,
+                    "account_code": "6001",
+                    "account_name": "Revenue",
+                    "debit_amount": 0,
+                    "credit_amount": 500,
+                },
+            ],
+            "reviewed",
+        )
+        confirm_voucher(conn, voucher_id)
+
+        close_period(conn, "2025-01")
+        alt_profit = _get_balance(conn, "4105", "2025-01")
+        alt_retained = _get_balance(conn, "4106", "2025-01")
+        assert alt_profit.get("closing_balance") == pytest.approx(0.0, rel=0.01)
+        assert alt_retained.get("closing_balance") == pytest.approx(500.0, rel=0.01)
