@@ -1816,6 +1816,44 @@ def _build_entry_for_account(
     return entry
 
 
+def _dims_for_type(dim_type: str, dim_id: int) -> Dict[str, Optional[int]]:
+    if dim_type == "department":
+        return {"dept_id": dim_id}
+    if dim_type == "project":
+        return {"project_id": dim_id}
+    if dim_type == "customer":
+        return {"customer_id": dim_id}
+    if dim_type == "supplier":
+        return {"supplier_id": dim_id}
+    if dim_type == "employee":
+        return {"employee_id": dim_id}
+    return {}
+
+
+def _allocation_ratios_from_basis(
+    conn, period: str
+) -> List[Tuple[str, int, float]]:
+    dim_priority = ["department", "project", "customer", "supplier", "employee"]
+    for dim_type in dim_priority:
+        rows = conn.execute(
+            """
+            SELECT dim_id, value FROM allocation_basis_values
+            WHERE period = ? AND dim_type = ?
+            ORDER BY dim_id
+            """,
+            (period, dim_type),
+        ).fetchall()
+        if not rows:
+            continue
+        total = sum(float(row["value"] or 0) for row in rows)
+        if total <= 0:
+            continue
+        return [
+            (dim_type, int(row["dim_id"]), float(row["value"]) / total) for row in rows
+        ]
+    return []
+
+
 def _build_entries(
     conn,
     lines: List[Tuple[str, float, float]],
@@ -2628,6 +2666,69 @@ def _consume_fifo_batches(
     return lines, total
 
 
+def _apply_negative_inventory_adjustment(
+    conn,
+    sku: str,
+    clear_qty: float,
+    actual_unit_cost: float,
+    date: str,
+    warehouse_id: int,
+    location_id: int,
+) -> float:
+    if clear_qty <= 0:
+        return 0.0
+    pending_rows = conn.execute(
+        """
+        SELECT id, unit_cost, pending_cost_adjustment
+        FROM inventory_moves
+        WHERE sku = ? AND direction = 'out' AND pending_cost_adjustment > 0
+          AND (warehouse_id IS NULL OR warehouse_id = ?)
+          AND (location_id IS NULL OR location_id = ?)
+        ORDER BY date, id
+        """,
+        (sku, warehouse_id if warehouse_id else None, location_id if location_id else None),
+    ).fetchall()
+    remaining = clear_qty
+    total_adjustment = 0.0
+    for row in pending_rows:
+        unit_cost = float(row["unit_cost"] or 0)
+        pending_amount = float(row["pending_cost_adjustment"] or 0)
+        if unit_cost <= 0 or pending_amount <= 0:
+            continue
+        pending_qty = pending_amount / unit_cost
+        use_qty = pending_qty if pending_qty <= remaining else remaining
+        diff = actual_unit_cost - unit_cost
+        total_adjustment += diff * use_qty
+        new_pending = round(pending_amount - unit_cost * use_qty, 2)
+        conn.execute(
+            "UPDATE inventory_moves SET pending_cost_adjustment = ? WHERE id = ?",
+            (max(new_pending, 0.0), row["id"]),
+        )
+        remaining = round(remaining - use_qty, 6)
+        if remaining <= 0:
+            break
+
+    if abs(total_adjustment) < 0.01:
+        return 0.0
+
+    mapping = _load_subledger_mapping()["inventory"]
+    description = "负库存成本调整"
+    if total_adjustment > 0:
+        lines = [
+            (mapping["cost_account"], round(total_adjustment, 2), 0.0),
+            (mapping["inventory_account"], 0.0, round(total_adjustment, 2)),
+        ]
+    else:
+        amount = abs(total_adjustment)
+        lines = [
+            (mapping["inventory_account"], round(amount, 2), 0.0),
+            (mapping["cost_account"], 0.0, round(amount, 2)),
+        ]
+    entries = _build_entries(conn, lines, description=description)
+    _create_posted_voucher(conn, date, description, entries)
+    return round(total_adjustment, 2)
+
+
 def inventory_move_in(
     conn,
     sku: str,
@@ -2650,6 +2751,7 @@ def inventory_move_in(
     )
     config = _load_inventory_config()
     method = (cost_method or config.get("cost_method") or "avg").lower()
+    negative_policy = config.get("negative_policy", "reject")
     mapping = _load_subledger_mapping()["inventory"]
     description = description or "Inventory in"
     actual_total = round(qty * unit_cost, 2)
@@ -2729,8 +2831,21 @@ def inventory_move_in(
     current_qty, current_amount = _get_inventory_balance(
         conn, sku, period, warehouse_id or 0, location_id or 0
     )
+    adjustment_amount = 0.0
+    if negative_policy == "allow" and current_qty < -0.01:
+        clear_qty = min(qty, abs(current_qty))
+        balance_unit_cost = round(total_cost / qty, 6)
+        adjustment_amount = _apply_negative_inventory_adjustment(
+            conn,
+            sku,
+            clear_qty,
+            balance_unit_cost,
+            date,
+            warehouse_id or 0,
+            location_id or 0,
+        )
     new_qty = round(current_qty + qty, 2)
-    new_amount = round(current_amount + total_cost, 2)
+    new_amount = round(current_amount + total_cost - adjustment_amount, 2)
     _upsert_inventory_balance(
         conn, sku, period, new_qty, new_amount, warehouse_id or 0, location_id or 0
     )
@@ -2801,6 +2916,10 @@ def inventory_move_out(
         description=description,
     )
     voucher = _create_posted_voucher(conn, date, description, entries)
+    negative_qty = 0.0
+    if qty - current_qty > 0.01:
+        negative_qty = qty if current_qty <= 0 else qty - current_qty
+    pending_amount = round(unit_cost * negative_qty, 2)
     conn.execute(
         """
         INSERT INTO inventory_moves (
@@ -2818,7 +2937,7 @@ def inventory_move_out(
             date,
             warehouse_id if warehouse_id else None,
             location_id if location_id else None,
-            0 if qty - current_qty <= 0.01 else total_cost,
+            pending_amount,
         ),
     )
     move_id = conn.execute("SELECT last_insert_rowid() AS id").fetchone()["id"]
@@ -3046,26 +3165,38 @@ def depreciate_assets(conn, period: str) -> Dict[str, Any]:
     total_amount = round(sum(amount for _, amount in entries), 2)
     description = f"Depreciation {period}"
     voucher_entries: List[Dict[str, Any]] = []
+    basis_ratios = _allocation_ratios_from_basis(conn, period)
     for asset_id, amount in entries:
         allocations = conn.execute(
             "SELECT * FROM fixed_asset_allocations WHERE asset_id = ?",
             (asset_id,),
         ).fetchall()
         if allocations:
-            for alloc in allocations:
-                dims: Dict[str, Optional[int]] = {}
-                dim_type = alloc["dim_type"]
-                if dim_type == "department":
-                    dims["dept_id"] = alloc["dim_id"]
-                elif dim_type == "project":
-                    dims["project_id"] = alloc["dim_id"]
-                elif dim_type == "customer":
-                    dims["customer_id"] = alloc["dim_id"]
-                elif dim_type == "supplier":
-                    dims["supplier_id"] = alloc["dim_id"]
-                elif dim_type == "employee":
-                    dims["employee_id"] = alloc["dim_id"]
+            total_allocated = 0.0
+            for idx, alloc in enumerate(allocations):
                 alloc_amount = round(amount * float(alloc["ratio"]), 2)
+                if idx == len(allocations) - 1:
+                    alloc_amount = round(amount - total_allocated, 2)
+                total_allocated += alloc_amount
+                dims = _dims_for_type(alloc["dim_type"], int(alloc["dim_id"]))
+                voucher_entries.append(
+                    _build_entry_for_account(
+                        conn,
+                        mapping["depreciation_expense_account"],
+                        alloc_amount,
+                        0.0,
+                        dims=dims,
+                        description=description,
+                    )
+                )
+        elif basis_ratios:
+            total_allocated = 0.0
+            for idx, (dim_type, dim_id, ratio) in enumerate(basis_ratios):
+                alloc_amount = round(amount * ratio, 2)
+                if idx == len(basis_ratios) - 1:
+                    alloc_amount = round(amount - total_allocated, 2)
+                total_allocated += alloc_amount
+                dims = _dims_for_type(dim_type, dim_id)
                 voucher_entries.append(
                     _build_entry_for_account(
                         conn,
@@ -3350,6 +3481,8 @@ def transfer_cip_to_asset(
     transfer_amount = round(amount if amount is not None else total_cost, 2)
     if transfer_amount <= 0:
         raise LedgerError("CIP_AMOUNT_INVALID", "转固金额必须大于 0")
+    if transfer_amount - total_cost > 0.01:
+        raise LedgerError("CIP_AMOUNT_INVALID", "转固金额超过在建成本")
     mapping = _load_subledger_mapping()["fixed_asset"]
     description = f"CIP transfer {project_id}"
     entries = _build_entries(
@@ -3371,9 +3504,11 @@ def transfer_cip_to_asset(
         (asset_name, transfer_amount, date, life_years, round(salvage_value, 2), None, None),
     )
     asset_id = cur.lastrowid
+    remaining = round(total_cost - transfer_amount, 2)
+    new_status = "converted" if remaining <= 0.01 else "ongoing"
     conn.execute(
-        "UPDATE cip_projects SET status = 'converted' WHERE id = ?",
-        (project_id,),
+        "UPDATE cip_projects SET cost = ?, status = ? WHERE id = ?",
+        (max(remaining, 0.0), new_status, project_id),
     )
     conn.execute(
         """
