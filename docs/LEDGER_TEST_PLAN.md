@@ -263,6 +263,13 @@ ledger report --period 2025-01 --engine ledger --dept-id 1
 - [ ] 三表生成成功且配平
 - [ ] 报表参数覆盖默认假设生效
 
+### CLI 端到端回归
+
+**运行命令：**
+```bash
+pytest tests/test_cli_e2e.py -v
+```
+
 ### 多凭证回归
 
 **运行命令：**

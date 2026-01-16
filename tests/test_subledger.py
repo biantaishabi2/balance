@@ -13,6 +13,7 @@ from ledger.services import (
     inventory_move_out,
     list_ap_items,
     list_ar_items,
+    list_fixed_assets,
     load_standard_accounts,
     reconcile_ap,
     reconcile_ar,
@@ -230,3 +231,8 @@ def test_reconcile_fixed_assets(tmp_path):
         fa_recon = reconcile_fixed_assets(conn, "2025-01")
         assert fa_recon["asset_difference"] == pytest.approx(0.0, rel=0.01)
         assert fa_recon["accum_difference"] == pytest.approx(0.0, rel=0.01)
+
+        assets = list_fixed_assets(conn, "active", "2024-12")
+        assert len(assets) == 0
+        assets = list_fixed_assets(conn, "active", "2025-01")
+        assert len(assets) == 1

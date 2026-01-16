@@ -1753,12 +1753,17 @@ def dispose_fixed_asset(
     return {"asset_id": asset_id, "voucher_id": voucher["voucher_id"], "status": "disposed"}
 
 
-def list_fixed_assets(conn, status: Optional[str] = None) -> List[Dict[str, Any]]:
+def list_fixed_assets(
+    conn, status: Optional[str] = None, period: Optional[str] = None
+) -> List[Dict[str, Any]]:
     conditions: List[str] = []
     params: List[Any] = []
     if status and status != "all":
         conditions.append("status = ?")
         params.append(status)
+    if period:
+        conditions.append("acquired_at <= ?")
+        params.append(_period_end_date(period))
     where_clause = f"WHERE {' AND '.join(conditions)}" if conditions else ""
     rows = conn.execute(
         f"SELECT * FROM fixed_assets {where_clause} ORDER BY id",
@@ -1808,6 +1813,7 @@ def reconcile_fixed_assets(conn, period: str) -> Dict[str, Any]:
         (period, mapping["accum_depreciation_account"]),
     ).fetchone()
     ledger_accum = float(accum_balance_row["total"] or 0)
+    ledger_accum_value = abs(ledger_accum)
 
     return {
         "period": period,
@@ -1815,8 +1821,8 @@ def reconcile_fixed_assets(conn, period: str) -> Dict[str, Any]:
         "ledger_asset": round(ledger_asset, 2),
         "asset_difference": round(ledger_asset - expected_asset, 2),
         "accum_depreciation": round(expected_accum, 2),
-        "ledger_accum": round(ledger_accum, 2),
-        "accum_difference": round(ledger_accum - expected_accum, 2),
+        "ledger_accum": round(ledger_accum_value, 2),
+        "accum_difference": round(ledger_accum_value - expected_accum, 2),
     }
 
 

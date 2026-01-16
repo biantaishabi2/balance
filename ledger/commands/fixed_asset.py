@@ -45,6 +45,7 @@ def add_parser(subparsers, parents):
 
     list_cmd = sub.add_parser("list", help="资产列表", parents=parents)
     list_cmd.add_argument("--status", default="active", help="状态: active/disposed/all")
+    list_cmd.add_argument("--period", help="期间")
     list_cmd.set_defaults(func=run_list)
 
     reconcile_cmd = sub.add_parser("reconcile", help="固定资产对平", parents=parents)
@@ -81,7 +82,7 @@ def run_dispose(args):
 
 def run_list(args):
     with get_db(args.db_path) as conn:
-        rows = list_fixed_assets(conn, args.status)
+        rows = list_fixed_assets(conn, args.status, args.period)
     print_json({"items": rows})
 
 
