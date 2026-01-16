@@ -8,6 +8,7 @@ from datetime import datetime
 import ast
 import calendar
 import json
+import re
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 
@@ -99,6 +100,17 @@ DEFAULT_INVENTORY_CONFIG = {
 
 DEFAULT_CREDIT_CONFIG = {
     "block_on_exceed": False,
+}
+
+
+DEFAULT_BAD_DEBT_CONFIG = {
+    "fixed_ratio": None,
+    "aging_ratios": {
+        "0_30": 0.01,
+        "31_60": 0.03,
+        "61_90": 0.05,
+        "90_plus": 0.1,
+    },
 }
 
 
@@ -420,9 +432,9 @@ def insert_voucher(
     cur = conn.execute(
         """
         INSERT INTO vouchers (
-          voucher_no, date, period, description, status, entry_type, source_template, reviewed_at, confirmed_at
+          voucher_no, date, period, description, status, entry_type, source_template, source_event_id, reviewed_at, confirmed_at
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (
             voucher_no,
@@ -432,6 +444,7 @@ def insert_voucher(
             status,
             voucher_data.get("entry_type", "normal"),
             voucher_data.get("source_template"),
+            voucher_data.get("source_event_id"),
             reviewed_at,
             confirmed_at,
         ),
@@ -1061,26 +1074,146 @@ def revalue_forex(conn, period: str, rate_type: str = "closing") -> Dict[str, An
 
 
 def balances_for_period(
-    conn, period: str, dims: Optional[Dict[str, int]] = None
+    conn,
+    period: str,
+    dims: Optional[Dict[str, int]] = None,
+    scope: str = "all",
 ) -> List[Dict[str, Any]]:
-    conditions = ["b.period = ?"]
-    params: List[Any] = [period]
-    if dims:
-        for field in ("dept_id", "project_id", "customer_id", "supplier_id", "employee_id"):
-            value = dims.get(field)
-            if value is not None:
-                conditions.append(f"b.{field} = ?")
-                params.append(value)
-    rows = conn.execute(
-        f"""
-        SELECT b.*, a.name AS account_name, a.type AS account_type, a.direction AS account_direction
-        FROM balances b
-        JOIN accounts a ON b.account_code = a.code
-        WHERE {' AND '.join(conditions)}
-        """,
-        params,
-    ).fetchall()
-    return [dict(r) for r in rows]
+    if scope == "all":
+        conditions = ["b.period = ?"]
+        params: List[Any] = [period]
+        if dims:
+            for field in ("dept_id", "project_id", "customer_id", "supplier_id", "employee_id"):
+                value = dims.get(field)
+                if value is not None:
+                    conditions.append(f"b.{field} = ?")
+                    params.append(value)
+        rows = conn.execute(
+            f"""
+            SELECT b.*, a.name AS account_name, a.type AS account_type, a.direction AS account_direction
+            FROM balances b
+            JOIN accounts a ON b.account_code = a.code
+            WHERE {' AND '.join(conditions)}
+            """,
+            params,
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+    if scope not in {"normal", "adjustment"}:
+        raise LedgerError("REPORT_SCOPE_INVALID", f"无效口径: {scope}")
+
+    entry_types = [scope]
+    placeholders = ", ".join(["?"] * len(entry_types))
+
+    def _fetch_sums(period_condition: str, period_value: str) -> List[Dict[str, Any]]:
+        conditions = [f"v.entry_type IN ({placeholders})", f"v.period {period_condition} ?"]
+        params: List[Any] = [*entry_types, period_value]
+        if dims:
+            for field in ("dept_id", "project_id", "customer_id", "supplier_id", "employee_id"):
+                value = dims.get(field)
+                if value is not None:
+                    conditions.append(f"COALESCE(ve.{field}, 0) = ?")
+                    params.append(value)
+        rows = conn.execute(
+            f"""
+            SELECT
+              ve.account_code,
+              COALESCE(ve.dept_id, 0) AS dept_id,
+              COALESCE(ve.project_id, 0) AS project_id,
+              COALESCE(ve.customer_id, 0) AS customer_id,
+              COALESCE(ve.supplier_id, 0) AS supplier_id,
+              COALESCE(ve.employee_id, 0) AS employee_id,
+              a.name AS account_name,
+              a.type AS account_type,
+              a.direction AS account_direction,
+              COALESCE(SUM(ve.debit_amount), 0) AS debit_total,
+              COALESCE(SUM(ve.credit_amount), 0) AS credit_total
+            FROM voucher_entries ve
+            JOIN vouchers v ON ve.voucher_id = v.id
+            JOIN accounts a ON ve.account_code = a.code
+            WHERE {" AND ".join(conditions)}
+            GROUP BY ve.account_code, dept_id, project_id, customer_id, supplier_id, employee_id
+            """,
+            params,
+        ).fetchall()
+        return [dict(row) for row in rows]
+
+    pre_rows = _fetch_sums("<", period)
+    period_rows = _fetch_sums("=", period)
+
+    combined: Dict[Tuple[Any, ...], Dict[str, Any]] = {}
+    for row in pre_rows:
+        key = (
+            row["account_code"],
+            row["dept_id"],
+            row["project_id"],
+            row["customer_id"],
+            row["supplier_id"],
+            row["employee_id"],
+        )
+        combined[key] = {
+            **row,
+            "pre_debit": float(row["debit_total"] or 0),
+            "pre_credit": float(row["credit_total"] or 0),
+            "period_debit": 0.0,
+            "period_credit": 0.0,
+        }
+    for row in period_rows:
+        key = (
+            row["account_code"],
+            row["dept_id"],
+            row["project_id"],
+            row["customer_id"],
+            row["supplier_id"],
+            row["employee_id"],
+        )
+        entry = combined.setdefault(
+            key,
+            {
+                **row,
+                "pre_debit": 0.0,
+                "pre_credit": 0.0,
+                "period_debit": 0.0,
+                "period_credit": 0.0,
+            },
+        )
+        entry["period_debit"] = float(row["debit_total"] or 0)
+        entry["period_credit"] = float(row["credit_total"] or 0)
+        entry["account_name"] = row["account_name"]
+        entry["account_type"] = row["account_type"]
+        entry["account_direction"] = row["account_direction"]
+
+    balances: List[Dict[str, Any]] = []
+    for entry in combined.values():
+        pre_debit = float(entry["pre_debit"] or 0)
+        pre_credit = float(entry["pre_credit"] or 0)
+        period_debit = float(entry["period_debit"] or 0)
+        period_credit = float(entry["period_credit"] or 0)
+        if entry["account_direction"] == "debit":
+            opening = pre_debit - pre_credit
+            closing = opening + period_debit - period_credit
+        else:
+            opening = pre_credit - pre_debit
+            closing = opening - period_debit + period_credit
+        balances.append(
+            {
+                "account_code": entry["account_code"],
+                "period": period,
+                "dept_id": entry["dept_id"],
+                "project_id": entry["project_id"],
+                "customer_id": entry["customer_id"],
+                "supplier_id": entry["supplier_id"],
+                "employee_id": entry["employee_id"],
+                "opening_balance": opening,
+                "debit_amount": period_debit,
+                "credit_amount": period_credit,
+                "closing_balance": closing,
+                "account_name": entry["account_name"],
+                "account_type": entry["account_type"],
+                "account_direction": entry["account_direction"],
+            }
+        )
+    return balances
 
 
 def close_period(conn, period: str, template_code: Optional[str] = None) -> Dict[str, Any]:
@@ -1436,6 +1569,7 @@ def disable_voucher_template(conn, code: str) -> None:
 
 
 def _eval_expr(expr: str, context: Dict[str, Any]) -> float:
+    expr = re.sub(r"\bif\s*\(", "__if__(", expr)
     try:
         tree = ast.parse(expr, mode="eval")
     except SyntaxError as exc:
@@ -1456,12 +1590,26 @@ def _eval_expr(expr: str, context: Dict[str, Any]) -> float:
         ast.Call,
         ast.Mod,
         ast.Pow,
+        ast.Compare,
+        ast.BoolOp,
+        ast.And,
+        ast.Or,
+        ast.Eq,
+        ast.NotEq,
+        ast.Lt,
+        ast.LtE,
+        ast.Gt,
+        ast.GtE,
     )
-    allowed_funcs = {"round": round, "abs": abs}
+
+    def _if_func(cond, a, b):
+        return a if cond else b
+
+    allowed_funcs = {"round": round, "abs": abs, "__if__": _if_func}
     for node in ast.walk(tree):
         if not isinstance(node, allowed_nodes):
             raise LedgerError("TEMPLATE_EXPR_INVALID", "表达式包含不允许的语法")
-        if isinstance(node, ast.Name) and node.id not in context:
+        if isinstance(node, ast.Name) and node.id not in context and node.id not in allowed_funcs:
             raise LedgerError("TEMPLATE_EXPR_INVALID", f"变量未定义: {node.id}")
         if isinstance(node, ast.Call):
             if not isinstance(node.func, ast.Name) or node.func.id not in allowed_funcs:
@@ -1497,6 +1645,29 @@ def generate_voucher_from_template(
     voucher_date = date or payload.get(date_field) or payload.get("date")
     if not voucher_date:
         raise LedgerError("TEMPLATE_DATE_REQUIRED", "缺少凭证日期")
+    event_id = payload.get("event_id")
+    if event_id:
+        existing = conn.execute(
+            "SELECT voucher_id FROM voucher_events WHERE event_id = ?",
+            (event_id,),
+        ).fetchone()
+        if existing:
+            voucher_row = conn.execute(
+                """
+                SELECT id, voucher_no, period, confirmed_at
+                FROM vouchers
+                WHERE id = ?
+                """,
+                (existing["voucher_id"],),
+            ).fetchone()
+            if not voucher_row:
+                raise LedgerError("TEMPLATE_EVENT_INVALID", "事件已存在但凭证缺失")
+            return {
+                "voucher_id": voucher_row["id"],
+                "voucher_no": voucher_row["voucher_no"],
+                "period": voucher_row["period"],
+                "confirmed_at": voucher_row["confirmed_at"],
+            }
 
     lines = rule.get("lines")
     if not isinstance(lines, list) or not lines:
@@ -1541,10 +1712,19 @@ def generate_voucher_from_template(
             "date": voucher_date,
             "description": description,
             "source_template": code,
+            "source_event_id": event_id,
         },
         entries,
         "reviewed",
     )
+    if event_id:
+        conn.execute(
+            """
+            INSERT INTO voucher_events (event_id, template_code, voucher_id)
+            VALUES (?, ?, ?)
+            """,
+            (event_id, code, voucher_id),
+        )
     voucher = confirm_voucher(conn, voucher_id)
     return {
         "voucher_id": voucher_id,
@@ -2019,14 +2199,22 @@ def list_ar_items(
     return [dict(row) for row in rows]
 
 
-def ar_aging(conn, as_of: str) -> Dict[str, float]:
+def ar_aging(conn, as_of: str, customer_code: Optional[str] = None) -> Dict[str, float]:
+    conditions = ["ai.status = 'open'"]
+    params: List[Any] = []
+    if customer_code:
+        customer_id = find_dimension(conn, "customer", customer_code)
+        conditions.append("ai.customer_id = ?")
+        params.append(customer_id)
+    where_clause = "WHERE " + " AND ".join(conditions)
     rows = conn.execute(
-        """
+        f"""
         SELECT ai.amount, ai.settled_amount, v.date
         FROM ar_items ai
         JOIN vouchers v ON ai.voucher_id = v.id
-        WHERE ai.status = 'open'
-        """
+        {where_clause}
+        """,
+        params,
     ).fetchall()
     buckets = {"0_30": 0.0, "31_60": 0.0, "61_90": 0.0, "90_plus": 0.0}
     as_of_date = datetime.strptime(as_of, "%Y-%m-%d")
@@ -2451,6 +2639,32 @@ def provision_bad_debt(
     return {"provision_id": cur.lastrowid, "voucher_id": voucher["voucher_id"]}
 
 
+def _calculate_bad_debt_amount(conn, period: str, customer_code: str) -> float:
+    config = _load_bad_debt_config()
+    as_of = _period_end_date(period)
+    buckets = ar_aging(conn, as_of, customer_code)
+    total_open = sum(buckets.values())
+    fixed_ratio = config.get("fixed_ratio")
+    if fixed_ratio is not None:
+        return round(total_open * float(fixed_ratio), 2)
+    ratios = config.get("aging_ratios") or {}
+    amount = 0.0
+    for bucket, value in buckets.items():
+        amount += float(value or 0) * float(ratios.get(bucket, 0))
+    return round(amount, 2)
+
+
+def provision_bad_debt_auto(
+    conn, period: str, customer_code: str
+) -> Dict[str, Any]:
+    amount = _calculate_bad_debt_amount(conn, period, customer_code)
+    if amount <= 0:
+        raise LedgerError("BAD_DEBT_AMOUNT_INVALID", "自动计提金额必须大于 0")
+    result = provision_bad_debt(conn, period, customer_code, amount)
+    result["amount"] = amount
+    return result
+
+
 def reverse_bad_debt(
     conn, period: str, customer_code: str, amount: float
 ) -> Dict[str, Any]:
@@ -2666,6 +2880,15 @@ def _consume_fifo_batches(
     return lines, total
 
 
+def _normalize_serials(serial_numbers: Optional[List[str]]) -> List[str]:
+    if not serial_numbers:
+        return []
+    serials = [str(serial).strip() for serial in serial_numbers if str(serial).strip()]
+    if len(serials) != len(set(serials)):
+        raise LedgerError("INVENTORY_SERIAL_DUPLICATE", "序列号重复")
+    return serials
+
+
 def _apply_negative_inventory_adjustment(
     conn,
     sku: str,
@@ -2742,9 +2965,16 @@ def inventory_move_in(
     location_code: Optional[str] = None,
     batch_no: Optional[str] = None,
     cost_method: Optional[str] = None,
+    serial_numbers: Optional[List[str]] = None,
 ) -> Dict[str, Any]:
     if qty <= 0 or unit_cost < 0:
         raise LedgerError("INVENTORY_AMOUNT_INVALID", "入库数量或成本无效")
+    serials = _normalize_serials(serial_numbers)
+    if serials:
+        if abs(qty - round(qty)) > 0.0001:
+            raise LedgerError("INVENTORY_SERIAL_QTY", "序列号数量必须为整数")
+        if int(round(qty)) != len(serials):
+            raise LedgerError("INVENTORY_SERIAL_MISMATCH", "序列号数量不匹配")
     _ensure_inventory_item(conn, sku, name, unit)
     warehouse_id, location_id = _resolve_warehouse_location(
         conn, warehouse_code, location_code
@@ -2798,6 +3028,29 @@ def inventory_move_in(
         ),
     )
     move_id = conn.execute("SELECT last_insert_rowid() AS id").fetchone()["id"]
+    if serials:
+        for serial in serials:
+            existing = conn.execute(
+                "SELECT 1 FROM inventory_serials WHERE serial_no = ?",
+                (serial,),
+            ).fetchone()
+            if existing:
+                raise LedgerError("INVENTORY_SERIAL_EXISTS", f"序列号已存在: {serial}")
+            conn.execute(
+                """
+                INSERT INTO inventory_serials (
+                  serial_no, sku, status, move_in_id, warehouse_id, location_id, updated_at
+                )
+                VALUES (?, ?, 'in', ?, ?, ?, CURRENT_TIMESTAMP)
+                """,
+                (
+                    serial,
+                    sku,
+                    move_id,
+                    warehouse_id if warehouse_id else None,
+                    location_id if location_id else None,
+                ),
+            )
     if method == "fifo":
         batch_qty = round(qty, 2)
         batch_total = round(qty * unit_cost, 2)
@@ -2870,9 +3123,16 @@ def inventory_move_out(
     warehouse_code: Optional[str] = None,
     location_code: Optional[str] = None,
     cost_method: Optional[str] = None,
+    serial_numbers: Optional[List[str]] = None,
 ) -> Dict[str, Any]:
     if qty <= 0:
         raise LedgerError("INVENTORY_AMOUNT_INVALID", "出库数量无效")
+    serials = _normalize_serials(serial_numbers)
+    if serials:
+        if abs(qty - round(qty)) > 0.0001:
+            raise LedgerError("INVENTORY_SERIAL_QTY", "序列号数量必须为整数")
+        if int(round(qty)) != len(serials):
+            raise LedgerError("INVENTORY_SERIAL_MISMATCH", "序列号数量不匹配")
     mapping = _load_subledger_mapping()["inventory"]
     description = description or "Inventory out"
     period = parse_period(date)
@@ -2941,6 +3201,34 @@ def inventory_move_out(
         ),
     )
     move_id = conn.execute("SELECT last_insert_rowid() AS id").fetchone()["id"]
+    if serials:
+        for serial in serials:
+            row = conn.execute(
+                """
+                SELECT serial_no, sku, status, warehouse_id, location_id
+                FROM inventory_serials
+                WHERE serial_no = ?
+                """,
+                (serial,),
+            ).fetchone()
+            if not row:
+                raise LedgerError("INVENTORY_SERIAL_NOT_FOUND", f"序列号不存在: {serial}")
+            if row["sku"] != sku:
+                raise LedgerError("INVENTORY_SERIAL_MISMATCH", f"序列号SKU不匹配: {serial}")
+            if row["status"] != "in":
+                raise LedgerError("INVENTORY_SERIAL_STATUS", f"序列号不可出库: {serial}")
+            if warehouse_id and row["warehouse_id"] and row["warehouse_id"] != warehouse_id:
+                raise LedgerError("INVENTORY_SERIAL_LOCATION", f"序列号仓库不匹配: {serial}")
+            if location_id and row["location_id"] and row["location_id"] != location_id:
+                raise LedgerError("INVENTORY_SERIAL_LOCATION", f"序列号库位不匹配: {serial}")
+            conn.execute(
+                """
+                UPDATE inventory_serials
+                SET status = 'out', move_out_id = ?, updated_at = CURRENT_TIMESTAMP
+                WHERE serial_no = ?
+                """,
+                (move_id, serial),
+            )
     if move_lines:
         for line in move_lines:
             conn.execute(
@@ -3433,6 +3721,38 @@ def impair_fixed_asset(conn, asset_id: int, period: str, amount: float) -> Dict[
     return {"impairment_id": cur.lastrowid, "voucher_id": voucher["voucher_id"]}
 
 
+def reverse_fixed_asset_impairment(
+    conn, asset_id: int, period: str, amount: float
+) -> Dict[str, Any]:
+    if amount <= 0:
+        raise LedgerError("ASSET_IMPAIRMENT_INVALID", "冲回金额必须大于 0")
+    asset = conn.execute(
+        "SELECT * FROM fixed_assets WHERE id = ?",
+        (asset_id,),
+    ).fetchone()
+    if not asset:
+        raise LedgerError("ASSET_NOT_FOUND", f"固定资产不存在: {asset_id}")
+    mapping = _load_subledger_mapping()["fixed_asset"]
+    description = f"Impairment reversal {period}"
+    entries = _build_entries(
+        conn,
+        [
+            (mapping["impairment_reserve_account"], amount, 0.0),
+            (mapping["impairment_loss_account"], 0.0, amount),
+        ],
+        description=description,
+    )
+    voucher = _create_posted_voucher(conn, f"{period}-01", description, entries)
+    cur = conn.execute(
+        """
+        INSERT INTO fixed_asset_impairments (asset_id, period, amount, voucher_id)
+        VALUES (?, ?, ?, ?)
+        """,
+        (asset_id, period, round(-amount, 2), voucher["voucher_id"]),
+    )
+    return {"impairment_id": cur.lastrowid, "voucher_id": voucher["voucher_id"]}
+
+
 def create_cip_project(conn, name: str) -> int:
     cur = conn.execute(
         "INSERT INTO cip_projects (name, cost, status) VALUES (?, 0, 'ongoing')",
@@ -3752,6 +4072,22 @@ def _load_credit_config() -> Dict[str, Any]:
         raise LedgerError("CREDIT_CONFIG_INVALID", "信用配置必须为对象")
     merged = dict(DEFAULT_CREDIT_CONFIG)
     merged.update(data)
+    return merged
+
+
+def _load_bad_debt_config() -> Dict[str, Any]:
+    config_path = Path(__file__).resolve().parents[1] / "data" / "bad_debt_config.json"
+    if not config_path.exists():
+        return dict(DEFAULT_BAD_DEBT_CONFIG)
+    try:
+        data = json.loads(config_path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as exc:
+        raise LedgerError("BAD_DEBT_CONFIG_INVALID", f"坏账配置JSON错误: {exc}") from exc
+    if not isinstance(data, dict):
+        raise LedgerError("BAD_DEBT_CONFIG_INVALID", "坏账配置必须为对象")
+    merged = dict(DEFAULT_BAD_DEBT_CONFIG)
+    merged.update(data)
+    merged["aging_ratios"] = dict(merged.get("aging_ratios") or {})
     return merged
 
 

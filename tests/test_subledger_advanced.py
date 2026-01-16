@@ -15,7 +15,9 @@ from ledger.services import (
     inventory_move_out,
     load_standard_accounts,
     provision_bad_debt,
+    provision_bad_debt_auto,
     reverse_bad_debt,
+    reverse_fixed_asset_impairment,
     set_credit_profile,
     set_standard_cost,
     settle_payment_plan,
@@ -154,6 +156,12 @@ def test_fixed_asset_upgrade_impair_cip(tmp_path):
         impair_fixed_asset(conn, asset["asset_id"], "2025-01", 100)
         imp_row = conn.execute("SELECT COUNT(*) AS cnt FROM fixed_asset_impairments").fetchone()
         assert imp_row["cnt"] == 1
+        reverse_fixed_asset_impairment(conn, asset["asset_id"], "2025-01", 40)
+        imp_row = conn.execute(
+            "SELECT SUM(amount) AS total FROM fixed_asset_impairments WHERE asset_id = ?",
+            (asset["asset_id"],),
+        ).fetchone()
+        assert imp_row["total"] == pytest.approx(60.0, rel=0.01)
 
         transfer_fixed_asset(conn, asset["asset_id"], None, None, "2025-01-03")
         change_row = conn.execute(
@@ -267,3 +275,78 @@ def test_inventory_negative_allow_adjustment(tmp_path, monkeypatch):
             "SELECT COUNT(*) AS cnt FROM vouchers WHERE description = '负库存成本调整'"
         ).fetchone()
         assert voucher_row["cnt"] == 1
+
+
+def test_inventory_serial_tracking(tmp_path):
+    db_path = tmp_path / "ledger.db"
+    accounts = [
+        {"code": "1002", "name": "Bank", "level": 1, "type": "asset", "direction": "debit"},
+        {"code": "1403", "name": "Inventory", "level": 1, "type": "asset", "direction": "debit"},
+        {"code": "6401", "name": "COGS", "level": 1, "type": "expense", "direction": "debit"},
+    ]
+
+    with get_db(str(db_path)) as conn:
+        init_db(conn)
+        load_standard_accounts(conn, accounts)
+
+        inventory_move_in(
+            conn,
+            "S1",
+            2,
+            10,
+            "2025-01-01",
+            serial_numbers=["SN001", "SN002"],
+        )
+        inventory_move_out(
+            conn,
+            "S1",
+            1,
+            "2025-01-05",
+            serial_numbers=["SN001"],
+        )
+        row = conn.execute(
+            "SELECT status, move_out_id FROM inventory_serials WHERE serial_no = 'SN001'"
+        ).fetchone()
+        assert row["status"] == "out"
+        assert row["move_out_id"] is not None
+        row = conn.execute(
+            "SELECT status FROM inventory_serials WHERE serial_no = 'SN002'"
+        ).fetchone()
+        assert row["status"] == "in"
+
+
+def test_bad_debt_auto(tmp_path, monkeypatch):
+    db_path = tmp_path / "ledger.db"
+    accounts = [
+        {"code": "1002", "name": "Bank", "level": 1, "type": "asset", "direction": "debit"},
+        {"code": "1122", "name": "AR", "level": 1, "type": "asset", "direction": "debit"},
+        {"code": "6702", "name": "Bad Debt", "level": 1, "type": "expense", "direction": "debit"},
+        {"code": "1231", "name": "Bad Debt Reserve", "level": 1, "type": "asset", "direction": "credit"},
+        {"code": "6001", "name": "Revenue", "level": 1, "type": "revenue", "direction": "credit"},
+    ]
+
+    with get_db(str(db_path)) as conn:
+        init_db(conn)
+        load_standard_accounts(conn, accounts)
+        _seed_dimension(conn, "customer", "C300", "Cust")
+        monkeypatch.setattr(
+            services,
+            "_load_bad_debt_config",
+            lambda: {
+                "fixed_ratio": None,
+                "aging_ratios": {"0_30": 0.01, "31_60": 0.02, "61_90": 0.05, "90_plus": 0.1},
+            },
+        )
+
+        add_ar_item(conn, "C300", 100, "2025-02-20", "sale")
+        add_ar_item(conn, "C300", 100, "2025-01-20", "sale")
+        add_ar_item(conn, "C300", 100, "2024-12-20", "sale")
+        add_ar_item(conn, "C300", 100, "2024-11-01", "sale")
+
+        result = provision_bad_debt_auto(conn, "2025-02", "C300")
+        assert result["amount"] == pytest.approx(18.0, rel=0.01)
+        row = conn.execute(
+            "SELECT debit_amount FROM voucher_entries WHERE voucher_id = ? AND account_code = '6702'",
+            (result["voucher_id"],),
+        ).fetchone()
+        assert row["debit_amount"] == pytest.approx(18.0, rel=0.01)

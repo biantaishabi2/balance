@@ -26,6 +26,12 @@ def add_parser(subparsers, parents):
     parser.add_argument("--customer-id", type=int)
     parser.add_argument("--supplier-id", type=int)
     parser.add_argument("--employee-id", type=int)
+    parser.add_argument(
+        "--scope",
+        choices=["all", "normal", "adjustment"],
+        default="all",
+        help="口径: all/normal/adjustment",
+    )
     parser.add_argument("--interest-rate", type=float, default=0.0, help="利率假设")
     parser.add_argument("--tax-rate", type=float, default=0.0, help="税率假设")
     parser.add_argument("--fixed-asset-life", type=float, default=0.0, help="折旧年限(年)")
@@ -55,6 +61,7 @@ def run(args):
             assumptions=assumptions,
             dims=dims,
             engine=args.engine,
+            scope=args.scope,
         )
 
     if args.output:

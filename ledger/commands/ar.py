@@ -13,6 +13,7 @@ from ledger.services import (
     add_bill,
     create_payment_plan,
     provision_bad_debt,
+    provision_bad_debt_auto,
     reverse_bad_debt,
     set_credit_profile,
     settle_payment_plan,
@@ -54,6 +55,7 @@ def add_parser(subparsers, parents):
 
     aging_cmd = sub.add_parser("aging", help="应收账龄", parents=parents)
     aging_cmd.add_argument("--as-of", default=_default_date(), help="截止日期")
+    aging_cmd.add_argument("--customer", help="客户维度代码")
     aging_cmd.set_defaults(func=run_aging)
 
     reconcile_cmd = sub.add_parser("reconcile", help="应收对平", parents=parents)
@@ -98,6 +100,11 @@ def add_parser(subparsers, parents):
     bad_debt_cmd.add_argument("--amount", type=float, required=True, help="金额")
     bad_debt_cmd.set_defaults(func=run_bad_debt)
 
+    bad_debt_auto_cmd = sub.add_parser("bad-debt-auto", help="坏账自动计提", parents=parents)
+    bad_debt_auto_cmd.add_argument("--period", required=True, help="期间")
+    bad_debt_auto_cmd.add_argument("--customer", required=True, help="客户维度代码")
+    bad_debt_auto_cmd.set_defaults(func=run_bad_debt_auto)
+
     bad_debt_rev_cmd = sub.add_parser("bad-debt-reverse", help="坏账冲回", parents=parents)
     bad_debt_rev_cmd.add_argument("--period", required=True, help="期间")
     bad_debt_rev_cmd.add_argument("--customer", required=True, help="客户维度代码")
@@ -139,7 +146,7 @@ def run_list(args):
 
 def run_aging(args):
     with get_db(args.db_path) as conn:
-        buckets = ar_aging(conn, args.as_of)
+        buckets = ar_aging(conn, args.as_of, args.customer)
     print_json({"as_of": args.as_of, "aging": buckets})
 
 
@@ -197,4 +204,10 @@ def run_bad_debt(args):
 def run_bad_debt_reverse(args):
     with get_db(args.db_path) as conn:
         result = reverse_bad_debt(conn, args.period, args.customer, args.amount)
+    print_json({"status": "success", **result})
+
+
+def run_bad_debt_auto(args):
+    with get_db(args.db_path) as conn:
+        result = provision_bad_debt_auto(conn, args.period, args.customer)
     print_json({"status": "success", **result})

@@ -51,6 +51,7 @@ CREATE TABLE IF NOT EXISTS vouchers (
   status TEXT NOT NULL DEFAULT 'draft',
   entry_type TEXT NOT NULL DEFAULT 'normal',
   source_template TEXT,
+  source_event_id TEXT,
   void_reason TEXT,
   created_at TEXT DEFAULT CURRENT_TIMESTAMP,
   reviewed_at TEXT,
@@ -303,6 +304,14 @@ CREATE TABLE IF NOT EXISTS voucher_templates (
   created_at TEXT DEFAULT CURRENT_TIMESTAMP
 );
 
+CREATE TABLE IF NOT EXISTS voucher_events (
+  event_id TEXT PRIMARY KEY,
+  template_code TEXT NOT NULL,
+  voucher_id INTEGER NOT NULL,
+  created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (voucher_id) REFERENCES vouchers(id)
+);
+
 CREATE TABLE IF NOT EXISTS payment_plans (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   item_type TEXT NOT NULL,
@@ -372,6 +381,22 @@ CREATE TABLE IF NOT EXISTS inventory_batches (
 );
 
 CREATE INDEX IF NOT EXISTS idx_inventory_batches_sku ON inventory_batches(sku);
+
+CREATE TABLE IF NOT EXISTS inventory_serials (
+  serial_no TEXT PRIMARY KEY,
+  sku TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'in',
+  move_in_id INTEGER,
+  move_out_id INTEGER,
+  warehouse_id INTEGER,
+  location_id INTEGER,
+  created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+  updated_at TEXT,
+  FOREIGN KEY (move_in_id) REFERENCES inventory_moves(id),
+  FOREIGN KEY (move_out_id) REFERENCES inventory_moves(id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_inventory_serials_sku ON inventory_serials(sku);
 
 CREATE TABLE IF NOT EXISTS inventory_move_lines (
   id INTEGER PRIMARY KEY AUTOINCREMENT,

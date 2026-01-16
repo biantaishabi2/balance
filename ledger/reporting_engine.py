@@ -22,10 +22,13 @@ _VALID_SOURCES = {
 
 
 def generate_ledger_statements(
-    conn, period: str, dims: Optional[Dict[str, int]] = None
+    conn,
+    period: str,
+    dims: Optional[Dict[str, int]] = None,
+    scope: str = "all",
 ) -> Dict[str, Any]:
     mapping = _load_report_mapping()
-    balances = balances_for_period(conn, period, dims=dims)
+    balances = balances_for_period(conn, period, dims=dims, scope=scope)
 
     balance_sheet = mapping.get("balance_sheet", {})
     income_statement = mapping.get("income_statement", {})

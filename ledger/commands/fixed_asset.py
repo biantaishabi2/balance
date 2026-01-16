@@ -15,6 +15,7 @@ from ledger.services import (
     add_cip_cost,
     find_dimension,
     impair_fixed_asset,
+    reverse_fixed_asset_impairment,
     list_fixed_assets,
     set_fixed_asset_allocations,
     split_fixed_asset,
@@ -77,6 +78,12 @@ def add_parser(subparsers, parents):
     impair_cmd.add_argument("--period", required=True, help="期间")
     impair_cmd.add_argument("--amount", type=float, required=True, help="金额")
     impair_cmd.set_defaults(func=run_impair)
+
+    impair_reverse_cmd = sub.add_parser("impair-reverse", help="减值冲回", parents=parents)
+    impair_reverse_cmd.add_argument("--asset-id", type=int, required=True, help="资产ID")
+    impair_reverse_cmd.add_argument("--period", required=True, help="期间")
+    impair_reverse_cmd.add_argument("--amount", type=float, required=True, help="金额")
+    impair_reverse_cmd.set_defaults(func=run_impair_reverse)
 
     cip_add_cmd = sub.add_parser("cip-add", help="新增在建工程", parents=parents)
     cip_add_cmd.add_argument("--name", required=True, help="项目名称")
@@ -186,6 +193,12 @@ def run_transfer(args):
 def run_impair(args):
     with get_db(args.db_path) as conn:
         result = impair_fixed_asset(conn, args.asset_id, args.period, args.amount)
+    print_json({"status": "success", **result})
+
+
+def run_impair_reverse(args):
+    with get_db(args.db_path) as conn:
+        result = reverse_fixed_asset_impairment(conn, args.asset_id, args.period, args.amount)
     print_json({"status": "success", **result})
 
 

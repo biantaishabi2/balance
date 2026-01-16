@@ -3,6 +3,7 @@ import pytest
 from ledger.database import get_db, init_db
 from ledger.services import (
     confirm_voucher,
+    balances_for_period,
     insert_voucher,
     load_standard_accounts,
     set_period_status,
@@ -16,13 +17,13 @@ BASIC_ACCOUNTS = [
 ]
 
 
-def _voucher_entries():
+def _voucher_entries(amount: float = 100):
     return [
         {
             "line_no": 1,
             "account_code": "1001",
             "account_name": "Cash",
-            "debit_amount": 100,
+            "debit_amount": amount,
             "credit_amount": 0,
         },
         {
@@ -30,7 +31,7 @@ def _voucher_entries():
             "account_code": "2001",
             "account_name": "Loan",
             "debit_amount": 0,
-            "credit_amount": 100,
+            "credit_amount": amount,
         },
     ]
 
@@ -84,7 +85,7 @@ def test_adjustment_rollforward_creates_next_period_voucher(tmp_path):
         adj_id, _, _, _ = insert_voucher(
             conn,
             {"date": "2025-01-10", "description": "adj", "entry_type": "adjustment"},
-            _voucher_entries(),
+            _voucher_entries(50),
             "reviewed",
         )
         confirm_voucher(conn, adj_id)
@@ -94,3 +95,32 @@ def test_adjustment_rollforward_creates_next_period_voucher(tmp_path):
             ("2025-02", "2025-01 调整结转"),
         ).fetchone()
         assert row["cnt"] == 1
+
+
+def test_report_scope_balances(tmp_path):
+    db_path = tmp_path / "ledger.db"
+    with get_db(str(db_path)) as conn:
+        init_db(conn)
+        load_standard_accounts(conn, BASIC_ACCOUNTS)
+
+        normal_id, _, _, _ = insert_voucher(
+            conn,
+            {"date": "2025-01-05", "description": "normal"},
+            _voucher_entries(),
+            "reviewed",
+        )
+        confirm_voucher(conn, normal_id)
+        adj_id, _, _, _ = insert_voucher(
+            conn,
+            {"date": "2025-01-10", "description": "adj", "entry_type": "adjustment"},
+            _voucher_entries(50),
+            "reviewed",
+        )
+        confirm_voucher(conn, adj_id)
+
+        normal_balances = balances_for_period(conn, "2025-01", scope="normal")
+        adj_balances = balances_for_period(conn, "2025-01", scope="adjustment")
+        normal_cash = next(row for row in normal_balances if row["account_code"] == "1001")
+        adj_cash = next(row for row in adj_balances if row["account_code"] == "1001")
+        assert normal_cash["closing_balance"] == pytest.approx(100.0, rel=0.01)
+        assert adj_cash["closing_balance"] == pytest.approx(50.0, rel=0.01)

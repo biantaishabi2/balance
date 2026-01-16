@@ -36,6 +36,7 @@ def add_parser(subparsers, parents):
     in_cmd.add_argument("--warehouse", help="仓库代码")
     in_cmd.add_argument("--location", help="库位代码")
     in_cmd.add_argument("--batch-no", help="批次号")
+    in_cmd.add_argument("--serials", help="序列号列表(逗号分隔)")
     in_cmd.add_argument("--cost-method", help="成本法 avg/fifo/standard")
     in_cmd.add_argument("--description", help="摘要")
     in_cmd.set_defaults(func=run_in)
@@ -46,6 +47,7 @@ def add_parser(subparsers, parents):
     out_cmd.add_argument("--date", default=_default_date(), help="业务日期")
     out_cmd.add_argument("--warehouse", help="仓库代码")
     out_cmd.add_argument("--location", help="库位代码")
+    out_cmd.add_argument("--serials", help="序列号列表(逗号分隔)")
     out_cmd.add_argument("--cost-method", help="成本法 avg/fifo/standard")
     out_cmd.add_argument("--description", help="摘要")
     out_cmd.set_defaults(func=run_out)
@@ -80,6 +82,11 @@ def add_parser(subparsers, parents):
 
 
 def run_in(args):
+    serials = (
+        [item.strip() for item in args.serials.split(",") if item.strip()]
+        if args.serials
+        else None
+    )
     with get_db(args.db_path) as conn:
         result = inventory_move_in(
             conn,
@@ -94,11 +101,17 @@ def run_in(args):
             args.location,
             args.batch_no,
             args.cost_method,
+            serials,
         )
     print_json({"status": "success", **result})
 
 
 def run_out(args):
+    serials = (
+        [item.strip() for item in args.serials.split(",") if item.strip()]
+        if args.serials
+        else None
+    )
     with get_db(args.db_path) as conn:
         result = inventory_move_out(
             conn,
@@ -109,6 +122,7 @@ def run_out(args):
             args.warehouse,
             args.location,
             args.cost_method,
+            serials,
         )
     print_json({"status": "success", **result})
 

@@ -18,11 +18,12 @@ def generate_statements(
     assumptions: Optional[Dict[str, Any]] = None,
     dims: Optional[Dict[str, int]] = None,
     engine: str = "balance",
+    scope: str = "all",
 ) -> Dict[str, Any]:
     if engine == "ledger":
-        return generate_ledger_statements(conn, period, dims=dims)
+        return generate_ledger_statements(conn, period, dims=dims, scope=scope)
 
-    balances = balances_for_period(conn, period, dims=dims)
+    balances = balances_for_period(conn, period, dims=dims, scope=scope)
     input_data = build_balance_input(balances)
     if assumptions:
         input_data.update(assumptions)

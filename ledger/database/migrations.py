@@ -21,6 +21,7 @@ def run_migrations(conn: sqlite3.Connection) -> None:
         conn.execute("ALTER TABLE vouchers ADD COLUMN reviewed_at TEXT")
     _ensure_column("vouchers", "entry_type", "entry_type TEXT NOT NULL DEFAULT 'normal'")
     _ensure_column("vouchers", "source_template", "source_template TEXT")
+    _ensure_column("vouchers", "source_event_id", "source_event_id TEXT")
     _ensure_column("dimensions", "credit_limit", "credit_limit REAL DEFAULT 0")
     _ensure_column("dimensions", "credit_used", "credit_used REAL DEFAULT 0")
     _ensure_column("dimensions", "credit_days", "credit_days INTEGER DEFAULT 0")
@@ -217,6 +218,14 @@ def run_migrations(conn: sqlite3.Connection) -> None:
           created_at TEXT DEFAULT CURRENT_TIMESTAMP
         );
 
+        CREATE TABLE IF NOT EXISTS voucher_events (
+          event_id TEXT PRIMARY KEY,
+          template_code TEXT NOT NULL,
+          voucher_id INTEGER NOT NULL,
+          created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+          FOREIGN KEY (voucher_id) REFERENCES vouchers(id)
+        );
+
         CREATE TABLE IF NOT EXISTS payment_plans (
           id INTEGER PRIMARY KEY AUTOINCREMENT,
           item_type TEXT NOT NULL,
@@ -284,6 +293,22 @@ def run_migrations(conn: sqlite3.Connection) -> None:
           status TEXT NOT NULL DEFAULT 'open',
           created_at TEXT DEFAULT CURRENT_TIMESTAMP
         );
+
+        CREATE TABLE IF NOT EXISTS inventory_serials (
+          serial_no TEXT PRIMARY KEY,
+          sku TEXT NOT NULL,
+          status TEXT NOT NULL DEFAULT 'in',
+          move_in_id INTEGER,
+          move_out_id INTEGER,
+          warehouse_id INTEGER,
+          location_id INTEGER,
+          created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+          updated_at TEXT,
+          FOREIGN KEY (move_in_id) REFERENCES inventory_moves(id),
+          FOREIGN KEY (move_out_id) REFERENCES inventory_moves(id)
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_inventory_serials_sku ON inventory_serials(sku);
 
         CREATE INDEX IF NOT EXISTS idx_inventory_batches_sku ON inventory_batches(sku);
 

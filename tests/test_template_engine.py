@@ -43,3 +43,39 @@ def test_template_generate_and_disable(tmp_path):
                 {"amount": 50, "date": "2025-01-06"},
             )
         assert exc.value.code == "TEMPLATE_DISABLED"
+
+
+def test_template_if_and_idempotent(tmp_path):
+    db_path = tmp_path / "ledger.db"
+    accounts = [
+        {"code": "1001", "name": "Cash", "level": 1, "type": "asset", "direction": "debit"},
+        {"code": "6001", "name": "Revenue", "level": 1, "type": "revenue", "direction": "credit"},
+    ]
+    rule = {
+        "header": {"description": "cash in", "date_field": "date"},
+        "lines": [
+            {"account": "1001", "debit": "if(amount>1000, amount, 0)", "credit": "0"},
+            {"account": "6001", "debit": "0", "credit": "if(amount>1000, amount, 0)"},
+        ],
+    }
+
+    with get_db(str(db_path)) as conn:
+        init_db(conn)
+        load_standard_accounts(conn, accounts)
+        add_voucher_template(conn, "cash_in_if", "Cash In", rule)
+
+        result = generate_voucher_from_template(
+            conn,
+            "cash_in_if",
+            {"amount": 1500, "date": "2025-01-05", "event_id": "EVT-1"},
+        )
+        assert result["voucher_id"] is not None
+
+        repeat = generate_voucher_from_template(
+            conn,
+            "cash_in_if",
+            {"amount": 1500, "date": "2025-01-05", "event_id": "EVT-1"},
+        )
+        assert repeat["voucher_id"] == result["voucher_id"]
+        row = conn.execute("SELECT COUNT(*) AS cnt FROM vouchers").fetchone()
+        assert row["cnt"] == 1
