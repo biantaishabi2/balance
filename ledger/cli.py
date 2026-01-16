@@ -33,6 +33,10 @@ def build_parser() -> argparse.ArgumentParser:
     commands.add_report_parser(subparsers, [common])
     commands.add_account_parser(subparsers, [common])
     commands.add_dimension_parser(subparsers, [common])
+    commands.add_ar_parser(subparsers, [common])
+    commands.add_ap_parser(subparsers, [common])
+    commands.add_inventory_parser(subparsers, [common])
+    commands.add_fixed_asset_parser(subparsers, [common])
 
     return parser
 
