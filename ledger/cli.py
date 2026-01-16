@@ -34,6 +34,7 @@ def build_parser() -> argparse.ArgumentParser:
     commands.add_report_parser(subparsers, [common])
     commands.add_account_parser(subparsers, [common])
     commands.add_dimension_parser(subparsers, [common])
+    commands.add_invoice_parser(subparsers, [common])
     commands.add_allocation_parser(subparsers, [common])
     commands.add_budget_parser(subparsers, [common])
     commands.add_ar_parser(subparsers, [common])

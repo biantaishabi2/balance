@@ -16,6 +16,9 @@ from .query import add_parser as add_query_parser
 from .report import add_parser as add_report_parser
 from .account import add_parser as add_account_parser
 from .dimension import add_parser as add_dimension_parser
+from .invoice import add_parser as add_invoice_parser
+from .allocation import add_parser as add_allocation_parser
+from .budget import add_parser as add_budget_parser
 from .fx import add_parser as add_fx_parser
 from .template import add_parser as add_template_parser
 from .auto import add_parser as add_auto_parser
@@ -40,6 +43,9 @@ __all__ = [
     "add_report_parser",
     "add_account_parser",
     "add_dimension_parser",
+    "add_invoice_parser",
+    "add_allocation_parser",
+    "add_budget_parser",
     "add_fx_parser",
     "add_template_parser",
     "add_auto_parser",

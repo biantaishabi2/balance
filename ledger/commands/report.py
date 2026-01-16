@@ -38,6 +38,12 @@ def add_parser(subparsers, parents):
         default="all",
         help="口径: all/normal/adjustment",
     )
+    parser.add_argument(
+        "--budget-dim-type",
+        choices=["department", "project"],
+        help="预算维度类型",
+    )
+    parser.add_argument("--budget-dim-code", help="预算维度代码")
     parser.add_argument("--interest-rate", type=float, default=0.0, help="利率假设")
     parser.add_argument("--tax-rate", type=float, default=0.0, help="税率假设")
     parser.add_argument("--fixed-asset-life", type=float, default=0.0, help="折旧年限(年)")
@@ -69,8 +75,23 @@ def run(args):
         "supplier_id": args.supplier_id,
         "employee_id": args.employee_id,
     }
+    budget = None
+    if args.budget_dim_type or args.budget_dim_code:
+        budget = {
+            "dim_type": args.budget_dim_type,
+            "dim_code": args.budget_dim_code,
+        }
     with get_db(args.db_path) as conn:
-        if args.consolidate:
+        if args.tax:
+            report = generate_tax_report(
+                conn,
+                args.period,
+                accounting_profit=args.accounting_profit,
+                tax_rate=args.tax_rate or 0.25,
+                prior_year_loss=args.prior_year_loss,
+                taxpayer_type=args.taxpayer_type,
+            )
+        elif args.consolidate:
             ledger_codes = None
             if args.ledger_codes:
                 ledger_codes = [
@@ -95,6 +116,7 @@ def run(args):
                 dims=dims,
                 engine=args.engine,
                 scope=args.scope,
+                budget=budget,
             )
 
     if args.output:

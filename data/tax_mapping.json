@@ -1,0 +1,7 @@
+{
+  "vat_output_account": "222101",
+  "vat_input_account": "222102",
+  "vat_unpaid_account": "222103",
+  "income_tax_expense_account": "6801",
+  "income_tax_payable_account": "222104"
+}
