@@ -22,13 +22,16 @@ def run(args):
         voucher = confirm_voucher(conn, args.voucher_id)
         _ = generate_statements(conn, voucher["period"])
 
-    print_json(
-        {
-            "voucher_id": args.voucher_id,
-            "status": "confirmed",
-            "message": "凭证已确认，余额已更新，三表已生成",
-            "confirmed_at": voucher.get("confirmed_at"),
-            "balances_updated": voucher.get("balances_updated"),
-            "reports_generated": True,
-        }
-    )
+    output = {
+        "voucher_id": args.voucher_id,
+        "status": "confirmed",
+        "message": "凭证已确认，余额已更新，三表已生成",
+        "confirmed_at": voucher.get("confirmed_at"),
+        "balances_updated": voucher.get("balances_updated"),
+        "budget_warnings": voucher.get("budget_warnings", []),
+        "reports_generated": True,
+    }
+    if voucher.get("audit_warnings"):
+        output["audit_warnings"] = voucher["audit_warnings"]
+
+    print_json(output)

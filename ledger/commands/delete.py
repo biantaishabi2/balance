@@ -5,7 +5,7 @@
 from __future__ import annotations
 
 from ledger.database import get_db
-from ledger.services import fetch_voucher
+from ledger.services import fetch_voucher, log_audit_event
 from ledger.utils import LedgerError, print_json
 
 
@@ -23,6 +23,13 @@ def run(args):
             raise LedgerError("VOUCHER_NOT_FOUND", f"凭证不存在: {args.voucher_id}")
         if voucher["status"] != "draft":
             raise LedgerError("VOID_CONFIRMED", "已确认凭证不能删除，只能冲销")
+        log_audit_event(
+            conn,
+            "ledger.delete",
+            target_type="voucher",
+            target_id=args.voucher_id,
+            detail={"voucher_no": voucher.get("voucher_no")},
+        )
         conn.execute("DELETE FROM vouchers WHERE id = ?", (args.voucher_id,))
 
     print_json(

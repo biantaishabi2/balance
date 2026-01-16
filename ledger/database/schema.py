@@ -63,6 +63,27 @@ CREATE INDEX IF NOT EXISTS idx_vouchers_period ON vouchers(period);
 CREATE INDEX IF NOT EXISTS idx_vouchers_date ON vouchers(date);
 CREATE INDEX IF NOT EXISTS idx_vouchers_status ON vouchers(status);
 
+CREATE TABLE IF NOT EXISTS invoices (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  type TEXT NOT NULL,
+  code TEXT,
+  number TEXT NOT NULL,
+  date TEXT NOT NULL,
+  period TEXT NOT NULL,
+  amount REAL NOT NULL,
+  tax_rate REAL NOT NULL DEFAULT 0,
+  tax_amount REAL NOT NULL DEFAULT 0,
+  status TEXT NOT NULL DEFAULT 'issued',
+  voucher_id INTEGER,
+  created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE(code, number),
+  FOREIGN KEY (voucher_id) REFERENCES vouchers(id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_invoices_period ON invoices(period);
+CREATE INDEX IF NOT EXISTS idx_invoices_type ON invoices(type);
+CREATE INDEX IF NOT EXISTS idx_invoices_voucher ON invoices(voucher_id);
+
 CREATE TABLE IF NOT EXISTS voucher_entries (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   voucher_id INTEGER NOT NULL,
@@ -125,6 +146,20 @@ CREATE INDEX IF NOT EXISTS idx_balances_project ON balances(project_id);
 CREATE INDEX IF NOT EXISTS idx_balances_customer ON balances(customer_id);
 CREATE INDEX IF NOT EXISTS idx_balances_supplier ON balances(supplier_id);
 CREATE INDEX IF NOT EXISTS idx_balances_employee ON balances(employee_id);
+
+CREATE TABLE IF NOT EXISTS tax_adjustments (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  period TEXT NOT NULL,
+  adjustment_type TEXT NOT NULL,
+  amount REAL NOT NULL,
+  description TEXT,
+  voucher_id INTEGER,
+  created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (voucher_id) REFERENCES vouchers(id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_tax_adjustments_period ON tax_adjustments(period);
+CREATE INDEX IF NOT EXISTS idx_tax_adjustments_type ON tax_adjustments(adjustment_type);
 
 CREATE TABLE IF NOT EXISTS void_vouchers (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -302,6 +337,48 @@ CREATE TABLE IF NOT EXISTS voucher_templates (
   rule_json TEXT NOT NULL,
   is_active INTEGER DEFAULT 1,
   created_at TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS allocation_rules (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  name TEXT NOT NULL,
+  source_accounts TEXT NOT NULL,
+  target_dim TEXT NOT NULL,
+  basis TEXT NOT NULL,
+  period TEXT,
+  created_at TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS allocation_rule_lines (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  rule_id INTEGER NOT NULL,
+  target_dim_id INTEGER NOT NULL,
+  ratio REAL NOT NULL,
+  created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (rule_id) REFERENCES allocation_rules(id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_allocation_rule_lines_rule ON allocation_rule_lines(rule_id);
+
+CREATE TABLE IF NOT EXISTS budgets (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  period TEXT NOT NULL,
+  dim_type TEXT NOT NULL,
+  dim_id INTEGER NOT NULL,
+  amount REAL NOT NULL,
+  created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE(period, dim_type, dim_id)
+);
+
+CREATE TABLE IF NOT EXISTS budget_controls (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  period TEXT NOT NULL,
+  dim_type TEXT NOT NULL,
+  dim_id INTEGER NOT NULL,
+  used_amount REAL NOT NULL DEFAULT 0,
+  locked_amount REAL NOT NULL DEFAULT 0,
+  updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE(period, dim_type, dim_id)
 );
 
 CREATE TABLE IF NOT EXISTS voucher_events (
@@ -513,6 +590,41 @@ CREATE TABLE IF NOT EXISTS periods (
 );
 
 CREATE INDEX IF NOT EXISTS idx_periods_status ON periods(status);
+
+CREATE TABLE IF NOT EXISTS audit_logs (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  actor_type TEXT NOT NULL,
+  actor_id TEXT NOT NULL,
+  action TEXT NOT NULL,
+  target_type TEXT,
+  target_id TEXT,
+  detail TEXT,
+  tenant_id TEXT NOT NULL,
+  org_id TEXT,
+  ip TEXT,
+  user_agent TEXT,
+  request_id TEXT NOT NULL,
+  created_at TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_audit_logs_action ON audit_logs(action);
+CREATE INDEX IF NOT EXISTS idx_audit_logs_target ON audit_logs(target_type, target_id);
+
+CREATE TABLE IF NOT EXISTS approvals (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  target_type TEXT NOT NULL,
+  target_id TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'pending',
+  created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE(target_type, target_id)
+);
+
+CREATE TABLE IF NOT EXISTS audit_rules (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  code TEXT NOT NULL UNIQUE,
+  name TEXT NOT NULL,
+  rule_json TEXT NOT NULL
+);
 """
 
 

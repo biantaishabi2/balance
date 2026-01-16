@@ -1,6 +1,7 @@
 from .init import add_parser as add_init_parser
 from .record import add_parser as add_record_parser
 from .confirm import add_parser as add_confirm_parser
+from .approve import add_parser as add_approve_parser
 from .review import add_parser as add_review_parser
 from .unreview import add_parser as add_unreview_parser
 from .close import add_parser as add_close_parser
@@ -24,6 +25,7 @@ __all__ = [
     "add_init_parser",
     "add_record_parser",
     "add_confirm_parser",
+    "add_approve_parser",
     "add_review_parser",
     "add_unreview_parser",
     "add_close_parser",

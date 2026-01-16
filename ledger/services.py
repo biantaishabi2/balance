@@ -8,7 +8,9 @@ from datetime import datetime
 import ast
 import calendar
 import json
+import os
 import re
+import uuid
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 
@@ -83,6 +85,21 @@ DEFAULT_SUBLEDGER_MAPPING = {
     },
 }
 
+DEFAULT_TAX_MAPPING = {
+    "vat_output_account": "222101",
+    "vat_input_account": "222102",
+    "vat_unpaid_account": "222103",
+    "income_tax_expense_account": "6801",
+    "income_tax_payable_account": "222104",
+}
+
+INVOICE_TYPE_ALIASES = {
+    "output": "output",
+    "input": "input",
+    "sales": "output",
+    "purchase": "input",
+}
+
 
 DEFAULT_FOREX_CONFIG = {
     "base_currency": "CNY",
@@ -103,6 +120,11 @@ DEFAULT_CREDIT_CONFIG = {
 }
 
 
+DEFAULT_BUDGET_CONFIG = {
+    "mode": "warn",
+}
+
+
 DEFAULT_BAD_DEBT_CONFIG = {
     "fixed_ratio": None,
     "aging_ratios": {
@@ -112,6 +134,276 @@ DEFAULT_BAD_DEBT_CONFIG = {
         "90_plus": 0.1,
     },
 }
+
+
+def _build_audit_context(context: Optional[Dict[str, Any]] = None) -> Dict[str, str]:
+    payload = dict(context or {})
+    defaults = {
+        "actor_type": os.getenv("LEDGER_ACTOR_TYPE", "system"),
+        "actor_id": os.getenv("LEDGER_ACTOR_ID", "cli"),
+        "tenant_id": os.getenv("LEDGER_TENANT_ID", "default"),
+        "org_id": os.getenv("LEDGER_ORG_ID", "default"),
+        "ip": os.getenv("LEDGER_IP", "127.0.0.1"),
+        "user_agent": os.getenv("LEDGER_USER_AGENT", "ledger-cli"),
+        "request_id": os.getenv("LEDGER_REQUEST_ID", str(uuid.uuid4())),
+    }
+    for key, value in defaults.items():
+        if not payload.get(key):
+            payload[key] = value
+    return payload
+
+
+def log_audit_event(
+    conn,
+    action: str,
+    target_type: Optional[str] = None,
+    target_id: Optional[Any] = None,
+    detail: Optional[Any] = None,
+    context: Optional[Dict[str, Any]] = None,
+) -> None:
+    payload = _build_audit_context(context)
+    detail_text = None
+    if detail is not None:
+        detail_text = (
+            json.dumps(detail, ensure_ascii=False)
+            if isinstance(detail, (dict, list))
+            else str(detail)
+        )
+    conn.execute(
+        """
+        INSERT INTO audit_logs (
+          actor_type, actor_id, action, target_type, target_id, detail,
+          tenant_id, org_id, ip, user_agent, request_id
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        (
+            payload["actor_type"],
+            payload["actor_id"],
+            action,
+            target_type,
+            str(target_id) if target_id is not None else None,
+            detail_text,
+            payload["tenant_id"],
+            payload["org_id"],
+            payload["ip"],
+            payload["user_agent"],
+            payload["request_id"],
+        ),
+    )
+
+
+def fetch_approval(conn, target_type: str, target_id: Any) -> Optional[Dict[str, Any]]:
+    row = conn.execute(
+        "SELECT * FROM approvals WHERE target_type = ? AND target_id = ?",
+        (target_type, str(target_id)),
+    ).fetchone()
+    return dict(row) if row else None
+
+
+def set_approval_status(
+    conn,
+    target_type: str,
+    target_id: Any,
+    status: str,
+) -> Dict[str, Any]:
+    if status not in {"pending", "approved", "rejected"}:
+        raise LedgerError("APPROVAL_STATUS_INVALID", f"无效审批状态: {status}")
+    target_id_text = str(target_id)
+    row = conn.execute(
+        "SELECT id, status FROM approvals WHERE target_type = ? AND target_id = ?",
+        (target_type, target_id_text),
+    ).fetchone()
+    if row:
+        if row["status"] != status:
+            conn.execute(
+                "UPDATE approvals SET status = ? WHERE id = ?",
+                (status, row["id"]),
+            )
+        approval_id = row["id"]
+    else:
+        cur = conn.execute(
+            """
+            INSERT INTO approvals (target_type, target_id, status)
+            VALUES (?, ?, ?)
+            """,
+            (target_type, target_id_text, status),
+        )
+        approval_id = cur.lastrowid
+    return {
+        "id": approval_id,
+        "target_type": target_type,
+        "target_id": target_id_text,
+        "status": status,
+    }
+
+
+def request_approval(conn, target_type: str, target_id: Any) -> Dict[str, Any]:
+    current = fetch_approval(conn, target_type, target_id)
+    if current and current["status"] == "pending":
+        return current
+    approval = set_approval_status(conn, target_type, target_id, "pending")
+    log_audit_event(
+        conn,
+        "approval.request",
+        target_type=target_type,
+        target_id=target_id,
+        detail={"status": "pending"},
+    )
+    return approval
+
+
+def approve_approval(conn, target_type: str, target_id: Any) -> Dict[str, Any]:
+    current = fetch_approval(conn, target_type, target_id)
+    if current and current["status"] == "approved":
+        return current
+    approval = set_approval_status(conn, target_type, target_id, "approved")
+    log_audit_event(
+        conn,
+        "approval.approve",
+        target_type=target_type,
+        target_id=target_id,
+        detail={"status": "approved"},
+    )
+    return approval
+
+
+def reject_approval(conn, target_type: str, target_id: Any) -> Dict[str, Any]:
+    current = fetch_approval(conn, target_type, target_id)
+    if current and current["status"] == "rejected":
+        return current
+    approval = set_approval_status(conn, target_type, target_id, "rejected")
+    log_audit_event(
+        conn,
+        "approval.reject",
+        target_type=target_type,
+        target_id=target_id,
+        detail={"status": "rejected"},
+    )
+    return approval
+
+
+def add_audit_rule(conn, code: str, name: str, rule_json: Dict[str, Any]) -> None:
+    conn.execute(
+        """
+        INSERT OR REPLACE INTO audit_rules (code, name, rule_json)
+        VALUES (?, ?, ?)
+        """,
+        (code, name, json.dumps(rule_json, ensure_ascii=False)),
+    )
+
+
+def list_audit_rules(conn) -> List[Dict[str, Any]]:
+    rows = conn.execute(
+        "SELECT code, name, created_at FROM audit_rules ORDER BY code"
+    ).fetchall()
+    return [dict(row) for row in rows]
+
+
+def _eval_rule_expr(expr: str, context: Dict[str, Any]) -> bool:
+    try:
+        tree = ast.parse(expr, mode="eval")
+    except SyntaxError as exc:
+        raise LedgerError("AUDIT_RULE_INVALID", f"规则表达式错误: {exc}") from exc
+    allowed_nodes = (
+        ast.Expression,
+        ast.BinOp,
+        ast.UnaryOp,
+        ast.Constant,
+        ast.Name,
+        ast.Load,
+        ast.Add,
+        ast.Sub,
+        ast.Mult,
+        ast.Div,
+        ast.USub,
+        ast.UAdd,
+        ast.Call,
+        ast.Mod,
+        ast.Pow,
+        ast.Compare,
+        ast.BoolOp,
+        ast.And,
+        ast.Or,
+        ast.Eq,
+        ast.NotEq,
+        ast.Lt,
+        ast.LtE,
+        ast.Gt,
+        ast.GtE,
+    )
+    allowed_funcs = {
+        "round": round,
+        "abs": abs,
+        "has_account": context["has_account"],
+    }
+    for node in ast.walk(tree):
+        if not isinstance(node, allowed_nodes):
+            raise LedgerError("AUDIT_RULE_INVALID", "规则表达式包含不允许的语法")
+        if isinstance(node, ast.Name) and node.id not in context and node.id not in allowed_funcs:
+            raise LedgerError("AUDIT_RULE_INVALID", f"规则变量未定义: {node.id}")
+        if isinstance(node, ast.Call):
+            if not isinstance(node.func, ast.Name) or node.func.id not in allowed_funcs:
+                raise LedgerError("AUDIT_RULE_INVALID", "规则表达式函数不允许")
+    value = eval(
+        compile(tree, "<audit_expr>", "eval"),
+        {"__builtins__": {}},
+        {**allowed_funcs, **context},
+    )
+    return bool(value)
+
+
+def run_audit_rules_for_voucher(
+    conn,
+    voucher_id: int,
+    entries: Optional[List[Dict[str, Any]]] = None,
+) -> List[str]:
+    rows = conn.execute(
+        "SELECT code, name, rule_json FROM audit_rules ORDER BY code"
+    ).fetchall()
+    if not rows:
+        return []
+    if entries is None:
+        entries = fetch_entries(conn, voucher_id)
+    total_debit = sum(e["debit_amount"] for e in entries)
+    total_credit = sum(e["credit_amount"] for e in entries)
+    max_debit = max((e["debit_amount"] for e in entries), default=0.0)
+    max_credit = max((e["credit_amount"] for e in entries), default=0.0)
+    account_codes = {e["account_code"] for e in entries}
+
+    def has_account(code: str) -> bool:
+        return code in account_codes
+
+    context = {
+        "total_debit": total_debit,
+        "total_credit": total_credit,
+        "entry_count": len(entries),
+        "max_debit": max_debit,
+        "max_credit": max_credit,
+        "has_account": has_account,
+    }
+    warnings: List[str] = []
+    for row in rows:
+        try:
+            rule = json.loads(row["rule_json"])
+        except json.JSONDecodeError as exc:
+            raise LedgerError("AUDIT_RULE_INVALID", f"规则JSON错误: {exc}") from exc
+        if not isinstance(rule, dict):
+            raise LedgerError("AUDIT_RULE_INVALID", "规则必须是对象")
+        message = rule.get("message") or row["name"] or row["code"]
+        triggered = False
+        if "expr" in rule:
+            triggered = _eval_rule_expr(str(rule["expr"]), context)
+        elif rule.get("type") == "account_required":
+            account = rule.get("account")
+            if not account:
+                raise LedgerError("AUDIT_RULE_INVALID", "规则缺少 account 字段")
+            triggered = account not in account_codes
+        else:
+            raise LedgerError("AUDIT_RULE_INVALID", f"规则类型不支持: {rule.get('type')}")
+        if triggered:
+            warnings.append(str(message))
+    return warnings
 
 
 def parse_period(date_str: str) -> str:
@@ -150,20 +442,30 @@ def _period_end_date(period: str) -> str:
     return f"{year_i:04d}-{month_i:02d}-{last_day:02d}"
 
 
-def ensure_period(conn, period: str) -> None:
-    row = conn.execute("SELECT period FROM periods WHERE period = ?", (period,)).fetchone()
+def ensure_period(
+    conn, period: str, tenant_id: Optional[str] = None, org_id: Optional[str] = None
+) -> None:
+    tenant_id, org_id = _resolve_tenant(tenant_id, org_id)
+    row = conn.execute(
+        "SELECT period FROM periods WHERE period = ? AND tenant_id = ? AND org_id = ?",
+        (period, tenant_id, org_id),
+    ).fetchone()
     if row:
         return
     conn.execute(
-        "INSERT INTO periods (period, status, opened_at) VALUES (?, 'open', CURRENT_TIMESTAMP)",
-        (period,),
+        """
+        INSERT INTO periods (tenant_id, org_id, period, status, opened_at)
+        VALUES (?, ?, ?, 'open', CURRENT_TIMESTAMP)
+        """,
+        (tenant_id, org_id, period),
     )
 
     prev = _prev_period(period)
     if not prev:
         return
     existing = conn.execute(
-        "SELECT 1 FROM balances WHERE period = ? LIMIT 1", (period,)
+        "SELECT 1 FROM balances WHERE period = ? AND tenant_id = ? AND org_id = ? LIMIT 1",
+        (period, tenant_id, org_id),
     ).fetchone()
     if existing:
         return
@@ -171,20 +473,22 @@ def ensure_period(conn, period: str) -> None:
         """
         SELECT account_code, dept_id, project_id, customer_id, supplier_id, employee_id, closing_balance
         FROM balances
-        WHERE period = ?
+        WHERE period = ? AND tenant_id = ? AND org_id = ?
         """,
-        (prev,),
+        (prev, tenant_id, org_id),
     ).fetchall()
     for row in prev_rows:
         conn.execute(
             """
             INSERT OR IGNORE INTO balances (
-              account_code, period, dept_id, project_id, customer_id, supplier_id, employee_id,
+              tenant_id, org_id, account_code, period, dept_id, project_id, customer_id, supplier_id, employee_id,
               opening_balance, debit_amount, credit_amount, closing_balance
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, 0, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, ?)
             """,
             (
+                tenant_id,
+                org_id,
                 row["account_code"],
                 period,
                 row["dept_id"],
@@ -198,13 +502,21 @@ def ensure_period(conn, period: str) -> None:
         )
 
 
-def get_period_status(conn, period: str) -> Optional[str]:
-    row = conn.execute("SELECT status FROM periods WHERE period = ?", (period,)).fetchone()
+def get_period_status(
+    conn, period: str, tenant_id: Optional[str] = None, org_id: Optional[str] = None
+) -> Optional[str]:
+    tenant_id, org_id = _resolve_tenant(tenant_id, org_id)
+    row = conn.execute(
+        "SELECT status FROM periods WHERE period = ? AND tenant_id = ? AND org_id = ?",
+        (period, tenant_id, org_id),
+    ).fetchone()
     return row["status"] if row else None
 
 
-def assert_period_open(conn, period: str) -> None:
-    status = get_period_status(conn, period)
+def assert_period_open(
+    conn, period: str, tenant_id: Optional[str] = None, org_id: Optional[str] = None
+) -> None:
+    status = get_period_status(conn, period, tenant_id=tenant_id, org_id=org_id)
     if status == "closed":
         raise LedgerError("PERIOD_CLOSED", f"期间已结账: {period}")
 
@@ -228,17 +540,26 @@ def set_period_status(conn, period: str, status: str) -> Dict[str, Any]:
     return {"period": period, "status": status}
 
 
-def load_standard_accounts(conn, accounts: List[Dict[str, Any]]) -> int:
+def load_standard_accounts(
+    conn,
+    accounts: List[Dict[str, Any]],
+    tenant_id: Optional[str] = None,
+    org_id: Optional[str] = None,
+) -> int:
+    tenant_id, org_id = _resolve_tenant(tenant_id, org_id)
     loaded = 0
     for acc in accounts:
         conn.execute(
             """
             INSERT OR IGNORE INTO accounts (
-              code, name, level, parent_code, type, direction, cash_flow, is_enabled, is_system
+              tenant_id, org_id, code, name, level, parent_code, type, direction,
+              cash_flow, is_enabled, is_system
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
+                tenant_id,
+                org_id,
                 acc["code"],
                 acc["name"],
                 acc.get("level", 1),
@@ -254,10 +575,13 @@ def load_standard_accounts(conn, accounts: List[Dict[str, Any]]) -> int:
     return loaded
 
 
-def find_account(conn, identifier: str) -> Dict[str, Any]:
+def find_account(
+    conn, identifier: str, tenant_id: Optional[str] = None, org_id: Optional[str] = None
+) -> Dict[str, Any]:
+    tenant_id, org_id = _resolve_tenant(tenant_id, org_id)
     row = conn.execute(
-        "SELECT * FROM accounts WHERE code = ? OR name = ?",
-        (identifier, identifier),
+        "SELECT * FROM accounts WHERE tenant_id = ? AND org_id = ? AND (code = ? OR name = ?)",
+        (tenant_id, org_id, identifier, identifier),
     ).fetchone()
     if not row:
         raise LedgerError("ACCOUNT_NOT_FOUND", f"科目不存在: {identifier}")
@@ -266,10 +590,20 @@ def find_account(conn, identifier: str) -> Dict[str, Any]:
     return dict(row)
 
 
-def find_dimension(conn, dim_type: str, code: str) -> int:
+def find_dimension(
+    conn,
+    dim_type: str,
+    code: str,
+    tenant_id: Optional[str] = None,
+    org_id: Optional[str] = None,
+) -> int:
+    tenant_id, org_id = _resolve_tenant(tenant_id, org_id)
     row = conn.execute(
-        "SELECT id FROM dimensions WHERE type = ? AND code = ? AND is_enabled = 1",
-        (dim_type, code),
+        """
+        SELECT id FROM dimensions
+        WHERE tenant_id = ? AND org_id = ? AND type = ? AND code = ? AND is_enabled = 1
+        """,
+        (tenant_id, org_id, dim_type, code),
     ).fetchone()
     if not row:
         raise LedgerError("DIMENSION_NOT_FOUND", f"维度不存在: {dim_type}:{code}")
@@ -323,11 +657,17 @@ def _apply_credit_usage(
     )
 
 
-def generate_voucher_no(conn, date_str: str) -> str:
+def generate_voucher_no(
+    conn, date_str: str, tenant_id: Optional[str] = None, org_id: Optional[str] = None
+) -> str:
+    tenant_id, org_id = _resolve_tenant(tenant_id, org_id)
     prefix = "V" + date_str.replace("-", "")
     row = conn.execute(
-        "SELECT COUNT(*) AS cnt FROM vouchers WHERE voucher_no LIKE ?",
-        (f"{prefix}%",),
+        """
+        SELECT COUNT(*) AS cnt FROM vouchers
+        WHERE voucher_no LIKE ? AND tenant_id = ? AND org_id = ?
+        """,
+        (f"{prefix}%", tenant_id, org_id),
     ).fetchone()
     seq = int(row["cnt"]) + 1
     return f"{prefix}{seq:03d}"
@@ -489,6 +829,18 @@ def insert_voucher(
                 entry.get("employee_id"),
             ),
         )
+    log_audit_event(
+        conn,
+        "voucher.create",
+        target_type="voucher",
+        target_id=voucher_id,
+        detail={
+            "voucher_no": voucher_no,
+            "period": period,
+            "status": status,
+            "entry_count": len(entries),
+        },
+    )
     return voucher_id, voucher_no, period, confirmed_at
 
 
@@ -725,6 +1077,97 @@ def fetch_entries(conn, voucher_id: int) -> List[Dict[str, Any]]:
     return [dict(r) for r in rows]
 
 
+def _budget_dim_from_entry(entry: Dict[str, Any]) -> Tuple[Optional[str], Optional[int]]:
+    dept_id = entry.get("dept_id") or 0
+    project_id = entry.get("project_id") or 0
+    if dept_id:
+        return "department", int(dept_id)
+    if project_id:
+        return "project", int(project_id)
+    return None, None
+
+
+def _apply_budget_controls(conn, voucher_id: int, period: str) -> List[Dict[str, Any]]:
+    config = _load_budget_config()
+    mode = (config.get("mode") or "warn").lower()
+    if mode not in {"warn", "block"}:
+        return []
+    rows = conn.execute(
+        """
+        SELECT ve.*, a.type AS account_type
+        FROM voucher_entries ve
+        JOIN accounts a ON ve.account_code = a.code
+        WHERE ve.voucher_id = ?
+        """,
+        (voucher_id,),
+    ).fetchall()
+    warnings: List[Dict[str, Any]] = []
+    for row in rows:
+        if row["account_type"] != "expense":
+            continue
+        amount = float(row["debit_amount"] or 0) - float(row["credit_amount"] or 0)
+        if abs(amount) < 0.01:
+            continue
+        dim_type, dim_id = _budget_dim_from_entry(row)
+        if not dim_type:
+            continue
+        budget_row = conn.execute(
+            """
+            SELECT amount FROM budgets
+            WHERE period = ? AND dim_type = ? AND dim_id = ?
+            """,
+            (period, dim_type, dim_id),
+        ).fetchone()
+        if not budget_row:
+            continue
+        budget_amount = float(budget_row["amount"] or 0)
+        ctrl_row = conn.execute(
+            """
+            SELECT id, used_amount FROM budget_controls
+            WHERE period = ? AND dim_type = ? AND dim_id = ?
+            """,
+            (period, dim_type, dim_id),
+        ).fetchone()
+        if not ctrl_row:
+            conn.execute(
+                """
+                INSERT INTO budget_controls (period, dim_type, dim_id, used_amount, locked_amount)
+                VALUES (?, ?, ?, 0, 0)
+                """,
+                (period, dim_type, dim_id),
+            )
+            ctrl_row = conn.execute(
+                """
+                SELECT id, used_amount FROM budget_controls
+                WHERE period = ? AND dim_type = ? AND dim_id = ?
+                """,
+                (period, dim_type, dim_id),
+            ).fetchone()
+        used_amount = float(ctrl_row["used_amount"] or 0)
+        new_used = used_amount + amount
+        if new_used < 0:
+            new_used = 0.0
+        if amount > 0 and new_used - budget_amount > 0.01:
+            warning = {
+                "dim_type": dim_type,
+                "dim_id": dim_id,
+                "budget": round(budget_amount, 2),
+                "used": round(new_used, 2),
+                "exceeded": round(new_used - budget_amount, 2),
+            }
+            if mode == "block":
+                raise LedgerError("BUDGET_EXCEEDED", "超预算")
+            warnings.append(warning)
+        conn.execute(
+            """
+            UPDATE budget_controls SET used_amount = ?, updated_at = CURRENT_TIMESTAMP
+            WHERE id = ?
+            """,
+            (round(new_used, 2), ctrl_row["id"]),
+        )
+    return warnings
+
+
 def review_voucher(conn, voucher_id: int) -> Dict[str, Any]:
     voucher = fetch_voucher(conn, voucher_id)
     if not voucher:
@@ -738,6 +1181,7 @@ def review_voucher(conn, voucher_id: int) -> Dict[str, Any]:
     )
     voucher["status"] = "reviewed"
     voucher["reviewed_at"] = reviewed_at
+    request_approval(conn, "voucher", voucher_id)
     return voucher
 
 
@@ -778,6 +1222,7 @@ def confirm_voucher(conn, voucher_id: int) -> Dict[str, Any]:
             },
         )
 
+    budget_warnings = _apply_budget_controls(conn, voucher_id, voucher["period"])
     confirmed_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     conn.execute(
         "UPDATE vouchers SET status = 'confirmed', confirmed_at = ? WHERE id = ?",
@@ -787,6 +1232,21 @@ def confirm_voucher(conn, voucher_id: int) -> Dict[str, Any]:
     voucher["status"] = "confirmed"
     voucher["confirmed_at"] = confirmed_at
     voucher["balances_updated"] = balances_updated
+    voucher["budget_warnings"] = budget_warnings
+    audit_warnings = run_audit_rules_for_voucher(conn, voucher_id, entries)
+    voucher["audit_warnings"] = audit_warnings
+    log_audit_event(
+        conn,
+        "voucher.post",
+        target_type="voucher",
+        target_id=voucher_id,
+        detail={
+            "voucher_no": voucher.get("voucher_no"),
+            "period": voucher.get("period"),
+            "budget_warnings": budget_warnings,
+            "audit_warnings": audit_warnings,
+        },
+    )
     if voucher.get("entry_type") == "adjustment":
         _apply_adjustment_rollforward(conn, voucher["period"])
     return voucher
@@ -841,6 +1301,13 @@ def void_voucher(conn, voucher_id: int, reason: str) -> Dict[str, Any]:
         VALUES (?, ?, ?)
         """,
         (voucher_id, void_id, reason),
+    )
+    log_audit_event(
+        conn,
+        "voucher.void",
+        target_type="voucher",
+        target_id=voucher_id,
+        detail={"void_voucher_id": void_id, "reason": reason},
     )
     return {
         "original_voucher_id": voucher_id,
@@ -1286,6 +1753,18 @@ def close_period(conn, period: str, template_code: Optional[str] = None) -> Dict
         _roll_forward_balances(conn, period, next_period)
 
     net_total = round(sum(net_by_dims.values()), 2)
+    approve_approval(conn, "period_close", period)
+    log_audit_event(
+        conn,
+        "period.close",
+        target_type="period",
+        target_id=period,
+        detail={
+            "closing_voucher_id": closing_voucher_id,
+            "transfer_voucher_id": transfer_voucher_id,
+            "template": template_code,
+        },
+    )
     return {
         "period": period,
         "next_period": next_period,
@@ -1412,6 +1891,14 @@ def reopen_period(conn, period: str) -> Dict[str, Any]:
     conn.execute(
         "UPDATE period_closings SET reopened_at = CURRENT_TIMESTAMP WHERE period = ?",
         (period,),
+    )
+    approve_approval(conn, "period_reopen", period)
+    log_audit_event(
+        conn,
+        "period.reopen",
+        target_type="period",
+        target_id=period,
+        detail={"void_voucher_ids": voided_ids},
     )
     return {
         "period": period,
@@ -3927,6 +4414,700 @@ def reconcile_fixed_assets(conn, period: str) -> Dict[str, Any]:
     }
 
 
+def _allocation_dim_field(target_dim: str) -> Optional[str]:
+    if target_dim == "department":
+        return "dept_id"
+    if target_dim == "project":
+        return "project_id"
+    return None
+
+
+def create_allocation_rule(
+    conn,
+    name: str,
+    source_accounts: List[str],
+    target_dim: str,
+    basis: str,
+    period: Optional[str] = None,
+) -> Dict[str, Any]:
+    if target_dim not in {"department", "project"}:
+        raise LedgerError("ALLOCATION_DIM_INVALID", "分摊维度无效")
+    if basis not in {"revenue", "headcount", "area", "fixed"}:
+        raise LedgerError("ALLOCATION_BASIS_INVALID", "分摊口径无效")
+    accounts = [acc.strip() for acc in source_accounts if acc.strip()]
+    if not accounts:
+        raise LedgerError("ALLOCATION_SOURCE_EMPTY", "分摊来源科目不能为空")
+    cur = conn.execute(
+        """
+        INSERT INTO allocation_rules (name, source_accounts, target_dim, basis, period)
+        VALUES (?, ?, ?, ?, ?)
+        """,
+        (name, json.dumps(accounts, ensure_ascii=False), target_dim, basis, period),
+    )
+    return {
+        "rule_id": cur.lastrowid,
+        "name": name,
+        "target_dim": target_dim,
+        "basis": basis,
+        "period": period,
+    }
+
+
+def set_allocation_rule_lines(
+    conn, rule_id: int, lines: List[Tuple[int, float]]
+) -> None:
+    conn.execute("DELETE FROM allocation_rule_lines WHERE rule_id = ?", (rule_id,))
+    for dim_id, ratio in lines:
+        conn.execute(
+            """
+            INSERT INTO allocation_rule_lines (rule_id, target_dim_id, ratio)
+            VALUES (?, ?, ?)
+            """,
+            (rule_id, dim_id, float(ratio)),
+        )
+
+
+def list_allocation_rules(conn) -> List[Dict[str, Any]]:
+    rows = conn.execute(
+        "SELECT * FROM allocation_rules ORDER BY id"
+    ).fetchall()
+    rules = []
+    for row in rows:
+        data = dict(row)
+        try:
+            data["source_accounts"] = json.loads(data.get("source_accounts") or "[]")
+        except json.JSONDecodeError:
+            data["source_accounts"] = []
+        rules.append(data)
+    return rules
+
+
+def _allocation_basis_ratios(
+    conn, period: str, target_dim: str, basis: str, rule_id: int
+) -> List[Tuple[int, float]]:
+    dim_field = _allocation_dim_field(target_dim)
+    if not dim_field:
+        return []
+    if basis == "fixed":
+        rows = conn.execute(
+            "SELECT target_dim_id, ratio FROM allocation_rule_lines WHERE rule_id = ?",
+            (rule_id,),
+        ).fetchall()
+        total = sum(float(row["ratio"] or 0) for row in rows)
+        if total <= 0:
+            return []
+        return [(int(row["target_dim_id"]), float(row["ratio"]) / total) for row in rows]
+
+    if basis == "revenue":
+        rows = conn.execute(
+            f"""
+            SELECT b.{dim_field} AS dim_id, COALESCE(SUM(b.credit_amount), 0) AS total
+            FROM balances b
+            JOIN accounts a ON b.account_code = a.code
+            WHERE b.period = ? AND a.type = 'revenue'
+            GROUP BY b.{dim_field}
+            """,
+            (period,),
+        ).fetchall()
+        total = sum(float(row["total"] or 0) for row in rows)
+        if total <= 0:
+            return []
+        return [(int(row["dim_id"]), float(row["total"]) / total) for row in rows if row["dim_id"]]
+
+    basis_type = f"{target_dim}_{basis}"
+    rows = conn.execute(
+        """
+        SELECT dim_id, value FROM allocation_basis_values
+        WHERE period = ? AND dim_type = ?
+        ORDER BY dim_id
+        """,
+        (period, basis_type),
+    ).fetchall()
+    total = sum(float(row["value"] or 0) for row in rows)
+    if total <= 0:
+        return []
+    return [(int(row["dim_id"]), float(row["value"]) / total) for row in rows]
+
+
+def run_allocation(
+    conn,
+    rule_id: int,
+    period: str,
+    date: Optional[str] = None,
+    description: Optional[str] = None,
+) -> Dict[str, Any]:
+    rule = conn.execute(
+        "SELECT * FROM allocation_rules WHERE id = ?",
+        (rule_id,),
+    ).fetchone()
+    if not rule:
+        raise LedgerError("ALLOCATION_RULE_NOT_FOUND", f"分摊规则不存在: {rule_id}")
+    target_dim = rule["target_dim"]
+    basis = rule["basis"]
+    source_accounts = json.loads(rule["source_accounts"] or "[]")
+    if not source_accounts:
+        raise LedgerError("ALLOCATION_SOURCE_EMPTY", "分摊来源科目不能为空")
+    dim_field = _allocation_dim_field(target_dim)
+    if not dim_field:
+        raise LedgerError("ALLOCATION_DIM_INVALID", "分摊维度无效")
+    ratios = _allocation_basis_ratios(conn, period, target_dim, basis, rule_id)
+    if not ratios:
+        raise LedgerError("ALLOCATION_BASIS_EMPTY", "分摊基础数据为空")
+
+    alloc_entries: List[Dict[str, Any]] = []
+    description = description or f"Allocation {rule['name']} {period}"
+    for account_code in source_accounts:
+        amount_row = conn.execute(
+            f"""
+            SELECT COALESCE(SUM(debit_amount - credit_amount), 0) AS total
+            FROM balances
+            WHERE period = ? AND account_code = ?
+              AND dept_id = 0 AND project_id = 0 AND customer_id = 0 AND supplier_id = 0 AND employee_id = 0
+            """,
+            (period, account_code),
+        ).fetchone()
+        total_amount = float(amount_row["total"] or 0)
+        if total_amount <= 0.01:
+            continue
+        alloc_entries.append(
+            {
+                "account": account_code,
+                "debit": 0.0,
+                "credit": round(total_amount, 2),
+                "description": description,
+            }
+        )
+        allocated = 0.0
+        for idx, (dim_id, ratio) in enumerate(ratios):
+            alloc_amount = round(total_amount * ratio, 2)
+            if idx == len(ratios) - 1:
+                alloc_amount = round(total_amount - allocated, 2)
+            allocated += alloc_amount
+            alloc_entries.append(
+                {
+                    "account": account_code,
+                    "debit": alloc_amount,
+                    "credit": 0.0,
+                    dim_field: dim_id,
+                    "description": description,
+                }
+            )
+
+    if not alloc_entries:
+        raise LedgerError("ALLOCATION_EMPTY", "分摊金额为空")
+
+    entries, total_debit, total_credit = build_entries(conn, alloc_entries, date or f"{period}-01")
+    if abs(total_debit - total_credit) >= 0.01:
+        raise LedgerError("NOT_BALANCED", "分摊凭证不平衡")
+    voucher_id, voucher_no, _, _ = insert_voucher(
+        conn,
+        {
+            "date": date or f"{period}-01",
+            "description": description,
+        },
+        entries,
+        "reviewed",
+    )
+    voucher = confirm_voucher(conn, voucher_id)
+    return {
+        "rule_id": rule_id,
+        "voucher_id": voucher_id,
+        "voucher_no": voucher_no,
+        "period": period,
+        "confirmed_at": voucher.get("confirmed_at"),
+    }
+
+
+def set_budget(
+    conn,
+    period: str,
+    dim_type: str,
+    dim_code: str,
+    amount: float,
+) -> Dict[str, Any]:
+    if amount < 0:
+        raise LedgerError("BUDGET_AMOUNT_INVALID", "预算金额无效")
+    if dim_type not in {"department", "project"}:
+        raise LedgerError("BUDGET_DIM_INVALID", "预算维度无效")
+    dim_id = find_dimension(conn, dim_type, dim_code)
+    conn.execute(
+        """
+        INSERT OR REPLACE INTO budgets (period, dim_type, dim_id, amount)
+        VALUES (?, ?, ?, ?)
+        """,
+        (period, dim_type, dim_id, round(amount, 2)),
+    )
+    return {
+        "period": period,
+        "dim_type": dim_type,
+        "dim_id": dim_id,
+        "amount": round(amount, 2),
+    }
+
+
+def list_budgets(
+    conn, period: Optional[str] = None, dim_type: Optional[str] = None
+) -> List[Dict[str, Any]]:
+    conditions: List[str] = []
+    params: List[Any] = []
+    if period:
+        conditions.append("period = ?")
+        params.append(period)
+    if dim_type:
+        conditions.append("dim_type = ?")
+        params.append(dim_type)
+    where_clause = f"WHERE {' AND '.join(conditions)}" if conditions else ""
+    rows = conn.execute(
+        f"SELECT * FROM budgets {where_clause} ORDER BY period, dim_type, dim_id",
+        params,
+    ).fetchall()
+    return [dict(row) for row in rows]
+
+
+def budget_variance(
+    conn, period: str, dim_type: str, dim_code: Optional[str] = None
+) -> Dict[str, Any]:
+    if dim_type not in {"department", "project"}:
+        raise LedgerError("BUDGET_DIM_INVALID", "预算维度无效")
+    dim_id = find_dimension(conn, dim_type, dim_code) if dim_code else None
+    dim_field = _allocation_dim_field(dim_type)
+    conditions = ["b.period = ?", "a.type = 'expense'"]
+    params: List[Any] = [period]
+    if dim_id is not None:
+        conditions.append(f"b.{dim_field} = ?")
+        params.append(dim_id)
+    actual_row = conn.execute(
+        f"""
+        SELECT COALESCE(SUM(b.debit_amount - b.credit_amount), 0) AS total
+        FROM balances b
+        JOIN accounts a ON b.account_code = a.code
+        WHERE {" AND ".join(conditions)}
+        """,
+        params,
+    ).fetchone()
+    actual = float(actual_row["total"] or 0)
+    budget_row = conn.execute(
+        """
+        SELECT COALESCE(SUM(amount), 0) AS total
+        FROM budgets
+        WHERE period = ? AND dim_type = ? AND (? IS NULL OR dim_id = ?)
+        """,
+        (period, dim_type, dim_id, dim_id),
+    ).fetchone()
+    budget = float(budget_row["total"] or 0)
+    return {
+        "period": period,
+        "dim_type": dim_type,
+        "dim_id": dim_id,
+        "budget": round(budget, 2),
+        "actual": round(actual, 2),
+        "variance": round(budget - actual, 2),
+    }
+
+
+def _normalize_invoice_type(value: str) -> str:
+    if not value:
+        raise LedgerError("INVOICE_TYPE_INVALID", "发票类型不能为空")
+    normalized = INVOICE_TYPE_ALIASES.get(str(value).lower())
+    if not normalized:
+        raise LedgerError("INVOICE_TYPE_INVALID", f"无效发票类型: {value}")
+    return normalized
+
+
+def add_invoice(
+    conn,
+    invoice_type: str,
+    code: Optional[str],
+    number: str,
+    date: str,
+    amount: float,
+    tax_rate: Optional[float] = None,
+    tax_amount: Optional[float] = None,
+    status: str = "issued",
+    voucher_id: Optional[int] = None,
+) -> Dict[str, Any]:
+    if not number:
+        raise LedgerError("INVOICE_NUMBER_REQUIRED", "发票号码不能为空")
+    if not date:
+        raise LedgerError("INVOICE_DATE_REQUIRED", "发票日期不能为空")
+    if amount <= 0:
+        raise LedgerError("INVOICE_AMOUNT_INVALID", "发票金额必须大于 0")
+    invoice_type = _normalize_invoice_type(invoice_type)
+    period = parse_period(date)
+    if not period or len(period) < 7:
+        raise LedgerError("INVOICE_DATE_INVALID", f"无效发票日期: {date}")
+
+    if voucher_id is not None:
+        voucher = fetch_voucher(conn, voucher_id)
+        if not voucher:
+            raise LedgerError("VOUCHER_NOT_FOUND", f"凭证不存在: {voucher_id}")
+
+    rate = 0.0 if tax_rate is None else float(tax_rate)
+    if rate < 0:
+        raise LedgerError("INVOICE_TAX_RATE_INVALID", "税率不能为负")
+    if tax_amount is None:
+        tax_amount = round(float(amount) * rate, 2)
+    else:
+        tax_amount = float(tax_amount)
+        expected = round(float(amount) * rate, 2)
+        if rate > 0 and abs(tax_amount - expected) >= 0.02:
+            raise LedgerError(
+                "INVOICE_TAX_AMOUNT_MISMATCH",
+                "税额与税率不匹配",
+                {"expected": expected, "provided": round(tax_amount, 2)},
+            )
+        if rate == 0 and amount > 0:
+            rate = round(tax_amount / float(amount), 6)
+
+    cur = conn.execute(
+        """
+        INSERT INTO invoices (
+          type, code, number, date, period, amount, tax_rate, tax_amount, status, voucher_id
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        (
+            invoice_type,
+            code,
+            number,
+            date,
+            period,
+            round(float(amount), 2),
+            round(rate, 6),
+            round(tax_amount, 2),
+            status,
+            voucher_id,
+        ),
+    )
+    return {
+        "invoice_id": cur.lastrowid,
+        "type": invoice_type,
+        "code": code,
+        "number": number,
+        "period": period,
+        "amount": round(float(amount), 2),
+        "tax_rate": round(rate, 6),
+        "tax_amount": round(tax_amount, 2),
+        "status": status,
+        "voucher_id": voucher_id,
+    }
+
+
+def link_invoice(conn, invoice_id: int, voucher_id: int) -> Dict[str, Any]:
+    invoice = conn.execute(
+        "SELECT id FROM invoices WHERE id = ?",
+        (invoice_id,),
+    ).fetchone()
+    if not invoice:
+        raise LedgerError("INVOICE_NOT_FOUND", f"发票不存在: {invoice_id}")
+    voucher = fetch_voucher(conn, voucher_id)
+    if not voucher:
+        raise LedgerError("VOUCHER_NOT_FOUND", f"凭证不存在: {voucher_id}")
+    conn.execute(
+        "UPDATE invoices SET voucher_id = ? WHERE id = ?",
+        (voucher_id, invoice_id),
+    )
+    return {"invoice_id": invoice_id, "voucher_id": voucher_id}
+
+
+def list_invoices(
+    conn,
+    invoice_type: Optional[str] = None,
+    period: Optional[str] = None,
+    status: Optional[str] = None,
+    voucher_id: Optional[int] = None,
+    code: Optional[str] = None,
+    number: Optional[str] = None,
+) -> List[Dict[str, Any]]:
+    conditions: List[str] = []
+    params: List[Any] = []
+    if invoice_type:
+        normalized = _normalize_invoice_type(invoice_type)
+        conditions.append("type = ?")
+        params.append(normalized)
+    if period:
+        conditions.append("period = ?")
+        params.append(period)
+    if status and status != "all":
+        conditions.append("status = ?")
+        params.append(status)
+    if voucher_id:
+        conditions.append("voucher_id = ?")
+        params.append(voucher_id)
+    if code:
+        conditions.append("code = ?")
+        params.append(code)
+    if number:
+        conditions.append("number = ?")
+        params.append(number)
+    where_clause = f"WHERE {' AND '.join(conditions)}" if conditions else ""
+    rows = conn.execute(
+        f"SELECT * FROM invoices {where_clause} ORDER BY date, id",
+        params,
+    ).fetchall()
+    return [dict(row) for row in rows]
+
+
+def vat_summary(
+    conn,
+    period: str,
+    taxpayer_type: str = "general",
+) -> Dict[str, Any]:
+    if taxpayer_type not in {"general", "small_scale"}:
+        raise LedgerError("TAXPAYER_TYPE_INVALID", "纳税人类型无效")
+    rows = conn.execute(
+        """
+        SELECT type, amount, tax_amount
+        FROM invoices
+        WHERE period = ? AND status != 'voided'
+        """,
+        (period,),
+    ).fetchall()
+    output_tax = 0.0
+    input_tax = 0.0
+    output_amount = 0.0
+    input_amount = 0.0
+    for row in rows:
+        if row["type"] == "output":
+            output_tax += float(row["tax_amount"] or 0)
+            output_amount += float(row["amount"] or 0)
+        else:
+            input_tax += float(row["tax_amount"] or 0)
+            input_amount += float(row["amount"] or 0)
+    if taxpayer_type == "small_scale":
+        input_tax = 0.0
+
+    net_tax = output_tax - input_tax
+    return {
+        "period": period,
+        "taxpayer_type": taxpayer_type,
+        "output_tax": round(output_tax, 2),
+        "input_tax": round(input_tax, 2),
+        "tax_payable": round(net_tax, 2),
+        "output_amount": round(output_amount, 2),
+        "input_amount": round(input_amount, 2),
+        "invoice_count": len(rows),
+    }
+
+
+def post_vat_summary(
+    conn,
+    period: str,
+    date: Optional[str] = None,
+    description: Optional[str] = None,
+    taxpayer_type: str = "general",
+    mapping: Optional[Dict[str, str]] = None,
+) -> Dict[str, Any]:
+    summary = vat_summary(conn, period, taxpayer_type=taxpayer_type)
+    if summary["invoice_count"] == 0:
+        raise LedgerError("VAT_EMPTY", "没有可汇总的发票")
+
+    output_tax = summary["output_tax"]
+    input_tax = summary["input_tax"]
+    if abs(output_tax) < 0.01 and abs(input_tax) < 0.01:
+        raise LedgerError("VAT_EMPTY", "税额为 0，无需结转")
+
+    mapping = mapping or _load_tax_mapping()
+    lines: List[Tuple[str, float, float]] = []
+    if output_tax > 0:
+        lines.append((mapping["vat_output_account"], output_tax, 0.0))
+    if input_tax > 0:
+        lines.append((mapping["vat_input_account"], 0.0, input_tax))
+    net_tax = round(output_tax - input_tax, 2)
+    if abs(net_tax) >= 0.01:
+        if net_tax > 0:
+            lines.append((mapping["vat_unpaid_account"], 0.0, net_tax))
+        else:
+            lines.append((mapping["vat_unpaid_account"], abs(net_tax), 0.0))
+
+    description = description or f"VAT {period} 结转"
+    date = date or _period_end_date(period)
+    entries = _build_entries(conn, lines, description=description)
+    voucher = _create_posted_voucher(conn, date, description, entries)
+    return {
+        **summary,
+        "voucher_id": voucher["voucher_id"],
+        "voucher_no": voucher["voucher_no"],
+        "posted": True,
+    }
+
+
+def record_tax_adjustment(
+    conn,
+    period: str,
+    adjustment_type: str,
+    amount: float,
+    description: Optional[str] = None,
+    voucher_id: Optional[int] = None,
+) -> Dict[str, Any]:
+    if adjustment_type not in {"permanent", "temporary"}:
+        raise LedgerError("TAX_ADJUSTMENT_TYPE_INVALID", "差异类型无效")
+    if abs(amount) < 0.01:
+        raise LedgerError("TAX_ADJUSTMENT_AMOUNT_INVALID", "差异金额不能为 0")
+    if voucher_id is not None:
+        voucher = fetch_voucher(conn, voucher_id)
+        if not voucher:
+            raise LedgerError("VOUCHER_NOT_FOUND", f"凭证不存在: {voucher_id}")
+    ensure_period(conn, period)
+    cur = conn.execute(
+        """
+        INSERT INTO tax_adjustments (period, adjustment_type, amount, description, voucher_id)
+        VALUES (?, ?, ?, ?, ?)
+        """,
+        (period, adjustment_type, round(float(amount), 2), description, voucher_id),
+    )
+    return {
+        "adjustment_id": cur.lastrowid,
+        "period": period,
+        "adjustment_type": adjustment_type,
+        "amount": round(float(amount), 2),
+        "description": description,
+        "voucher_id": voucher_id,
+    }
+
+
+def list_tax_adjustments(
+    conn,
+    period: Optional[str] = None,
+    adjustment_type: Optional[str] = None,
+) -> List[Dict[str, Any]]:
+    conditions: List[str] = []
+    params: List[Any] = []
+    if period:
+        conditions.append("period = ?")
+        params.append(period)
+    if adjustment_type:
+        conditions.append("adjustment_type = ?")
+        params.append(adjustment_type)
+    where_clause = f"WHERE {' AND '.join(conditions)}" if conditions else ""
+    rows = conn.execute(
+        f"SELECT * FROM tax_adjustments {where_clause} ORDER BY id",
+        params,
+    ).fetchall()
+    return [dict(row) for row in rows]
+
+
+def summarize_tax_adjustments(conn, period: str) -> Dict[str, Any]:
+    items = list_tax_adjustments(conn, period)
+    summary = {
+        "permanent": {"add": 0.0, "subtract": 0.0, "net": 0.0},
+        "temporary": {"add": 0.0, "subtract": 0.0, "net": 0.0},
+        "total": {"add": 0.0, "subtract": 0.0, "net": 0.0},
+    }
+    add_items: Dict[str, float] = {}
+    subtract_items: Dict[str, float] = {}
+    for row in items:
+        amount = float(row["amount"] or 0)
+        key = row.get("description") or f"adjustment_{row['id']}"
+        bucket = summary.get(row["adjustment_type"], summary["total"])
+        if amount >= 0:
+            add_items[key] = round(amount, 2)
+            bucket["add"] += amount
+            summary["total"]["add"] += amount
+        else:
+            subtract_items[key] = round(abs(amount), 2)
+            bucket["subtract"] += abs(amount)
+            summary["total"]["subtract"] += abs(amount)
+
+    for name in ("permanent", "temporary", "total"):
+        item = summary[name]
+        item["net"] = round(item["add"] - item["subtract"], 2)
+        item["add"] = round(item["add"], 2)
+        item["subtract"] = round(item["subtract"], 2)
+
+    return {
+        "period": period,
+        "items": items,
+        "adjustments": {"add": add_items, "subtract": subtract_items},
+        "summary": summary,
+    }
+
+
+def calculate_income_tax(
+    accounting_profit: float,
+    adjustments: Optional[Dict[str, Dict[str, float]]] = None,
+    tax_rate: float = 0.25,
+    prior_year_loss: float = 0.0,
+    preference: Optional[str] = None,
+) -> Dict[str, Any]:
+    if accounting_profit is None:
+        raise LedgerError("ACCOUNTING_PROFIT_REQUIRED", "缺少会计利润")
+    if tax_rate < 0:
+        raise LedgerError("TAX_RATE_INVALID", "税率不能为负")
+    adjustments = adjustments or {"add": {}, "subtract": {}}
+    add_total = sum(adjustments.get("add", {}).values())
+    subtract_total = sum(adjustments.get("subtract", {}).values())
+    taxable_income = accounting_profit + add_total - subtract_total - prior_year_loss
+    taxable_income = max(0, taxable_income)
+    tax_payable = round(taxable_income * tax_rate, 2)
+    effective_rate = tax_payable / accounting_profit if accounting_profit > 0 else 0.0
+    return {
+        "accounting_profit": round(float(accounting_profit), 2),
+        "adjustments": {
+            "add_items": adjustments.get("add", {}),
+            "add_total": round(add_total, 2),
+            "subtract_items": adjustments.get("subtract", {}),
+            "subtract_total": round(subtract_total, 2),
+        },
+        "prior_year_loss": round(float(prior_year_loss), 2),
+        "taxable_income": round(float(taxable_income), 2),
+        "preference": preference or "standard",
+        "tax_rate": round(float(tax_rate), 4),
+        "tax_payable": tax_payable,
+        "effective_rate": round(float(effective_rate), 4),
+    }
+
+
+def accrue_income_tax(
+    conn,
+    accounting_profit: float,
+    tax_rate: float,
+    date: Optional[str] = None,
+    description: Optional[str] = None,
+    period: Optional[str] = None,
+    include_adjustments: bool = False,
+    mapping: Optional[Dict[str, str]] = None,
+) -> Dict[str, Any]:
+    period = period or (parse_period(date) if date else None)
+    if not period:
+        raise LedgerError("PERIOD_REQUIRED", "缺少期间")
+    date = date or _period_end_date(period)
+    if include_adjustments:
+        adjustment_bundle = summarize_tax_adjustments(conn, period)
+        adjustments = adjustment_bundle["adjustments"]
+    else:
+        adjustment_bundle = None
+        adjustments = {"add": {}, "subtract": {}}
+    result = calculate_income_tax(
+        accounting_profit,
+        adjustments=adjustments,
+        tax_rate=tax_rate,
+    )
+    if result["tax_payable"] <= 0:
+        raise LedgerError("INCOME_TAX_EMPTY", "所得税为 0，无需计提")
+
+    mapping = mapping or _load_tax_mapping()
+    description = description or f"Income tax {period}"
+    entries = _build_entries(
+        conn,
+        [
+            (mapping["income_tax_expense_account"], result["tax_payable"], 0.0),
+            (mapping["income_tax_payable_account"], 0.0, result["tax_payable"]),
+        ],
+        description=description,
+    )
+    voucher = _create_posted_voucher(conn, date, description, entries)
+    output = {
+        **result,
+        "voucher_id": voucher["voucher_id"],
+        "voucher_no": voucher["voucher_no"],
+        "period": period,
+    }
+    if adjustment_bundle:
+        output["tax_adjustments"] = adjustment_bundle["summary"]
+    return output
+
+
 def build_balance_input(balances: List[Dict[str, Any]]) -> Dict[str, Any]:
     mapping = _load_balance_mapping()
     mapped = _apply_balance_mapping(balances, mapping)
@@ -4075,6 +5256,21 @@ def _load_credit_config() -> Dict[str, Any]:
     return merged
 
 
+def _load_budget_config() -> Dict[str, Any]:
+    config_path = Path(__file__).resolve().parents[1] / "data" / "budget_config.json"
+    if not config_path.exists():
+        return dict(DEFAULT_BUDGET_CONFIG)
+    try:
+        data = json.loads(config_path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as exc:
+        raise LedgerError("BUDGET_CONFIG_INVALID", f"预算配置JSON错误: {exc}") from exc
+    if not isinstance(data, dict):
+        raise LedgerError("BUDGET_CONFIG_INVALID", "预算配置必须为对象")
+    merged = dict(DEFAULT_BUDGET_CONFIG)
+    merged.update(data)
+    return merged
+
+
 def _load_bad_debt_config() -> Dict[str, Any]:
     config_path = Path(__file__).resolve().parents[1] / "data" / "bad_debt_config.json"
     if not config_path.exists():
@@ -4107,6 +5303,23 @@ def _load_subledger_mapping() -> Dict[str, Dict[str, str]]:
             current = dict(mapping.get(key, {}))
             current.update(value)
             mapping[key] = current
+    return mapping
+
+
+def _load_tax_mapping() -> Dict[str, str]:
+    mapping_path = Path(__file__).resolve().parents[1] / "data" / "tax_mapping.json"
+    if not mapping_path.exists():
+        return dict(DEFAULT_TAX_MAPPING)
+    try:
+        data = json.loads(mapping_path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as exc:
+        raise LedgerError("TAX_MAPPING_INVALID", f"税务映射JSON错误: {exc}") from exc
+    if not isinstance(data, dict):
+        raise LedgerError("TAX_MAPPING_INVALID", "税务映射必须为对象")
+    mapping = dict(DEFAULT_TAX_MAPPING)
+    for key, value in data.items():
+        if value:
+            mapping[key] = value
     return mapping
 
 
