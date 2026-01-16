@@ -34,12 +34,21 @@ def generate_consolidated_statements(
     group_currency: Optional[str] = None,
     rate_type_map: Optional[Dict[str, str]] = None,
     rate_date: Optional[str] = None,
+    tenant_id: Optional[str] = None,
+    org_id: Optional[str] = None,
 ) -> Dict[str, Any]:
-    rule = _load_consolidation_rule(conn, rule_name) if rule_name else {}
+    from ledger.services import _resolve_tenant
+
+    tenant_id, org_id = _resolve_tenant(tenant_id, org_id)
+    rule = (
+        _load_consolidation_rule(conn, rule_name, tenant_id=tenant_id, org_id=org_id)
+        if rule_name
+        else {}
+    )
     elimination_rules = rule.get("elimination_accounts", [])
     ownership_map = rule.get("ownership", {})
 
-    ledgers = _load_ledgers(conn, ledger_codes)
+    ledgers = _load_ledgers(conn, ledger_codes, tenant_id=tenant_id, org_id=org_id)
     if not ledgers:
         raise LedgerError("LEDGER_NOT_FOUND", "未找到可合并账套")
 
@@ -74,6 +83,8 @@ def generate_consolidated_statements(
             rate_date,
             rate_policy,
             conn,
+            tenant_id=tenant_id,
+            org_id=org_id,
         )
         if ownership != 1.0:
             converted = _apply_ownership(converted, ownership)
@@ -87,7 +98,9 @@ def generate_consolidated_statements(
     statements = _generate_statements_from_balances(aggregated)
     template_report = None
     if template_code:
-        template = _load_report_template(conn, template_code)
+        template = _load_report_template(
+            conn, template_code, tenant_id=tenant_id, org_id=org_id
+        )
         template_report = _apply_report_template(template, statements, aggregated)
 
     output = {
@@ -107,21 +120,34 @@ def generate_consolidated_statements(
     return output
 
 
-def _load_ledgers(conn, ledger_codes: Optional[List[str]]) -> List[Dict[str, Any]]:
+def _load_ledgers(
+    conn,
+    ledger_codes: Optional[List[str]],
+    tenant_id: Optional[str] = None,
+    org_id: Optional[str] = None,
+) -> List[Dict[str, Any]]:
     params: List[Any] = []
     clause = ""
     if ledger_codes:
         placeholders = ", ".join("?" for _ in ledger_codes)
         clause = f" AND l.code IN ({placeholders})"
         params.extend(ledger_codes)
+    if tenant_id is not None and org_id is not None:
+        params.extend([tenant_id, org_id])
+        tenant_clause = " AND l.tenant_id = ? AND l.org_id = ?"
+    else:
+        tenant_clause = ""
 
     rows = conn.execute(
         f"""
         SELECT l.code, l.name, l.base_currency, l.db_path,
                c.code AS company_code, c.base_currency AS company_currency
         FROM ledgers l
-        JOIN companies c ON l.company_id = c.id
-        WHERE l.is_enabled = 1 {clause}
+        JOIN companies c
+          ON l.company_id = c.id
+         AND c.tenant_id = l.tenant_id
+         AND c.org_id = l.org_id
+        WHERE l.is_enabled = 1 {clause}{tenant_clause}
         """,
         params,
     ).fetchall()
@@ -151,12 +177,20 @@ def _load_ledgers(conn, ledger_codes: Optional[List[str]]) -> List[Dict[str, Any
     return ledgers
 
 
-def _load_consolidation_rule(conn, rule_name: Optional[str]) -> Dict[str, Any]:
+def _load_consolidation_rule(
+    conn,
+    rule_name: Optional[str],
+    tenant_id: Optional[str] = None,
+    org_id: Optional[str] = None,
+) -> Dict[str, Any]:
     if not rule_name:
         return {}
     row = conn.execute(
-        "SELECT * FROM consolidation_rules WHERE name = ?",
-        (rule_name,),
+        """
+        SELECT * FROM consolidation_rules
+        WHERE name = ? AND tenant_id = ? AND org_id = ?
+        """,
+        (rule_name, tenant_id, org_id),
     ).fetchone()
     if not row:
         raise LedgerError("CONSOLIDATION_RULE_NOT_FOUND", f"规则不存在: {rule_name}")
@@ -170,10 +204,18 @@ def _load_consolidation_rule(conn, rule_name: Optional[str]) -> Dict[str, Any]:
     }
 
 
-def _load_report_template(conn, template_code: str) -> Dict[str, Any]:
+def _load_report_template(
+    conn,
+    template_code: str,
+    tenant_id: Optional[str] = None,
+    org_id: Optional[str] = None,
+) -> Dict[str, Any]:
     row = conn.execute(
-        "SELECT * FROM report_templates WHERE code = ?",
-        (template_code,),
+        """
+        SELECT * FROM report_templates
+        WHERE code = ? AND tenant_id = ? AND org_id = ?
+        """,
+        (template_code, tenant_id, org_id),
     ).fetchone()
     if not row:
         raise LedgerError("REPORT_TEMPLATE_NOT_FOUND", f"模板不存在: {template_code}")
@@ -240,6 +282,8 @@ def _convert_balances(
     rate_date: str,
     rate_policy: Dict[str, str],
     conn,
+    tenant_id: Optional[str] = None,
+    org_id: Optional[str] = None,
 ) -> List[Dict[str, Any]]:
     converted = []
     for balance in balances:
@@ -251,6 +295,8 @@ def _convert_balances(
             base_currency,
             group_currency,
             rate_type,
+            tenant_id=tenant_id,
+            org_id=org_id,
         )
         converted.append(_apply_rate(balance, rate))
     return converted
@@ -262,6 +308,8 @@ def _lookup_fx_rate(
     base_currency: str,
     group_currency: str,
     rate_type: str,
+    tenant_id: Optional[str] = None,
+    org_id: Optional[str] = None,
 ) -> float:
     if base_currency == group_currency:
         return 1.0
@@ -269,10 +317,11 @@ def _lookup_fx_rate(
         """
         SELECT rate FROM fx_rates
         WHERE base_currency = ? AND quote_currency = ? AND rate_type = ? AND date <= ?
+          AND tenant_id = ? AND org_id = ?
         ORDER BY date DESC
         LIMIT 1
         """,
-        (base_currency, group_currency, rate_type, rate_date),
+        (base_currency, group_currency, rate_type, rate_date, tenant_id, org_id),
     ).fetchone()
     if row:
         return float(row["rate"])
@@ -281,10 +330,11 @@ def _lookup_fx_rate(
         """
         SELECT rate FROM fx_rates
         WHERE base_currency = ? AND quote_currency = ? AND rate_type = ? AND date <= ?
+          AND tenant_id = ? AND org_id = ?
         ORDER BY date DESC
         LIMIT 1
         """,
-        (group_currency, base_currency, rate_type, rate_date),
+        (group_currency, base_currency, rate_type, rate_date, tenant_id, org_id),
     ).fetchone()
     if inverse:
         return 1 / float(inverse["rate"])

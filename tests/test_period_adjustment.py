@@ -2,6 +2,7 @@ import pytest
 
 from ledger.database import get_db, init_db
 from ledger.services import (
+    close_period,
     confirm_voucher,
     balances_for_period,
     insert_voucher,
@@ -124,3 +125,57 @@ def test_report_scope_balances(tmp_path):
         adj_cash = next(row for row in adj_balances if row["account_code"] == "1001")
         assert normal_cash["closing_balance"] == pytest.approx(100.0, rel=0.01)
         assert adj_cash["closing_balance"] == pytest.approx(50.0, rel=0.01)
+
+
+def test_close_period_with_template(tmp_path):
+    db_path = tmp_path / "ledger.db"
+    accounts = [
+        {"code": "1001", "name": "Cash", "level": 1, "type": "asset", "direction": "debit"},
+        {"code": "6001", "name": "Revenue", "level": 1, "type": "revenue", "direction": "credit"},
+        {"code": "6401", "name": "Expense", "level": 1, "type": "expense", "direction": "debit"},
+        {"code": "4103", "name": "Profit", "level": 1, "type": "equity", "direction": "credit"},
+    ]
+
+    with get_db(str(db_path)) as conn:
+        init_db(conn)
+        load_standard_accounts(conn, accounts)
+        conn.execute(
+            """
+            INSERT INTO closing_templates (code, name, rule_json, is_active)
+            VALUES (?, ?, ?, 1)
+            """,
+            (
+                "T-01",
+                "Template close",
+                '{"source_types":["revenue","expense"],"target_account":"4103","description":"template close"}',
+            ),
+        )
+
+        voucher_id, _, _, _ = insert_voucher(
+            conn,
+            {"date": "2025-01-05", "description": "sales"},
+            [
+                {"line_no": 1, "account_code": "1001", "account_name": "Cash", "debit_amount": 100, "credit_amount": 0},
+                {"line_no": 2, "account_code": "6001", "account_name": "Revenue", "debit_amount": 0, "credit_amount": 100},
+            ],
+            "reviewed",
+        )
+        confirm_voucher(conn, voucher_id)
+        voucher_id, _, _, _ = insert_voucher(
+            conn,
+            {"date": "2025-01-06", "description": "expense"},
+            [
+                {"line_no": 1, "account_code": "6401", "account_name": "Expense", "debit_amount": 40, "credit_amount": 0},
+                {"line_no": 2, "account_code": "1001", "account_name": "Cash", "debit_amount": 0, "credit_amount": 40},
+            ],
+            "reviewed",
+        )
+        confirm_voucher(conn, voucher_id)
+
+        result = close_period(conn, "2025-01", template_code="T-01")
+        close_entries = conn.execute(
+            "SELECT account_code FROM voucher_entries WHERE voucher_id = ?",
+            (result["closing_voucher_id"],),
+        ).fetchall()
+        codes = {row["account_code"] for row in close_entries}
+        assert "4103" in codes

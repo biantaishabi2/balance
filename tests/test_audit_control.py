@@ -1,6 +1,7 @@
 import pytest
 
 from ledger.database import get_db, init_db
+from ledger.commands import delete as delete_cmd
 from ledger.services import (
     add_audit_rule,
     approve_approval,
@@ -9,8 +10,10 @@ from ledger.services import (
     fetch_approval,
     insert_voucher,
     load_standard_accounts,
+    reopen_period,
     review_voucher,
 )
+from types import SimpleNamespace
 
 
 BASIC_ACCOUNTS = [
@@ -102,3 +105,36 @@ def test_audit_rules_trigger_warning(tmp_path):
         review_voucher(conn, voucher_id)
         result = confirm_voucher(conn, voucher_id)
         assert "Large voucher" in result.get("audit_warnings", [])
+
+
+def test_delete_and_reopen_audit_logs(tmp_path):
+    db_path = tmp_path / "ledger.db"
+
+    with get_db(str(db_path)) as conn:
+        init_db(conn)
+        load_standard_accounts(conn, BASIC_ACCOUNTS)
+        voucher_id, _, _, _ = _create_voucher(conn, amount=100.0)
+        conn.commit()
+        args = SimpleNamespace(db_path=str(db_path), voucher_id=voucher_id)
+        delete_cmd.run(args)
+
+        log_row = conn.execute(
+            "SELECT action FROM audit_logs WHERE action = 'ledger.delete'"
+        ).fetchone()
+        assert log_row is not None
+
+        voucher_id, _, _, _ = _create_voucher(conn, amount=300.0)
+        review_voucher(conn, voucher_id)
+        confirm_voucher(conn, voucher_id)
+        close_period(conn, "2025-01")
+        reopen_period(conn, "2025-01")
+
+        approval_close = fetch_approval(conn, "period_close", "2025-01")
+        approval_reopen = fetch_approval(conn, "period_reopen", "2025-01")
+        assert approval_close["status"] == "approved"
+        assert approval_reopen["status"] == "approved"
+
+        reopen_log = conn.execute(
+            "SELECT action FROM audit_logs WHERE action = 'period.reopen'"
+        ).fetchone()
+        assert reopen_log is not None

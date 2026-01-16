@@ -4,6 +4,7 @@ import ledger.services as services
 from ledger.database import get_db, init_db
 from ledger.services import (
     add_ar_item,
+    add_ap_item,
     add_bill,
     add_cip_cost,
     add_fixed_asset,
@@ -11,6 +12,7 @@ from ledger.services import (
     create_payment_plan,
     depreciate_assets,
     impair_fixed_asset,
+    inventory_count,
     inventory_move_in,
     inventory_move_out,
     load_standard_accounts,
@@ -27,6 +29,7 @@ from ledger.services import (
     update_bill_status,
     upgrade_fixed_asset,
 )
+from ledger.utils import LedgerError
 
 
 def _seed_dimension(conn, dim_type: str, code: str, name: str) -> None:
@@ -277,6 +280,47 @@ def test_inventory_negative_allow_adjustment(tmp_path, monkeypatch):
         assert voucher_row["cnt"] == 1
 
 
+def test_inventory_count_difference(tmp_path):
+    db_path = tmp_path / "ledger.db"
+    accounts = [
+        {"code": "1002", "name": "Bank", "level": 1, "type": "asset", "direction": "debit"},
+        {"code": "1403", "name": "Inventory", "level": 1, "type": "asset", "direction": "debit"},
+        {"code": "6605", "name": "Inventory Loss", "level": 1, "type": "expense", "direction": "debit"},
+        {"code": "6051", "name": "Inventory Gain", "level": 1, "type": "revenue", "direction": "credit"},
+        {"code": "6401", "name": "COGS", "level": 1, "type": "expense", "direction": "debit"},
+    ]
+
+    with get_db(str(db_path)) as conn:
+        init_db(conn)
+        load_standard_accounts(conn, accounts)
+        inventory_move_in(conn, "I1", 10, 5, "2025-01-01")
+        result = inventory_count(conn, "I1", 8, "2025-01-10")
+        entries = conn.execute(
+            "SELECT account_code, debit_amount, credit_amount FROM voucher_entries WHERE voucher_id = ?",
+            (result["voucher_id"],),
+        ).fetchall()
+        entry_map = {row["account_code"]: row for row in entries}
+        assert entry_map["6605"]["debit_amount"] == pytest.approx(10.0, rel=0.01)
+        assert entry_map["1403"]["credit_amount"] == pytest.approx(10.0, rel=0.01)
+
+
+def test_inventory_negative_reject(tmp_path):
+    db_path = tmp_path / "ledger.db"
+    accounts = [
+        {"code": "1002", "name": "Bank", "level": 1, "type": "asset", "direction": "debit"},
+        {"code": "1403", "name": "Inventory", "level": 1, "type": "asset", "direction": "debit"},
+        {"code": "6401", "name": "COGS", "level": 1, "type": "expense", "direction": "debit"},
+    ]
+
+    with get_db(str(db_path)) as conn:
+        init_db(conn)
+        load_standard_accounts(conn, accounts)
+        inventory_move_in(conn, "R1", 1, 10, "2025-01-01")
+        with pytest.raises(LedgerError) as exc:
+            inventory_move_out(conn, "R1", 2, "2025-01-05")
+        assert exc.value.code == "INVENTORY_INSUFFICIENT"
+
+
 def test_inventory_serial_tracking(tmp_path):
     db_path = tmp_path / "ledger.db"
     accounts = [
@@ -350,3 +394,55 @@ def test_bad_debt_auto(tmp_path, monkeypatch):
             (result["voucher_id"],),
         ).fetchone()
         assert row["debit_amount"] == pytest.approx(18.0, rel=0.01)
+
+
+def test_subledger_mapping_config(tmp_path, monkeypatch):
+    db_path = tmp_path / "ledger.db"
+    accounts = [
+        {"code": "1002", "name": "Bank", "level": 1, "type": "asset", "direction": "debit"},
+        {"code": "1122", "name": "AR", "level": 1, "type": "asset", "direction": "debit"},
+        {"code": "1129", "name": "AR Custom", "level": 1, "type": "asset", "direction": "debit"},
+        {"code": "2001", "name": "Loan", "level": 1, "type": "liability", "direction": "credit"},
+        {"code": "2202", "name": "AP", "level": 1, "type": "liability", "direction": "credit"},
+        {"code": "2209", "name": "AP Custom", "level": 1, "type": "liability", "direction": "credit"},
+        {"code": "1403", "name": "Inventory", "level": 1, "type": "asset", "direction": "debit"},
+        {"code": "6001", "name": "Revenue", "level": 1, "type": "revenue", "direction": "credit"},
+        {"code": "1601", "name": "FA", "level": 1, "type": "asset", "direction": "debit"},
+        {"code": "1609", "name": "FA Custom", "level": 1, "type": "asset", "direction": "debit"},
+    ]
+
+    mapping = services._load_subledger_mapping()
+    mapping["ar"] = {**mapping["ar"], "ar_account": "1129"}
+    mapping["ap"] = {**mapping["ap"], "ap_account": "2209"}
+    mapping["fixed_asset"] = {**mapping["fixed_asset"], "asset_account": "1609"}
+    monkeypatch.setattr(services, "_load_subledger_mapping", lambda: mapping)
+
+    with get_db(str(db_path)) as conn:
+        init_db(conn)
+        load_standard_accounts(conn, accounts)
+        _seed_dimension(conn, "customer", "C900", "Cust")
+        _seed_dimension(conn, "supplier", "S900", "Supp")
+
+        ar_item = add_ar_item(conn, "C900", 120, "2025-01-05")
+        ar_entries = conn.execute(
+            "SELECT account_code FROM voucher_entries WHERE voucher_id = ?",
+            (ar_item["voucher_id"],),
+        ).fetchall()
+        ar_codes = {row["account_code"] for row in ar_entries}
+        assert "1129" in ar_codes
+
+        ap_item = add_ap_item(conn, "S900", 80, "2025-01-06")
+        ap_entries = conn.execute(
+            "SELECT account_code FROM voucher_entries WHERE voucher_id = ?",
+            (ap_item["voucher_id"],),
+        ).fetchall()
+        ap_codes = {row["account_code"] for row in ap_entries}
+        assert "2209" in ap_codes
+
+        asset = add_fixed_asset(conn, "Custom Asset", 500, 5, 0, "2025-01-07")
+        fa_entries = conn.execute(
+            "SELECT account_code FROM voucher_entries WHERE voucher_id = ?",
+            (asset["voucher_id"],),
+        ).fetchall()
+        fa_codes = {row["account_code"] for row in fa_entries}
+        assert "1609" in fa_codes

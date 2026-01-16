@@ -136,6 +136,8 @@ CREATE INDEX IF NOT EXISTS idx_vouchers_archived ON vouchers(archived_at);
 
 CREATE TABLE IF NOT EXISTS invoices (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
+  tenant_id TEXT NOT NULL DEFAULT 'default',
+  org_id TEXT NOT NULL DEFAULT 'default',
   type TEXT NOT NULL,
   code TEXT,
   number TEXT NOT NULL,
@@ -147,10 +149,11 @@ CREATE TABLE IF NOT EXISTS invoices (
   status TEXT NOT NULL DEFAULT 'issued',
   voucher_id INTEGER,
   created_at TEXT DEFAULT CURRENT_TIMESTAMP,
-  UNIQUE(code, number),
+  UNIQUE(tenant_id, org_id, code, number),
   FOREIGN KEY (voucher_id) REFERENCES vouchers(id)
 );
 
+CREATE INDEX IF NOT EXISTS idx_invoices_tenant ON invoices(tenant_id, org_id);
 CREATE INDEX IF NOT EXISTS idx_invoices_period ON invoices(period);
 CREATE INDEX IF NOT EXISTS idx_invoices_type ON invoices(type);
 CREATE INDEX IF NOT EXISTS idx_invoices_voucher ON invoices(voucher_id);
@@ -230,6 +233,8 @@ CREATE INDEX IF NOT EXISTS idx_balances_employee ON balances(employee_id);
 
 CREATE TABLE IF NOT EXISTS tax_adjustments (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
+  tenant_id TEXT NOT NULL DEFAULT 'default',
+  org_id TEXT NOT NULL DEFAULT 'default',
   period TEXT NOT NULL,
   adjustment_type TEXT NOT NULL,
   amount REAL NOT NULL,
@@ -239,6 +244,7 @@ CREATE TABLE IF NOT EXISTS tax_adjustments (
   FOREIGN KEY (voucher_id) REFERENCES vouchers(id)
 );
 
+CREATE INDEX IF NOT EXISTS idx_tax_adjustments_tenant ON tax_adjustments(tenant_id, org_id);
 CREATE INDEX IF NOT EXISTS idx_tax_adjustments_period ON tax_adjustments(period);
 CREATE INDEX IF NOT EXISTS idx_tax_adjustments_type ON tax_adjustments(adjustment_type);
 
@@ -387,24 +393,32 @@ CREATE TABLE IF NOT EXISTS fixed_assets (
 );
 
 CREATE TABLE IF NOT EXISTS currencies (
-  code TEXT PRIMARY KEY,
+  tenant_id TEXT NOT NULL DEFAULT 'default',
+  org_id TEXT NOT NULL DEFAULT 'default',
+  code TEXT NOT NULL,
   name TEXT NOT NULL,
   symbol TEXT,
   precision INTEGER NOT NULL DEFAULT 2,
-  is_active INTEGER DEFAULT 1
+  is_active INTEGER DEFAULT 1,
+  PRIMARY KEY (tenant_id, org_id, code)
 );
 
 CREATE TABLE IF NOT EXISTS exchange_rates (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
+  tenant_id TEXT NOT NULL DEFAULT 'default',
+  org_id TEXT NOT NULL DEFAULT 'default',
   currency_code TEXT NOT NULL,
   date TEXT NOT NULL,
   rate REAL NOT NULL,
   rate_type TEXT NOT NULL DEFAULT 'spot',
   source TEXT,
   created_at TEXT DEFAULT CURRENT_TIMESTAMP,
-  UNIQUE(currency_code, date, rate_type),
-  FOREIGN KEY (currency_code) REFERENCES currencies(code)
+  UNIQUE(tenant_id, org_id, currency_code, date, rate_type),
+  FOREIGN KEY (tenant_id, org_id, currency_code) REFERENCES currencies(tenant_id, org_id, code)
 );
+
+CREATE INDEX IF NOT EXISTS idx_currencies_tenant ON currencies(tenant_id, org_id);
+CREATE INDEX IF NOT EXISTS idx_exchange_rates_tenant ON exchange_rates(tenant_id, org_id);
 
 CREATE TABLE IF NOT EXISTS balances_fx (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -440,23 +454,34 @@ CREATE TABLE IF NOT EXISTS balances_fx (
 CREATE INDEX IF NOT EXISTS idx_balances_fx_tenant ON balances_fx(tenant_id, org_id);
 
 CREATE TABLE IF NOT EXISTS closing_templates (
-  code TEXT PRIMARY KEY,
+  tenant_id TEXT NOT NULL DEFAULT 'default',
+  org_id TEXT NOT NULL DEFAULT 'default',
+  code TEXT NOT NULL,
   name TEXT NOT NULL,
   rule_json TEXT NOT NULL,
   is_active INTEGER DEFAULT 1,
-  created_at TEXT DEFAULT CURRENT_TIMESTAMP
+  created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (tenant_id, org_id, code)
 );
 
 CREATE TABLE IF NOT EXISTS voucher_templates (
-  code TEXT PRIMARY KEY,
+  tenant_id TEXT NOT NULL DEFAULT 'default',
+  org_id TEXT NOT NULL DEFAULT 'default',
+  code TEXT NOT NULL,
   name TEXT NOT NULL,
   rule_json TEXT NOT NULL,
   is_active INTEGER DEFAULT 1,
-  created_at TEXT DEFAULT CURRENT_TIMESTAMP
+  created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (tenant_id, org_id, code)
 );
+
+CREATE INDEX IF NOT EXISTS idx_closing_templates_tenant ON closing_templates(tenant_id, org_id);
+CREATE INDEX IF NOT EXISTS idx_voucher_templates_tenant ON voucher_templates(tenant_id, org_id);
 
 CREATE TABLE IF NOT EXISTS allocation_rules (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
+  tenant_id TEXT NOT NULL DEFAULT 'default',
+  org_id TEXT NOT NULL DEFAULT 'default',
   name TEXT NOT NULL,
   source_accounts TEXT NOT NULL,
   target_dim TEXT NOT NULL,
@@ -467,6 +492,8 @@ CREATE TABLE IF NOT EXISTS allocation_rules (
 
 CREATE TABLE IF NOT EXISTS allocation_rule_lines (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
+  tenant_id TEXT NOT NULL DEFAULT 'default',
+  org_id TEXT NOT NULL DEFAULT 'default',
   rule_id INTEGER NOT NULL,
   target_dim_id INTEGER NOT NULL,
   ratio REAL NOT NULL,
@@ -475,52 +502,71 @@ CREATE TABLE IF NOT EXISTS allocation_rule_lines (
 );
 
 CREATE INDEX IF NOT EXISTS idx_allocation_rule_lines_rule ON allocation_rule_lines(rule_id);
+CREATE INDEX IF NOT EXISTS idx_allocation_rules_tenant ON allocation_rules(tenant_id, org_id);
+CREATE INDEX IF NOT EXISTS idx_allocation_rule_lines_tenant ON allocation_rule_lines(tenant_id, org_id);
 
 CREATE TABLE IF NOT EXISTS budgets (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
+  tenant_id TEXT NOT NULL DEFAULT 'default',
+  org_id TEXT NOT NULL DEFAULT 'default',
   period TEXT NOT NULL,
   dim_type TEXT NOT NULL,
   dim_id INTEGER NOT NULL,
   amount REAL NOT NULL,
   created_at TEXT DEFAULT CURRENT_TIMESTAMP,
-  UNIQUE(period, dim_type, dim_id)
+  UNIQUE(tenant_id, org_id, period, dim_type, dim_id)
 );
 
 CREATE TABLE IF NOT EXISTS budget_controls (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
+  tenant_id TEXT NOT NULL DEFAULT 'default',
+  org_id TEXT NOT NULL DEFAULT 'default',
   period TEXT NOT NULL,
   dim_type TEXT NOT NULL,
   dim_id INTEGER NOT NULL,
   used_amount REAL NOT NULL DEFAULT 0,
   locked_amount REAL NOT NULL DEFAULT 0,
   updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
-  UNIQUE(period, dim_type, dim_id)
+  UNIQUE(tenant_id, org_id, period, dim_type, dim_id)
 );
 
 CREATE TABLE IF NOT EXISTS budget_locks (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
+  tenant_id TEXT NOT NULL DEFAULT 'default',
+  org_id TEXT NOT NULL DEFAULT 'default',
   voucher_id INTEGER NOT NULL,
   period TEXT NOT NULL,
   dim_type TEXT NOT NULL,
   dim_id INTEGER NOT NULL,
   amount REAL NOT NULL,
   created_at TEXT DEFAULT CURRENT_TIMESTAMP,
-  UNIQUE(voucher_id, dim_type, dim_id),
+  UNIQUE(tenant_id, org_id, voucher_id, dim_type, dim_id),
   FOREIGN KEY (voucher_id) REFERENCES vouchers(id)
 );
+
+CREATE INDEX IF NOT EXISTS idx_budgets_tenant ON budgets(tenant_id, org_id);
+CREATE INDEX IF NOT EXISTS idx_budget_controls_tenant ON budget_controls(tenant_id, org_id);
+CREATE INDEX IF NOT EXISTS idx_budget_locks_tenant ON budget_locks(tenant_id, org_id);
 
 CREATE INDEX IF NOT EXISTS idx_budget_locks_voucher ON budget_locks(voucher_id);
 
 CREATE TABLE IF NOT EXISTS voucher_events (
-  event_id TEXT PRIMARY KEY,
+  event_id TEXT NOT NULL,
+  tenant_id TEXT NOT NULL DEFAULT 'default',
+  org_id TEXT NOT NULL DEFAULT 'default',
   template_code TEXT NOT NULL,
   voucher_id INTEGER NOT NULL,
   created_at TEXT DEFAULT CURRENT_TIMESTAMP,
-  FOREIGN KEY (voucher_id) REFERENCES vouchers(id)
+  FOREIGN KEY (voucher_id) REFERENCES vouchers(id),
+  PRIMARY KEY (tenant_id, org_id, event_id)
 );
+
+CREATE INDEX IF NOT EXISTS idx_voucher_events_tenant ON voucher_events(tenant_id, org_id);
 
 CREATE TABLE IF NOT EXISTS payment_plans (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
+  tenant_id TEXT NOT NULL DEFAULT 'default',
+  org_id TEXT NOT NULL DEFAULT 'default',
   item_type TEXT NOT NULL,
   item_id INTEGER NOT NULL,
   due_date TEXT NOT NULL,
@@ -530,8 +576,12 @@ CREATE TABLE IF NOT EXISTS payment_plans (
   created_at TEXT DEFAULT CURRENT_TIMESTAMP
 );
 
+CREATE INDEX IF NOT EXISTS idx_payment_plans_tenant ON payment_plans(tenant_id, org_id);
+
 CREATE TABLE IF NOT EXISTS bills (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
+  tenant_id TEXT NOT NULL DEFAULT 'default',
+  org_id TEXT NOT NULL DEFAULT 'default',
   bill_no TEXT NOT NULL,
   bill_type TEXT NOT NULL,
   amount REAL NOT NULL,
@@ -541,11 +591,15 @@ CREATE TABLE IF NOT EXISTS bills (
   item_id INTEGER,
   voucher_id INTEGER,
   created_at TEXT DEFAULT CURRENT_TIMESTAMP,
-  UNIQUE(bill_no)
+  UNIQUE(tenant_id, org_id, bill_no)
 );
+
+CREATE INDEX IF NOT EXISTS idx_bills_tenant ON bills(tenant_id, org_id);
 
 CREATE TABLE IF NOT EXISTS bad_debt_provisions (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
+  tenant_id TEXT NOT NULL DEFAULT 'default',
+  org_id TEXT NOT NULL DEFAULT 'default',
   period TEXT NOT NULL,
   customer_id INTEGER NOT NULL,
   amount REAL NOT NULL,
@@ -555,26 +609,37 @@ CREATE TABLE IF NOT EXISTS bad_debt_provisions (
   FOREIGN KEY (voucher_id) REFERENCES vouchers(id)
 );
 
+CREATE INDEX IF NOT EXISTS idx_bad_debt_provisions_tenant ON bad_debt_provisions(tenant_id, org_id);
+
 CREATE TABLE IF NOT EXISTS warehouses (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
+  tenant_id TEXT NOT NULL DEFAULT 'default',
+  org_id TEXT NOT NULL DEFAULT 'default',
   code TEXT NOT NULL,
   name TEXT NOT NULL,
   created_at TEXT DEFAULT CURRENT_TIMESTAMP,
-  UNIQUE(code)
+  UNIQUE(tenant_id, org_id, code)
 );
 
 CREATE TABLE IF NOT EXISTS locations (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
+  tenant_id TEXT NOT NULL DEFAULT 'default',
+  org_id TEXT NOT NULL DEFAULT 'default',
   warehouse_id INTEGER NOT NULL,
   code TEXT NOT NULL,
   name TEXT NOT NULL,
   created_at TEXT DEFAULT CURRENT_TIMESTAMP,
-  UNIQUE(warehouse_id, code),
+  UNIQUE(tenant_id, org_id, warehouse_id, code),
   FOREIGN KEY (warehouse_id) REFERENCES warehouses(id)
 );
 
+CREATE INDEX IF NOT EXISTS idx_warehouses_tenant ON warehouses(tenant_id, org_id);
+CREATE INDEX IF NOT EXISTS idx_locations_tenant ON locations(tenant_id, org_id);
+
 CREATE TABLE IF NOT EXISTS inventory_batches (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
+  tenant_id TEXT NOT NULL DEFAULT 'default',
+  org_id TEXT NOT NULL DEFAULT 'default',
   sku TEXT NOT NULL,
   batch_no TEXT,
   qty REAL NOT NULL,
@@ -588,9 +653,12 @@ CREATE TABLE IF NOT EXISTS inventory_batches (
 );
 
 CREATE INDEX IF NOT EXISTS idx_inventory_batches_sku ON inventory_batches(sku);
+CREATE INDEX IF NOT EXISTS idx_inventory_batches_tenant ON inventory_batches(tenant_id, org_id);
 
 CREATE TABLE IF NOT EXISTS inventory_serials (
-  serial_no TEXT PRIMARY KEY,
+  serial_no TEXT NOT NULL,
+  tenant_id TEXT NOT NULL DEFAULT 'default',
+  org_id TEXT NOT NULL DEFAULT 'default',
   sku TEXT NOT NULL,
   status TEXT NOT NULL DEFAULT 'in',
   move_in_id INTEGER,
@@ -600,13 +668,17 @@ CREATE TABLE IF NOT EXISTS inventory_serials (
   created_at TEXT DEFAULT CURRENT_TIMESTAMP,
   updated_at TEXT,
   FOREIGN KEY (move_in_id) REFERENCES inventory_moves(id),
-  FOREIGN KEY (move_out_id) REFERENCES inventory_moves(id)
+  FOREIGN KEY (move_out_id) REFERENCES inventory_moves(id),
+  PRIMARY KEY (tenant_id, org_id, serial_no)
 );
 
 CREATE INDEX IF NOT EXISTS idx_inventory_serials_sku ON inventory_serials(sku);
+CREATE INDEX IF NOT EXISTS idx_inventory_serials_tenant ON inventory_serials(tenant_id, org_id);
 
 CREATE TABLE IF NOT EXISTS inventory_move_lines (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
+  tenant_id TEXT NOT NULL DEFAULT 'default',
+  org_id TEXT NOT NULL DEFAULT 'default',
   move_id INTEGER NOT NULL,
   batch_id INTEGER,
   qty REAL NOT NULL,
@@ -616,8 +688,12 @@ CREATE TABLE IF NOT EXISTS inventory_move_lines (
   FOREIGN KEY (batch_id) REFERENCES inventory_batches(id)
 );
 
+CREATE INDEX IF NOT EXISTS idx_inventory_move_lines_tenant ON inventory_move_lines(tenant_id, org_id);
+
 CREATE TABLE IF NOT EXISTS inventory_counts (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
+  tenant_id TEXT NOT NULL DEFAULT 'default',
+  org_id TEXT NOT NULL DEFAULT 'default',
   sku TEXT NOT NULL,
   warehouse_id INTEGER,
   counted_qty REAL NOT NULL,
@@ -628,16 +704,24 @@ CREATE TABLE IF NOT EXISTS inventory_counts (
   created_at TEXT DEFAULT CURRENT_TIMESTAMP
 );
 
+CREATE INDEX IF NOT EXISTS idx_inventory_counts_tenant ON inventory_counts(tenant_id, org_id);
+
 CREATE TABLE IF NOT EXISTS standard_costs (
+  tenant_id TEXT NOT NULL DEFAULT 'default',
+  org_id TEXT NOT NULL DEFAULT 'default',
   sku TEXT NOT NULL,
   period TEXT NOT NULL,
   cost REAL NOT NULL,
   variance_account TEXT,
-  UNIQUE(sku, period)
+  UNIQUE(tenant_id, org_id, sku, period)
 );
+
+CREATE INDEX IF NOT EXISTS idx_standard_costs_tenant ON standard_costs(tenant_id, org_id);
 
 CREATE TABLE IF NOT EXISTS fixed_asset_changes (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
+  tenant_id TEXT NOT NULL DEFAULT 'default',
+  org_id TEXT NOT NULL DEFAULT 'default',
   asset_id INTEGER NOT NULL,
   change_type TEXT NOT NULL,
   amount REAL NOT NULL,
@@ -649,6 +733,8 @@ CREATE TABLE IF NOT EXISTS fixed_asset_changes (
 
 CREATE TABLE IF NOT EXISTS fixed_asset_impairments (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
+  tenant_id TEXT NOT NULL DEFAULT 'default',
+  org_id TEXT NOT NULL DEFAULT 'default',
   asset_id INTEGER NOT NULL,
   period TEXT NOT NULL,
   amount REAL NOT NULL,
@@ -658,8 +744,13 @@ CREATE TABLE IF NOT EXISTS fixed_asset_impairments (
   FOREIGN KEY (voucher_id) REFERENCES vouchers(id)
 );
 
+CREATE INDEX IF NOT EXISTS idx_fixed_asset_changes_tenant ON fixed_asset_changes(tenant_id, org_id);
+CREATE INDEX IF NOT EXISTS idx_fixed_asset_impairments_tenant ON fixed_asset_impairments(tenant_id, org_id);
+
 CREATE TABLE IF NOT EXISTS cip_projects (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
+  tenant_id TEXT NOT NULL DEFAULT 'default',
+  org_id TEXT NOT NULL DEFAULT 'default',
   name TEXT NOT NULL,
   cost REAL NOT NULL DEFAULT 0,
   status TEXT NOT NULL DEFAULT 'ongoing',
@@ -668,6 +759,8 @@ CREATE TABLE IF NOT EXISTS cip_projects (
 
 CREATE TABLE IF NOT EXISTS cip_transfers (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
+  tenant_id TEXT NOT NULL DEFAULT 'default',
+  org_id TEXT NOT NULL DEFAULT 'default',
   project_id INTEGER NOT NULL,
   asset_id INTEGER NOT NULL,
   amount REAL NOT NULL,
@@ -678,26 +771,36 @@ CREATE TABLE IF NOT EXISTS cip_transfers (
   FOREIGN KEY (asset_id) REFERENCES fixed_assets(id)
 );
 
+CREATE INDEX IF NOT EXISTS idx_cip_projects_tenant ON cip_projects(tenant_id, org_id);
+CREATE INDEX IF NOT EXISTS idx_cip_transfers_tenant ON cip_transfers(tenant_id, org_id);
+
 CREATE TABLE IF NOT EXISTS fixed_asset_allocations (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
+  tenant_id TEXT NOT NULL DEFAULT 'default',
+  org_id TEXT NOT NULL DEFAULT 'default',
   asset_id INTEGER NOT NULL,
   dim_type TEXT NOT NULL,
   dim_id INTEGER NOT NULL,
   ratio REAL NOT NULL,
   created_at TEXT DEFAULT CURRENT_TIMESTAMP,
-  UNIQUE(asset_id, dim_type, dim_id),
+  UNIQUE(tenant_id, org_id, asset_id, dim_type, dim_id),
   FOREIGN KEY (asset_id) REFERENCES fixed_assets(id)
 );
 
 CREATE TABLE IF NOT EXISTS allocation_basis_values (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
+  tenant_id TEXT NOT NULL DEFAULT 'default',
+  org_id TEXT NOT NULL DEFAULT 'default',
   period TEXT NOT NULL,
   dim_type TEXT NOT NULL,
   dim_id INTEGER NOT NULL,
   value REAL NOT NULL,
   created_at TEXT DEFAULT CURRENT_TIMESTAMP,
-  UNIQUE(period, dim_type, dim_id)
+  UNIQUE(tenant_id, org_id, period, dim_type, dim_id)
 );
+
+CREATE INDEX IF NOT EXISTS idx_fixed_asset_allocations_tenant ON fixed_asset_allocations(tenant_id, org_id);
+CREATE INDEX IF NOT EXISTS idx_allocation_basis_values_tenant ON allocation_basis_values(tenant_id, org_id);
 
 CREATE TABLE IF NOT EXISTS fixed_asset_depreciations (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -730,15 +833,20 @@ CREATE INDEX IF NOT EXISTS idx_periods_status ON periods(status);
 
 CREATE TABLE IF NOT EXISTS companies (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
-  code TEXT NOT NULL UNIQUE,
+  tenant_id TEXT NOT NULL DEFAULT 'default',
+  org_id TEXT NOT NULL DEFAULT 'default',
+  code TEXT NOT NULL,
   name TEXT NOT NULL,
   base_currency TEXT NOT NULL,
   is_enabled INTEGER DEFAULT 1,
-  created_at TEXT DEFAULT CURRENT_TIMESTAMP
+  created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE(tenant_id, org_id, code)
 );
 
 CREATE TABLE IF NOT EXISTS ledgers (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
+  tenant_id TEXT NOT NULL DEFAULT 'default',
+  org_id TEXT NOT NULL DEFAULT 'default',
   company_id INTEGER NOT NULL,
   code TEXT NOT NULL,
   name TEXT NOT NULL,
@@ -746,36 +854,50 @@ CREATE TABLE IF NOT EXISTS ledgers (
   db_path TEXT,
   is_enabled INTEGER DEFAULT 1,
   created_at TEXT DEFAULT CURRENT_TIMESTAMP,
-  UNIQUE(company_id, code),
+  UNIQUE(tenant_id, org_id, company_id, code),
   FOREIGN KEY (company_id) REFERENCES companies(id)
 );
 
 CREATE INDEX IF NOT EXISTS idx_ledgers_company ON ledgers(company_id);
+CREATE INDEX IF NOT EXISTS idx_companies_tenant ON companies(tenant_id, org_id);
+CREATE INDEX IF NOT EXISTS idx_ledgers_tenant ON ledgers(tenant_id, org_id);
 
 CREATE TABLE IF NOT EXISTS consolidation_rules (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
-  name TEXT NOT NULL UNIQUE,
+  tenant_id TEXT NOT NULL DEFAULT 'default',
+  org_id TEXT NOT NULL DEFAULT 'default',
+  name TEXT NOT NULL,
   group_currency TEXT,
   elimination_accounts TEXT,
   ownership TEXT,
-  created_at TEXT DEFAULT CURRENT_TIMESTAMP
+  created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE(tenant_id, org_id, name)
 );
 
 CREATE TABLE IF NOT EXISTS report_templates (
-  code TEXT PRIMARY KEY,
+  tenant_id TEXT NOT NULL DEFAULT 'default',
+  org_id TEXT NOT NULL DEFAULT 'default',
+  code TEXT NOT NULL,
   name TEXT NOT NULL,
   fields TEXT NOT NULL,
-  formula TEXT
+  formula TEXT,
+  PRIMARY KEY (tenant_id, org_id, code)
 );
 
 CREATE TABLE IF NOT EXISTS fx_rates (
+  tenant_id TEXT NOT NULL DEFAULT 'default',
+  org_id TEXT NOT NULL DEFAULT 'default',
   date TEXT NOT NULL,
   base_currency TEXT NOT NULL,
   quote_currency TEXT NOT NULL,
   rate REAL NOT NULL,
   rate_type TEXT NOT NULL,
-  PRIMARY KEY (date, base_currency, quote_currency, rate_type)
+  PRIMARY KEY (tenant_id, org_id, date, base_currency, quote_currency, rate_type)
 );
+
+CREATE INDEX IF NOT EXISTS idx_consolidation_rules_tenant ON consolidation_rules(tenant_id, org_id);
+CREATE INDEX IF NOT EXISTS idx_report_templates_tenant ON report_templates(tenant_id, org_id);
+CREATE INDEX IF NOT EXISTS idx_fx_rates_tenant ON fx_rates(tenant_id, org_id);
 
 CREATE TABLE IF NOT EXISTS audit_logs (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -798,19 +920,27 @@ CREATE INDEX IF NOT EXISTS idx_audit_logs_target ON audit_logs(target_type, targ
 
 CREATE TABLE IF NOT EXISTS approvals (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
+  tenant_id TEXT NOT NULL DEFAULT 'default',
+  org_id TEXT NOT NULL DEFAULT 'default',
   target_type TEXT NOT NULL,
   target_id TEXT NOT NULL,
   status TEXT NOT NULL DEFAULT 'pending',
   created_at TEXT DEFAULT CURRENT_TIMESTAMP,
-  UNIQUE(target_type, target_id)
+  UNIQUE(tenant_id, org_id, target_type, target_id)
 );
 
 CREATE TABLE IF NOT EXISTS audit_rules (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
-  code TEXT NOT NULL UNIQUE,
+  tenant_id TEXT NOT NULL DEFAULT 'default',
+  org_id TEXT NOT NULL DEFAULT 'default',
+  code TEXT NOT NULL,
   name TEXT NOT NULL,
-  rule_json TEXT NOT NULL
+  rule_json TEXT NOT NULL,
+  UNIQUE(tenant_id, org_id, code)
 );
+
+CREATE INDEX IF NOT EXISTS idx_approvals_tenant ON approvals(tenant_id, org_id);
+CREATE INDEX IF NOT EXISTS idx_audit_rules_tenant ON audit_rules(tenant_id, org_id);
 """
 
 

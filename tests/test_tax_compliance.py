@@ -7,6 +7,9 @@ from ledger.reporting import generate_tax_report
 from ledger.services import (
     add_invoice,
     accrue_income_tax,
+    confirm_voucher,
+    insert_voucher,
+    link_invoice,
     post_vat_summary,
     record_tax_adjustment,
     summarize_tax_adjustments,
@@ -99,6 +102,49 @@ def test_post_vat_summary_creates_voucher(tmp_path):
         assert entry_map["222101"]["debit_amount"] == pytest.approx(130.0, rel=0.01)
         assert entry_map["222102"]["credit_amount"] == pytest.approx(65.0, rel=0.01)
         assert entry_map["222103"]["credit_amount"] == pytest.approx(65.0, rel=0.01)
+
+
+def test_invoice_voucher_link(tmp_path):
+    db_path = tmp_path / "ledger.db"
+    accounts = [
+        {"code": "1001", "name": "Cash", "level": 1, "type": "asset", "direction": "debit"},
+        {"code": "2001", "name": "Loan", "level": 1, "type": "liability", "direction": "credit"},
+    ]
+
+    with get_db(str(db_path)) as conn:
+        init_db(conn)
+        run_migrations(conn)
+        _seed_accounts(conn, accounts)
+        voucher_id, _, _, _ = insert_voucher(
+            conn,
+            {"date": "2025-01-05", "description": "invoice link"},
+            [
+                {
+                    "line_no": 1,
+                    "account_code": "1001",
+                    "account_name": "Cash",
+                    "debit_amount": 300,
+                    "credit_amount": 0,
+                },
+                {
+                    "line_no": 2,
+                    "account_code": "2001",
+                    "account_name": "Loan",
+                    "debit_amount": 0,
+                    "credit_amount": 300,
+                },
+            ],
+            "reviewed",
+        )
+        confirm_voucher(conn, voucher_id)
+        invoice = add_invoice(conn, "output", "A", "0102", "2025-01-06", 300, 0.13)
+        linked = link_invoice(conn, invoice["invoice_id"], voucher_id)
+        assert linked["voucher_id"] == voucher_id
+        row = conn.execute(
+            "SELECT voucher_id FROM invoices WHERE id = ?",
+            (invoice["invoice_id"],),
+        ).fetchone()
+        assert row["voucher_id"] == voucher_id
 
 
 def test_income_tax_adjustments_and_report(tmp_path):

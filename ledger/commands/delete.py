@@ -23,14 +23,20 @@ def run(args):
             raise LedgerError("VOUCHER_NOT_FOUND", f"凭证不存在: {args.voucher_id}")
         if voucher["status"] != "draft":
             raise LedgerError("VOID_CONFIRMED", "已确认凭证不能删除，只能冲销")
+        tenant_id = voucher.get("tenant_id") or "default"
+        org_id = voucher.get("org_id") or "default"
         log_audit_event(
             conn,
             "ledger.delete",
             target_type="voucher",
             target_id=args.voucher_id,
             detail={"voucher_no": voucher.get("voucher_no")},
+            context={"tenant_id": tenant_id, "org_id": org_id},
         )
-        conn.execute("DELETE FROM vouchers WHERE id = ?", (args.voucher_id,))
+        conn.execute(
+            "DELETE FROM vouchers WHERE id = ? AND tenant_id = ? AND org_id = ?",
+            (args.voucher_id, tenant_id, org_id),
+        )
 
     print_json(
         {

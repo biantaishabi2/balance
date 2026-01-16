@@ -1,10 +1,12 @@
 import pytest
 
 from ledger.database import get_db, init_db
+from ledger import services
 from ledger.services import (
     add_currency,
     add_fx_rate,
     build_entries,
+    close_period,
     confirm_voucher,
     fx_balance,
     insert_voucher,
@@ -81,3 +83,127 @@ def test_fx_rate_auto_lookup(tmp_path):
         )
         assert total_debit == pytest.approx(710.0, rel=0.01)
         assert total_credit == pytest.approx(710.0, rel=0.01)
+
+
+def test_fx_rate_type_and_revalue(tmp_path):
+    db_path = tmp_path / "ledger.db"
+    accounts = [
+        {"code": "1122", "name": "AR", "level": 1, "type": "asset", "direction": "debit"},
+        {"code": "6001", "name": "Revenue", "level": 1, "type": "revenue", "direction": "credit"},
+        {"code": "6051", "name": "FX Gain", "level": 1, "type": "revenue", "direction": "credit"},
+        {"code": "6603", "name": "FX Loss", "level": 1, "type": "expense", "direction": "debit"},
+    ]
+
+    with get_db(str(db_path)) as conn:
+        init_db(conn)
+        load_standard_accounts(conn, accounts)
+        add_currency(conn, "USD", "US Dollar", "$", 2)
+        add_fx_rate(conn, "USD", "2025-01-10", 7.1, "spot")
+        add_fx_rate(conn, "USD", "2025-01-31", 7.2, "closing")
+
+        entries, total_debit, total_credit = build_entries(
+            conn,
+            [
+                {"account": "1122", "foreign_debit_amount": 100, "currency_code": "USD"},
+                {"account": "6001", "foreign_credit_amount": 100, "currency_code": "USD"},
+            ],
+            "2025-01-10",
+        )
+        assert total_debit == pytest.approx(710.0, rel=0.01)
+        assert total_credit == pytest.approx(710.0, rel=0.01)
+        voucher_id, _, period, _ = insert_voucher(
+            conn,
+            {"date": "2025-01-10", "description": "fx sale"},
+            entries,
+            "reviewed",
+        )
+        confirm_voucher(conn, voucher_id)
+
+        revalue = revalue_forex(conn, period, rate_type="closing")
+        assert revalue["voucher_id"] is not None
+        gain_row = conn.execute(
+            "SELECT closing_balance FROM balances WHERE period = ? AND account_code = ?",
+            (period, "6051"),
+        ).fetchone()
+        assert gain_row["closing_balance"] == pytest.approx(10.0, rel=0.01)
+
+
+def test_fx_revalue_filter_and_close(tmp_path, monkeypatch):
+    db_path = tmp_path / "ledger.db"
+    accounts = [
+        {"code": "1001", "name": "Cash", "level": 1, "type": "asset", "direction": "debit"},
+        {"code": "1122", "name": "AR", "level": 1, "type": "asset", "direction": "debit"},
+        {"code": "2001", "name": "Loan", "level": 1, "type": "liability", "direction": "credit"},
+        {"code": "6051", "name": "FX Gain", "level": 1, "type": "revenue", "direction": "credit"},
+        {"code": "6603", "name": "FX Loss", "level": 1, "type": "expense", "direction": "debit"},
+        {"code": "4103", "name": "Current Profit", "level": 1, "type": "equity", "direction": "credit"},
+        {"code": "4104", "name": "Retained Profit", "level": 1, "type": "equity", "direction": "credit"},
+    ]
+
+    monkeypatch.setattr(
+        services,
+        "_load_forex_config",
+        lambda: {
+            "base_currency": "CNY",
+            "fx_gain_account": "6051",
+            "fx_loss_account": "6603",
+            "revaluable_accounts": ["1122"],
+        },
+    )
+
+    with get_db(str(db_path)) as conn:
+        init_db(conn)
+        load_standard_accounts(conn, accounts)
+        add_currency(conn, "USD", "US Dollar", "$", 2)
+        add_fx_rate(conn, "USD", "2025-01-10", 7.0, "spot")
+        add_fx_rate(conn, "USD", "2025-01-31", 7.2, "closing")
+
+        entries, _, _ = build_entries(
+            conn,
+            [
+                {"account": "1122", "foreign_debit_amount": 100, "currency_code": "USD", "fx_rate": 7.0},
+                {"account": "2001", "foreign_credit_amount": 100, "currency_code": "USD", "fx_rate": 7.0},
+            ],
+            "2025-01-10",
+        )
+        voucher_id, _, period, _ = insert_voucher(
+            conn,
+            {"date": "2025-01-10", "description": "fx ar"},
+            entries,
+            "reviewed",
+        )
+        confirm_voucher(conn, voucher_id)
+
+        entries, _, _ = build_entries(
+            conn,
+            [
+                {"account": "1001", "foreign_debit_amount": 50, "currency_code": "USD", "fx_rate": 7.0},
+                {"account": "2001", "foreign_credit_amount": 50, "currency_code": "USD", "fx_rate": 7.0},
+            ],
+            "2025-01-15",
+        )
+        voucher_id, _, _, _ = insert_voucher(
+            conn,
+            {"date": "2025-01-15", "description": "fx cash"},
+            entries,
+            "reviewed",
+        )
+        confirm_voucher(conn, voucher_id)
+
+        revalue = revalue_forex(conn, period)
+        assert revalue["voucher_id"] is not None
+        rows = conn.execute(
+            "SELECT account_code FROM voucher_entries WHERE voucher_id = ?",
+            (revalue["voucher_id"],),
+        ).fetchall()
+        codes = {row["account_code"] for row in rows}
+        assert "1122" in codes
+        assert "1001" not in codes
+
+        close_result = close_period(conn, period)
+        close_entries = conn.execute(
+            "SELECT account_code FROM voucher_entries WHERE voucher_id = ?",
+            (close_result["closing_voucher_id"],),
+        ).fetchall()
+        close_codes = {row["account_code"] for row in close_entries}
+        assert "6051" in close_codes

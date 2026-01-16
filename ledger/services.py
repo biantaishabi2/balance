@@ -15,6 +15,7 @@ from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 
 from ledger.utils import LedgerError
+from ledger.webhooks import record_event
 
 
 DIMENSION_FIELDS = {
@@ -205,10 +206,20 @@ def log_audit_event(
     )
 
 
-def fetch_approval(conn, target_type: str, target_id: Any) -> Optional[Dict[str, Any]]:
+def fetch_approval(
+    conn,
+    target_type: str,
+    target_id: Any,
+    tenant_id: Optional[str] = None,
+    org_id: Optional[str] = None,
+) -> Optional[Dict[str, Any]]:
+    tenant_id, org_id = _resolve_tenant(tenant_id, org_id)
     row = conn.execute(
-        "SELECT * FROM approvals WHERE target_type = ? AND target_id = ?",
-        (target_type, str(target_id)),
+        """
+        SELECT * FROM approvals
+        WHERE target_type = ? AND target_id = ? AND tenant_id = ? AND org_id = ?
+        """,
+        (target_type, str(target_id), tenant_id, org_id),
     ).fetchone()
     return dict(row) if row else None
 
@@ -218,13 +229,19 @@ def set_approval_status(
     target_type: str,
     target_id: Any,
     status: str,
+    tenant_id: Optional[str] = None,
+    org_id: Optional[str] = None,
 ) -> Dict[str, Any]:
     if status not in {"pending", "approved", "rejected"}:
         raise LedgerError("APPROVAL_STATUS_INVALID", f"无效审批状态: {status}")
+    tenant_id, org_id = _resolve_tenant(tenant_id, org_id)
     target_id_text = str(target_id)
     row = conn.execute(
-        "SELECT id, status FROM approvals WHERE target_type = ? AND target_id = ?",
-        (target_type, target_id_text),
+        """
+        SELECT id, status FROM approvals
+        WHERE target_type = ? AND target_id = ? AND tenant_id = ? AND org_id = ?
+        """,
+        (target_type, target_id_text, tenant_id, org_id),
     ).fetchone()
     if row:
         if row["status"] != status:
@@ -236,10 +253,10 @@ def set_approval_status(
     else:
         cur = conn.execute(
             """
-            INSERT INTO approvals (target_type, target_id, status)
-            VALUES (?, ?, ?)
+            INSERT INTO approvals (tenant_id, org_id, target_type, target_id, status)
+            VALUES (?, ?, ?, ?, ?)
             """,
-            (target_type, target_id_text, status),
+            (tenant_id, org_id, target_type, target_id_text, status),
         )
         approval_id = cur.lastrowid
     return {
@@ -250,64 +267,116 @@ def set_approval_status(
     }
 
 
-def request_approval(conn, target_type: str, target_id: Any) -> Dict[str, Any]:
-    current = fetch_approval(conn, target_type, target_id)
+def request_approval(
+    conn,
+    target_type: str,
+    target_id: Any,
+    tenant_id: Optional[str] = None,
+    org_id: Optional[str] = None,
+) -> Dict[str, Any]:
+    tenant_id, org_id = _resolve_tenant(tenant_id, org_id)
+    current = fetch_approval(
+        conn, target_type, target_id, tenant_id=tenant_id, org_id=org_id
+    )
     if current and current["status"] == "pending":
         return current
-    approval = set_approval_status(conn, target_type, target_id, "pending")
+    approval = set_approval_status(
+        conn, target_type, target_id, "pending", tenant_id=tenant_id, org_id=org_id
+    )
     log_audit_event(
         conn,
         "approval.request",
         target_type=target_type,
         target_id=target_id,
         detail={"status": "pending"},
+        context={"tenant_id": tenant_id, "org_id": org_id},
     )
     return approval
 
 
-def approve_approval(conn, target_type: str, target_id: Any) -> Dict[str, Any]:
-    current = fetch_approval(conn, target_type, target_id)
+def approve_approval(
+    conn,
+    target_type: str,
+    target_id: Any,
+    tenant_id: Optional[str] = None,
+    org_id: Optional[str] = None,
+) -> Dict[str, Any]:
+    tenant_id, org_id = _resolve_tenant(tenant_id, org_id)
+    current = fetch_approval(
+        conn, target_type, target_id, tenant_id=tenant_id, org_id=org_id
+    )
     if current and current["status"] == "approved":
         return current
-    approval = set_approval_status(conn, target_type, target_id, "approved")
+    approval = set_approval_status(
+        conn, target_type, target_id, "approved", tenant_id=tenant_id, org_id=org_id
+    )
     log_audit_event(
         conn,
         "approval.approve",
         target_type=target_type,
         target_id=target_id,
         detail={"status": "approved"},
+        context={"tenant_id": tenant_id, "org_id": org_id},
     )
     return approval
 
 
-def reject_approval(conn, target_type: str, target_id: Any) -> Dict[str, Any]:
-    current = fetch_approval(conn, target_type, target_id)
+def reject_approval(
+    conn,
+    target_type: str,
+    target_id: Any,
+    tenant_id: Optional[str] = None,
+    org_id: Optional[str] = None,
+) -> Dict[str, Any]:
+    tenant_id, org_id = _resolve_tenant(tenant_id, org_id)
+    current = fetch_approval(
+        conn, target_type, target_id, tenant_id=tenant_id, org_id=org_id
+    )
     if current and current["status"] == "rejected":
         return current
-    approval = set_approval_status(conn, target_type, target_id, "rejected")
+    approval = set_approval_status(
+        conn, target_type, target_id, "rejected", tenant_id=tenant_id, org_id=org_id
+    )
     log_audit_event(
         conn,
         "approval.reject",
         target_type=target_type,
         target_id=target_id,
         detail={"status": "rejected"},
+        context={"tenant_id": tenant_id, "org_id": org_id},
     )
     return approval
 
 
-def add_audit_rule(conn, code: str, name: str, rule_json: Dict[str, Any]) -> None:
+def add_audit_rule(
+    conn,
+    code: str,
+    name: str,
+    rule_json: Dict[str, Any],
+    tenant_id: Optional[str] = None,
+    org_id: Optional[str] = None,
+) -> None:
+    tenant_id, org_id = _resolve_tenant(tenant_id, org_id)
     conn.execute(
         """
-        INSERT OR REPLACE INTO audit_rules (code, name, rule_json)
-        VALUES (?, ?, ?)
+        INSERT OR REPLACE INTO audit_rules (tenant_id, org_id, code, name, rule_json)
+        VALUES (?, ?, ?, ?, ?)
         """,
-        (code, name, json.dumps(rule_json, ensure_ascii=False)),
+        (tenant_id, org_id, code, name, json.dumps(rule_json, ensure_ascii=False)),
     )
 
 
-def list_audit_rules(conn) -> List[Dict[str, Any]]:
+def list_audit_rules(
+    conn, tenant_id: Optional[str] = None, org_id: Optional[str] = None
+) -> List[Dict[str, Any]]:
+    tenant_id, org_id = _resolve_tenant(tenant_id, org_id)
     rows = conn.execute(
-        "SELECT code, name, created_at FROM audit_rules ORDER BY code"
+        """
+        SELECT code, name, created_at FROM audit_rules
+        WHERE tenant_id = ? AND org_id = ?
+        ORDER BY code
+        """,
+        (tenant_id, org_id),
     ).fetchall()
     return [dict(row) for row in rows]
 
@@ -369,14 +438,22 @@ def run_audit_rules_for_voucher(
     conn,
     voucher_id: int,
     entries: Optional[List[Dict[str, Any]]] = None,
+    tenant_id: Optional[str] = None,
+    org_id: Optional[str] = None,
 ) -> List[str]:
+    tenant_id, org_id = _resolve_tenant(tenant_id, org_id)
     rows = conn.execute(
-        "SELECT code, name, rule_json FROM audit_rules ORDER BY code"
+        """
+        SELECT code, name, rule_json FROM audit_rules
+        WHERE tenant_id = ? AND org_id = ?
+        ORDER BY code
+        """,
+        (tenant_id, org_id),
     ).fetchall()
     if not rows:
         return []
     if entries is None:
-        entries = fetch_entries(conn, voucher_id)
+        entries = fetch_entries(conn, voucher_id, tenant_id=tenant_id, org_id=org_id)
     total_debit = sum(e["debit_amount"] for e in entries)
     total_credit = sum(e["credit_amount"] for e in entries)
     max_debit = max((e["debit_amount"] for e in entries), default=0.0)
@@ -416,20 +493,6 @@ def run_audit_rules_for_voucher(
         if triggered:
             warnings.append(str(message))
     return warnings
-
-
-DEFAULT_TENANT_ID = "default"
-DEFAULT_ORG_ID = "default"
-
-
-def _resolve_tenant(tenant_id: Optional[str], org_id: Optional[str]) -> Tuple[str, str]:
-    return tenant_id or DEFAULT_TENANT_ID, org_id or DEFAULT_ORG_ID
-
-
-def _tenant_clause(alias: str = "") -> str:
-    prefix = f"{alias}." if alias else ""
-    return f"{prefix}tenant_id = ? AND {prefix}org_id = ?"
-
 
 
 def parse_period(date_str: str) -> str:
@@ -704,6 +767,8 @@ def _apply_credit_usage(
         "UPDATE dimensions SET credit_used = ? WHERE id = ? AND tenant_id = ? AND org_id = ?",
         (new_used, dim_id, tenant_id, org_id),
     )
+
+
 def generate_voucher_no(
     conn, date_str: str, tenant_id: Optional[str] = None, org_id: Optional[str] = None
 ) -> str:
@@ -755,7 +820,14 @@ def build_entries(
                 foreign_debit = debit
                 foreign_credit = credit
             if fx_rate is None:
-                fx_rate = get_fx_rate(conn, currency_code, date or "", rate_type)
+                fx_rate = get_fx_rate(
+                    conn,
+                    currency_code,
+                    date or "",
+                    rate_type,
+                    tenant_id=tenant_id,
+                    org_id=org_id,
+                )
             if fx_rate is None:
                 raise LedgerError("FX_RATE_NOT_FOUND", f"未找到汇率: {currency_code}")
             debit = round(float(foreign_debit or 0) * float(fx_rate), 2)
@@ -910,6 +982,19 @@ def insert_voucher(
             "period": period,
             "status": status,
             "entry_count": len(entries),
+        },
+        context={"tenant_id": tenant_id, "org_id": org_id},
+    )
+    record_event(
+        conn,
+        tenant_id,
+        org_id,
+        "voucher.created",
+        {
+            "voucher_id": voucher_id,
+            "voucher_no": voucher_no,
+            "period": period,
+            "status": status,
         },
     )
     return voucher_id, voucher_no, period, confirmed_at
@@ -1227,15 +1312,24 @@ def _budget_dim_from_entry(entry: Dict[str, Any]) -> Tuple[Optional[str], Option
     return None, None
 
 
-def _budget_entries(conn, voucher_id: int) -> List[Tuple[str, int, float]]:
+def _budget_entries(
+    conn,
+    voucher_id: int,
+    tenant_id: Optional[str] = None,
+    org_id: Optional[str] = None,
+) -> List[Tuple[str, int, float]]:
+    tenant_id, org_id = _resolve_tenant(tenant_id, org_id)
     rows = conn.execute(
         """
         SELECT ve.*, a.type AS account_type
         FROM voucher_entries ve
-        JOIN accounts a ON ve.account_code = a.code
-        WHERE ve.voucher_id = ?
+        JOIN accounts a
+          ON ve.account_code = a.code
+         AND a.tenant_id = ve.tenant_id
+         AND a.org_id = ve.org_id
+        WHERE ve.voucher_id = ? AND ve.tenant_id = ? AND ve.org_id = ?
         """,
-        (voucher_id,),
+        (voucher_id, tenant_id, org_id),
     ).fetchall()
     entries: List[Tuple[str, int, float]] = []
     for row in rows:
@@ -1252,14 +1346,21 @@ def _budget_entries(conn, voucher_id: int) -> List[Tuple[str, int, float]]:
 
 
 def _fetch_budget_amount(
-    conn, period: str, dim_type: str, dim_id: int
+    conn,
+    period: str,
+    dim_type: str,
+    dim_id: int,
+    tenant_id: Optional[str] = None,
+    org_id: Optional[str] = None,
 ) -> Optional[float]:
+    tenant_id, org_id = _resolve_tenant(tenant_id, org_id)
     budget_row = conn.execute(
         """
         SELECT amount FROM budgets
         WHERE period = ? AND dim_type = ? AND dim_id = ?
+          AND tenant_id = ? AND org_id = ?
         """,
-        (period, dim_type, dim_id),
+        (period, dim_type, dim_id, tenant_id, org_id),
     ).fetchone()
     if not budget_row:
         return None
@@ -1267,29 +1368,39 @@ def _fetch_budget_amount(
 
 
 def _ensure_budget_control_row(
-    conn, period: str, dim_type: str, dim_id: int
+    conn,
+    period: str,
+    dim_type: str,
+    dim_id: int,
+    tenant_id: Optional[str] = None,
+    org_id: Optional[str] = None,
 ) -> Dict[str, Any]:
+    tenant_id, org_id = _resolve_tenant(tenant_id, org_id)
     ctrl_row = conn.execute(
         """
         SELECT id, used_amount, locked_amount FROM budget_controls
         WHERE period = ? AND dim_type = ? AND dim_id = ?
+          AND tenant_id = ? AND org_id = ?
         """,
-        (period, dim_type, dim_id),
+        (period, dim_type, dim_id, tenant_id, org_id),
     ).fetchone()
     if not ctrl_row:
         conn.execute(
             """
-            INSERT INTO budget_controls (period, dim_type, dim_id, used_amount, locked_amount)
-            VALUES (?, ?, ?, 0, 0)
+            INSERT INTO budget_controls (
+              tenant_id, org_id, period, dim_type, dim_id, used_amount, locked_amount
+            )
+            VALUES (?, ?, ?, ?, ?, 0, 0)
             """,
-            (period, dim_type, dim_id),
+            (tenant_id, org_id, period, dim_type, dim_id),
         )
         ctrl_row = conn.execute(
             """
             SELECT id, used_amount, locked_amount FROM budget_controls
             WHERE period = ? AND dim_type = ? AND dim_id = ?
+              AND tenant_id = ? AND org_id = ?
             """,
-            (period, dim_type, dim_id),
+            (period, dim_type, dim_id, tenant_id, org_id),
         ).fetchone()
     return dict(ctrl_row)
 
@@ -1305,11 +1416,17 @@ def _apply_budget_delta(
     mode: str,
     check: bool,
     warnings: List[Dict[str, Any]],
+    tenant_id: Optional[str] = None,
+    org_id: Optional[str] = None,
 ) -> bool:
-    budget_amount = _fetch_budget_amount(conn, period, dim_type, dim_id)
+    budget_amount = _fetch_budget_amount(
+        conn, period, dim_type, dim_id, tenant_id=tenant_id, org_id=org_id
+    )
     if budget_amount is None:
         return False
-    ctrl_row = _ensure_budget_control_row(conn, period, dim_type, dim_id)
+    ctrl_row = _ensure_budget_control_row(
+        conn, period, dim_type, dim_id, tenant_id=tenant_id, org_id=org_id
+    )
     used_amount = float(ctrl_row["used_amount"] or 0)
     locked_amount = float(ctrl_row["locked_amount"] or 0)
     new_used = used_amount + delta_used
@@ -1342,14 +1459,20 @@ def _apply_budget_delta(
     return True
 
 
-def _load_budget_locks(conn, voucher_id: int) -> List[Tuple[str, int, float]]:
+def _load_budget_locks(
+    conn,
+    voucher_id: int,
+    tenant_id: Optional[str] = None,
+    org_id: Optional[str] = None,
+) -> List[Tuple[str, int, float]]:
+    tenant_id, org_id = _resolve_tenant(tenant_id, org_id)
     rows = conn.execute(
         """
         SELECT dim_type, dim_id, amount
         FROM budget_locks
-        WHERE voucher_id = ?
+        WHERE voucher_id = ? AND tenant_id = ? AND org_id = ?
         """,
-        (voucher_id,),
+        (voucher_id, tenant_id, org_id),
     ).fetchall()
     return [(row["dim_type"], int(row["dim_id"]), float(row["amount"] or 0)) for row in rows]
 
@@ -1359,24 +1482,38 @@ def _store_budget_locks(
     voucher_id: int,
     period: str,
     entries: List[Tuple[str, int, float]],
+    tenant_id: Optional[str] = None,
+    org_id: Optional[str] = None,
 ) -> None:
-    conn.execute("DELETE FROM budget_locks WHERE voucher_id = ?", (voucher_id,))
+    tenant_id, org_id = _resolve_tenant(tenant_id, org_id)
+    conn.execute(
+        "DELETE FROM budget_locks WHERE voucher_id = ? AND tenant_id = ? AND org_id = ?",
+        (voucher_id, tenant_id, org_id),
+    )
     for dim_type, dim_id, amount in entries:
         conn.execute(
             """
-            INSERT OR REPLACE INTO budget_locks (voucher_id, period, dim_type, dim_id, amount)
-            VALUES (?, ?, ?, ?, ?)
+            INSERT OR REPLACE INTO budget_locks (
+              tenant_id, org_id, voucher_id, period, dim_type, dim_id, amount
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?)
             """,
-            (voucher_id, period, dim_type, dim_id, round(amount, 2)),
+            (tenant_id, org_id, voucher_id, period, dim_type, dim_id, round(amount, 2)),
         )
 
 
-def _apply_budget_freeze(conn, voucher_id: int, period: str) -> List[Dict[str, Any]]:
+def _apply_budget_freeze(
+    conn,
+    voucher_id: int,
+    period: str,
+    tenant_id: Optional[str] = None,
+    org_id: Optional[str] = None,
+) -> List[Dict[str, Any]]:
     config = _load_budget_config()
     mode = (config.get("mode") or "warn").lower()
     if mode not in {"warn", "block"}:
         return []
-    entries = _budget_entries(conn, voucher_id)
+    entries = _budget_entries(conn, voucher_id, tenant_id=tenant_id, org_id=org_id)
     warnings: List[Dict[str, Any]] = []
     locked_entries: List[Tuple[str, int, float]] = []
     for dim_type, dim_id, amount in entries:
@@ -1391,22 +1528,36 @@ def _apply_budget_freeze(conn, voucher_id: int, period: str) -> List[Dict[str, A
             mode,
             True,
             warnings,
+            tenant_id=tenant_id,
+            org_id=org_id,
         )
         if applied:
             locked_entries.append((dim_type, dim_id, amount))
     if locked_entries:
-        _store_budget_locks(conn, voucher_id, period, locked_entries)
+        _store_budget_locks(
+            conn, voucher_id, period, locked_entries, tenant_id=tenant_id, org_id=org_id
+        )
     return warnings
 
 
-def _apply_budget_release(conn, voucher_id: int, period: str) -> None:
-    entries = _load_budget_locks(conn, voucher_id)
+def _apply_budget_release(
+    conn,
+    voucher_id: int,
+    period: str,
+    tenant_id: Optional[str] = None,
+    org_id: Optional[str] = None,
+) -> None:
+    entries = _load_budget_locks(conn, voucher_id, tenant_id=tenant_id, org_id=org_id)
     if not entries:
         return
     config = _load_budget_config()
     mode = (config.get("mode") or "warn").lower()
     if mode not in {"warn", "block"}:
-        conn.execute("DELETE FROM budget_locks WHERE voucher_id = ?", (voucher_id,))
+        tenant_id, org_id = _resolve_tenant(tenant_id, org_id)
+        conn.execute(
+            "DELETE FROM budget_locks WHERE voucher_id = ? AND tenant_id = ? AND org_id = ?",
+            (voucher_id, tenant_id, org_id),
+        )
         return
     warnings: List[Dict[str, Any]] = []
     for dim_type, dim_id, amount in entries:
@@ -1421,16 +1572,29 @@ def _apply_budget_release(conn, voucher_id: int, period: str) -> None:
             mode,
             False,
             warnings,
+            tenant_id=tenant_id,
+            org_id=org_id,
         )
-    conn.execute("DELETE FROM budget_locks WHERE voucher_id = ?", (voucher_id,))
+    conn.execute(
+        "DELETE FROM budget_locks WHERE voucher_id = ? AND tenant_id = ? AND org_id = ?",
+        (voucher_id, *_resolve_tenant(tenant_id, org_id)),
+    )
 
 
-def _apply_budget_confirm(conn, voucher_id: int, period: str) -> List[Dict[str, Any]]:
+def _apply_budget_confirm(
+    conn,
+    voucher_id: int,
+    period: str,
+    tenant_id: Optional[str] = None,
+    org_id: Optional[str] = None,
+) -> List[Dict[str, Any]]:
     config = _load_budget_config()
     mode = (config.get("mode") or "warn").lower()
     if mode not in {"warn", "block"}:
         return []
-    locked_entries = _load_budget_locks(conn, voucher_id)
+    locked_entries = _load_budget_locks(
+        conn, voucher_id, tenant_id=tenant_id, org_id=org_id
+    )
     warnings: List[Dict[str, Any]] = []
     if locked_entries:
         for dim_type, dim_id, amount in locked_entries:
@@ -1445,11 +1609,16 @@ def _apply_budget_confirm(conn, voucher_id: int, period: str) -> List[Dict[str, 
                 mode,
                 True,
                 warnings,
+                tenant_id=tenant_id,
+                org_id=org_id,
             )
-        conn.execute("DELETE FROM budget_locks WHERE voucher_id = ?", (voucher_id,))
+        conn.execute(
+            "DELETE FROM budget_locks WHERE voucher_id = ? AND tenant_id = ? AND org_id = ?",
+            (voucher_id, *_resolve_tenant(tenant_id, org_id)),
+        )
         return warnings
 
-    entries = _budget_entries(conn, voucher_id)
+    entries = _budget_entries(conn, voucher_id, tenant_id=tenant_id, org_id=org_id)
     for dim_type, dim_id, amount in entries:
         _apply_budget_delta(
             conn,
@@ -1462,16 +1631,24 @@ def _apply_budget_confirm(conn, voucher_id: int, period: str) -> List[Dict[str, 
             mode,
             True,
             warnings,
+            tenant_id=tenant_id,
+            org_id=org_id,
         )
     return warnings
 
 
-def _apply_budget_void(conn, voucher_id: int, period: str) -> None:
+def _apply_budget_void(
+    conn,
+    voucher_id: int,
+    period: str,
+    tenant_id: Optional[str] = None,
+    org_id: Optional[str] = None,
+) -> None:
     config = _load_budget_config()
     mode = (config.get("mode") or "warn").lower()
     if mode not in {"warn", "block"}:
         return
-    entries = _budget_entries(conn, voucher_id)
+    entries = _budget_entries(conn, voucher_id, tenant_id=tenant_id, org_id=org_id)
     warnings: List[Dict[str, Any]] = []
     for dim_type, dim_id, amount in entries:
         _apply_budget_delta(
@@ -1485,8 +1662,13 @@ def _apply_budget_void(conn, voucher_id: int, period: str) -> None:
             mode,
             False,
             warnings,
+            tenant_id=tenant_id,
+            org_id=org_id,
         )
-    conn.execute("DELETE FROM budget_locks WHERE voucher_id = ?", (voucher_id,))
+    conn.execute(
+        "DELETE FROM budget_locks WHERE voucher_id = ? AND tenant_id = ? AND org_id = ?",
+        (voucher_id, *_resolve_tenant(tenant_id, org_id)),
+    )
 
 
 def review_voucher(
@@ -1495,23 +1677,26 @@ def review_voucher(
     tenant_id: Optional[str] = None,
     org_id: Optional[str] = None,
 ) -> Dict[str, Any]:
+    tenant_id, org_id = _resolve_tenant(tenant_id, org_id)
     voucher = fetch_voucher(conn, voucher_id, tenant_id=tenant_id, org_id=org_id)
     if not voucher:
         raise LedgerError("VOUCHER_NOT_FOUND", f"凭证不存在: {voucher_id}")
     if voucher["status"] != "draft":
         raise LedgerError("VOUCHER_STATUS_INVALID", "仅草稿凭证可审核")
-    budget_warnings = _apply_budget_freeze(conn, voucher_id, voucher["period"])
+    budget_warnings = _apply_budget_freeze(
+        conn, voucher_id, voucher["period"], tenant_id=tenant_id, org_id=org_id
+    )
     reviewed_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     conn.execute(
         """
         UPDATE vouchers SET status = 'reviewed', reviewed_at = ?
         WHERE id = ? AND tenant_id = ? AND org_id = ?
         """,
-        (reviewed_at, voucher_id, *_resolve_tenant(tenant_id, org_id)),
+        (reviewed_at, voucher_id, tenant_id, org_id),
     )
     voucher["status"] = "reviewed"
     voucher["reviewed_at"] = reviewed_at
-    request_approval(conn, "voucher", voucher_id)
+    request_approval(conn, "voucher", voucher_id, tenant_id=tenant_id, org_id=org_id)
     if budget_warnings:
         voucher["budget_warnings"] = budget_warnings
     return voucher
@@ -1523,18 +1708,21 @@ def unreview_voucher(
     tenant_id: Optional[str] = None,
     org_id: Optional[str] = None,
 ) -> Dict[str, Any]:
+    tenant_id, org_id = _resolve_tenant(tenant_id, org_id)
     voucher = fetch_voucher(conn, voucher_id, tenant_id=tenant_id, org_id=org_id)
     if not voucher:
         raise LedgerError("VOUCHER_NOT_FOUND", f"凭证不存在: {voucher_id}")
     if voucher["status"] != "reviewed":
         raise LedgerError("VOUCHER_STATUS_INVALID", "仅已审核凭证可反审核")
-    _apply_budget_release(conn, voucher_id, voucher["period"])
+    _apply_budget_release(
+        conn, voucher_id, voucher["period"], tenant_id=tenant_id, org_id=org_id
+    )
     conn.execute(
         """
         UPDATE vouchers SET status = 'draft', reviewed_at = NULL
         WHERE id = ? AND tenant_id = ? AND org_id = ?
         """,
-        (voucher_id, *_resolve_tenant(tenant_id, org_id)),
+        (voucher_id, tenant_id, org_id),
     )
     voucher["status"] = "draft"
     voucher["reviewed_at"] = None
@@ -1575,7 +1763,9 @@ def confirm_voucher(
             },
         )
 
-    budget_warnings = _apply_budget_confirm(conn, voucher_id, voucher["period"])
+    budget_warnings = _apply_budget_confirm(
+        conn, voucher_id, voucher["period"], tenant_id=tenant_id, org_id=org_id
+    )
     confirmed_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     conn.execute(
         """
@@ -1591,7 +1781,9 @@ def confirm_voucher(
     voucher["confirmed_at"] = confirmed_at
     voucher["balances_updated"] = balances_updated
     voucher["budget_warnings"] = budget_warnings
-    audit_warnings = run_audit_rules_for_voucher(conn, voucher_id, entries)
+    audit_warnings = run_audit_rules_for_voucher(
+        conn, voucher_id, entries, tenant_id=tenant_id, org_id=org_id
+    )
     voucher["audit_warnings"] = audit_warnings
     log_audit_event(
         conn,
@@ -1604,9 +1796,23 @@ def confirm_voucher(
             "budget_warnings": budget_warnings,
             "audit_warnings": audit_warnings,
         },
+        context={"tenant_id": tenant_id, "org_id": org_id},
+    )
+    record_event(
+        conn,
+        tenant_id,
+        org_id,
+        "voucher.confirmed",
+        {
+            "voucher_id": voucher_id,
+            "voucher_no": voucher.get("voucher_no"),
+            "period": voucher.get("period"),
+        },
     )
     if voucher.get("entry_type") == "adjustment":
-        _apply_adjustment_rollforward(conn, voucher["period"])
+        _apply_adjustment_rollforward(
+            conn, voucher["period"], tenant_id=tenant_id, org_id=org_id
+        )
     if budget_warnings:
         voucher["budget_warnings"] = budget_warnings
     return voucher
@@ -1626,7 +1832,9 @@ def void_voucher(
     if voucher["status"] != "confirmed":
         raise LedgerError("VOUCHER_NOT_CONFIRMED", "仅已确认凭证可冲销")
 
-    _apply_budget_void(conn, voucher_id, voucher["period"])
+    _apply_budget_void(
+        conn, voucher_id, voucher["period"], tenant_id=tenant_id, org_id=org_id
+    )
     entries = fetch_entries(conn, voucher_id, tenant_id=tenant_id, org_id=org_id)
     reversed_entries = []
     for entry in entries:
@@ -1677,10 +1885,12 @@ def void_voucher(
     )
     conn.execute(
         """
-        INSERT INTO void_vouchers (original_voucher_id, void_voucher_id, void_reason)
-        VALUES (?, ?, ?)
+        INSERT INTO void_vouchers (
+          tenant_id, org_id, original_voucher_id, void_voucher_id, void_reason
+        )
+        VALUES (?, ?, ?, ?, ?)
         """,
-        (voucher_id, void_id, reason),
+        (tenant_id, org_id, voucher_id, void_id, reason),
     )
     log_audit_event(
         conn,
@@ -1688,6 +1898,14 @@ def void_voucher(
         target_type="voucher",
         target_id=voucher_id,
         detail={"void_voucher_id": void_id, "reason": reason},
+        context={"tenant_id": tenant_id, "org_id": org_id},
+    )
+    record_event(
+        conn,
+        tenant_id,
+        org_id,
+        "voucher.voided",
+        {"voucher_id": voucher_id, "void_voucher_id": void_id, "reason": reason},
     )
     return {
         "original_voucher_id": voucher_id,
@@ -1703,18 +1921,33 @@ def add_currency(
     name: str,
     symbol: Optional[str] = None,
     precision: int = 2,
+    tenant_id: Optional[str] = None,
+    org_id: Optional[str] = None,
 ) -> None:
+    tenant_id, org_id = _resolve_tenant(tenant_id, org_id)
     conn.execute(
         """
-        INSERT OR REPLACE INTO currencies (code, name, symbol, precision, is_active)
-        VALUES (?, ?, ?, ?, 1)
+        INSERT OR REPLACE INTO currencies (
+          tenant_id, org_id, code, name, symbol, precision, is_active
+        )
+        VALUES (?, ?, ?, ?, ?, ?, 1)
         """,
-        (code.upper(), name, symbol, precision),
+        (tenant_id, org_id, code.upper(), name, symbol, precision),
     )
 
 
-def list_currencies(conn) -> List[Dict[str, Any]]:
-    rows = conn.execute("SELECT * FROM currencies WHERE is_active = 1 ORDER BY code").fetchall()
+def list_currencies(
+    conn, tenant_id: Optional[str] = None, org_id: Optional[str] = None
+) -> List[Dict[str, Any]]:
+    tenant_id, org_id = _resolve_tenant(tenant_id, org_id)
+    rows = conn.execute(
+        """
+        SELECT * FROM currencies
+        WHERE is_active = 1 AND tenant_id = ? AND org_id = ?
+        ORDER BY code
+        """,
+        (tenant_id, org_id),
+    ).fetchall()
     return [dict(row) for row in rows]
 
 
@@ -1725,13 +1958,18 @@ def add_fx_rate(
     rate: float,
     rate_type: str = "spot",
     source: Optional[str] = None,
+    tenant_id: Optional[str] = None,
+    org_id: Optional[str] = None,
 ) -> None:
+    tenant_id, org_id = _resolve_tenant(tenant_id, org_id)
     conn.execute(
         """
-        INSERT OR REPLACE INTO exchange_rates (currency_code, date, rate, rate_type, source)
-        VALUES (?, ?, ?, ?, ?)
+        INSERT OR REPLACE INTO exchange_rates (
+          tenant_id, org_id, currency_code, date, rate, rate_type, source
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?)
         """,
-        (currency_code.upper(), date, round(rate, 6), rate_type, source),
+        (tenant_id, org_id, currency_code.upper(), date, round(rate, 6), rate_type, source),
     )
 
 
@@ -1740,9 +1978,12 @@ def list_fx_rates(
     currency_code: Optional[str] = None,
     date: Optional[str] = None,
     rate_type: Optional[str] = None,
+    tenant_id: Optional[str] = None,
+    org_id: Optional[str] = None,
 ) -> List[Dict[str, Any]]:
-    conditions: List[str] = []
-    params: List[Any] = []
+    tenant_id, org_id = _resolve_tenant(tenant_id, org_id)
+    conditions: List[str] = ["tenant_id = ?", "org_id = ?"]
+    params: List[Any] = [tenant_id, org_id]
     if currency_code:
         conditions.append("currency_code = ?")
         params.append(currency_code.upper())
@@ -1760,15 +2001,24 @@ def list_fx_rates(
     return [dict(row) for row in rows]
 
 
-def get_fx_rate(conn, currency_code: str, date: str, rate_type: str = "spot") -> Optional[float]:
+def get_fx_rate(
+    conn,
+    currency_code: str,
+    date: str,
+    rate_type: str = "spot",
+    tenant_id: Optional[str] = None,
+    org_id: Optional[str] = None,
+) -> Optional[float]:
     if not date:
         return None
+    tenant_id, org_id = _resolve_tenant(tenant_id, org_id)
     row = conn.execute(
         """
         SELECT rate FROM exchange_rates
         WHERE currency_code = ? AND date = ? AND rate_type = ?
+          AND tenant_id = ? AND org_id = ?
         """,
-        (currency_code.upper(), date, rate_type),
+        (currency_code.upper(), date, rate_type, tenant_id, org_id),
     ).fetchone()
     if row:
         return float(row["rate"])
@@ -1856,6 +2106,17 @@ def archive_vouchers(
         """,
         (tenant_id, org_id, before_period, voucher_count, entry_count),
     )
+    record_event(
+        conn,
+        tenant_id,
+        org_id,
+        "vouchers.archived",
+        {
+            "cutoff_period": before_period,
+            "voucher_count": voucher_count,
+            "entry_count": entry_count,
+        },
+    )
     return {
         "cutoff_period": before_period,
         "voucher_count": voucher_count,
@@ -1901,7 +2162,14 @@ def revalue_forex(
     for row in fx_rows:
         if not _match_revaluable(row["account_code"]):
             continue
-        rate = get_fx_rate(conn, row["currency_code"], _period_end_date(period), rate_type)
+        rate = get_fx_rate(
+            conn,
+            row["currency_code"],
+            _period_end_date(period),
+            rate_type,
+            tenant_id=tenant_id,
+            org_id=org_id,
+        )
         if rate is None:
             continue
         foreign_closing = float(row["foreign_closing"] or 0)
@@ -2192,8 +2460,12 @@ def close_period(
 
     net_by_dims: Dict[Tuple[int, int, int, int, int], float] = {}
     if template_code:
-        template = _load_closing_template(conn, template_code)
-        closing_entries = _build_template_close_entries(conn, balances, template)
+        template = _load_closing_template(
+            conn, template_code, tenant_id=tenant_id, org_id=org_id
+        )
+        closing_entries = _build_template_close_entries(
+            conn, balances, template, tenant_id=tenant_id, org_id=org_id
+        )
     else:
         closing_entries, net_by_dims = _build_income_close_entries(
             conn, balances, profit_account, tenant_id=tenant_id, org_id=org_id
@@ -2268,13 +2540,26 @@ def close_period(
         )
 
     net_total = round(sum(net_by_dims.values()), 2)
-    approve_approval(conn, "period_close", period)
+    approve_approval(conn, "period_close", period, tenant_id=tenant_id, org_id=org_id)
     log_audit_event(
         conn,
         "period.close",
         target_type="period",
         target_id=period,
         detail={
+            "closing_voucher_id": closing_voucher_id,
+            "transfer_voucher_id": transfer_voucher_id,
+            "template": template_code,
+        },
+        context={"tenant_id": tenant_id, "org_id": org_id},
+    )
+    record_event(
+        conn,
+        tenant_id,
+        org_id,
+        "period.closed",
+        {
+            "period": period,
             "closing_voucher_id": closing_voucher_id,
             "transfer_voucher_id": transfer_voucher_id,
             "template": template_code,
@@ -2449,13 +2734,21 @@ def reopen_period(
         """,
         (period, tenant_id, org_id),
     )
-    approve_approval(conn, "period_reopen", period)
+    approve_approval(conn, "period_reopen", period, tenant_id=tenant_id, org_id=org_id)
     log_audit_event(
         conn,
         "period.reopen",
         target_type="period",
         target_id=period,
         detail={"void_voucher_ids": voided_ids},
+        context={"tenant_id": tenant_id, "org_id": org_id},
+    )
+    record_event(
+        conn,
+        tenant_id,
+        org_id,
+        "period.reopened",
+        {"period": period, "void_voucher_ids": voided_ids},
     )
     return {
         "period": period,
@@ -2465,10 +2758,13 @@ def reopen_period(
     }
 
 
-def _period_has_activity(conn, period: str) -> bool:
+def _period_has_activity(
+    conn, period: str, tenant_id: Optional[str] = None, org_id: Optional[str] = None
+) -> bool:
+    tenant_id, org_id = _resolve_tenant(tenant_id, org_id)
     row = conn.execute(
-        "SELECT COUNT(*) AS cnt FROM vouchers WHERE period = ?",
-        (period,),
+        "SELECT COUNT(*) AS cnt FROM vouchers WHERE period = ? AND tenant_id = ? AND org_id = ?",
+        (period, tenant_id, org_id),
     ).fetchone()
     if row and row["cnt"] > 0:
         return True
@@ -2476,36 +2772,42 @@ def _period_has_activity(conn, period: str) -> bool:
         """
         SELECT COUNT(*) AS cnt FROM balances
         WHERE period = ? AND (debit_amount != 0 OR credit_amount != 0)
+          AND tenant_id = ? AND org_id = ?
         """,
-        (period,),
+        (period, tenant_id, org_id),
     ).fetchone()
     return bool(row and row["cnt"] > 0)
 
 
-def _apply_adjustment_rollforward(conn, period: str) -> None:
-    status = get_period_status(conn, period)
+def _apply_adjustment_rollforward(
+    conn, period: str, tenant_id: Optional[str] = None, org_id: Optional[str] = None
+) -> None:
+    tenant_id, org_id = _resolve_tenant(tenant_id, org_id)
+    status = get_period_status(conn, period, tenant_id=tenant_id, org_id=org_id)
     if status != "adjustment":
         return
     next_period = _next_period(period)
     if not next_period:
         return
-    if not _period_has_activity(conn, next_period):
-        _roll_forward_balances(conn, period, next_period)
+    if not _period_has_activity(conn, next_period, tenant_id=tenant_id, org_id=org_id):
+        _roll_forward_balances(
+            conn, period, next_period, tenant_id=tenant_id, org_id=org_id
+        )
         return
 
     closing_rows = conn.execute(
         """
         SELECT account_code, dept_id, project_id, customer_id, supplier_id, employee_id, closing_balance
-        FROM balances WHERE period = ?
+        FROM balances WHERE period = ? AND tenant_id = ? AND org_id = ?
         """,
-        (period,),
+        (period, tenant_id, org_id),
     ).fetchall()
     opening_rows = conn.execute(
         """
         SELECT account_code, dept_id, project_id, customer_id, supplier_id, employee_id, opening_balance
-        FROM balances WHERE period = ?
+        FROM balances WHERE period = ? AND tenant_id = ? AND org_id = ?
         """,
-        (next_period,),
+        (next_period, tenant_id, org_id),
     ).fetchall()
 
     closing_map = {
@@ -2539,7 +2841,7 @@ def _apply_adjustment_rollforward(conn, period: str) -> None:
         if abs(delta) < 0.01:
             continue
         account_code = key[0]
-        account = find_account(conn, account_code)
+        account = find_account(conn, account_code, tenant_id=tenant_id, org_id=org_id)
         if account["direction"] == "debit":
             debit = delta if delta > 0 else 0.0
             credit = abs(delta) if delta < 0 else 0.0
@@ -2560,6 +2862,8 @@ def _apply_adjustment_rollforward(conn, period: str) -> None:
                     "employee_id": key[5],
                 },
                 description=f"{period} 调整结转",
+                tenant_id=tenant_id,
+                org_id=org_id,
             )
         )
 
@@ -2581,35 +2885,67 @@ def _apply_adjustment_rollforward(conn, period: str) -> None:
         },
         entries,
         "reviewed",
+        tenant_id=tenant_id,
+        org_id=org_id,
     )
-    confirm_voucher(conn, voucher_id)
+    confirm_voucher(conn, voucher_id, tenant_id=tenant_id, org_id=org_id)
 
 
-def add_voucher_template(conn, code: str, name: str, rule_json: Dict[str, Any]) -> None:
+def add_voucher_template(
+    conn,
+    code: str,
+    name: str,
+    rule_json: Dict[str, Any],
+    tenant_id: Optional[str] = None,
+    org_id: Optional[str] = None,
+) -> None:
+    tenant_id, org_id = _resolve_tenant(tenant_id, org_id)
     conn.execute(
         """
-        INSERT OR REPLACE INTO voucher_templates (code, name, rule_json, is_active)
-        VALUES (?, ?, ?, 1)
+        INSERT OR REPLACE INTO voucher_templates (
+          tenant_id, org_id, code, name, rule_json, is_active
+        )
+        VALUES (?, ?, ?, ?, ?, 1)
         """,
-        (code, name, json.dumps(rule_json, ensure_ascii=False)),
+        (tenant_id, org_id, code, name, json.dumps(rule_json, ensure_ascii=False)),
     )
 
 
-def list_voucher_templates(conn) -> List[Dict[str, Any]]:
+def list_voucher_templates(
+    conn, tenant_id: Optional[str] = None, org_id: Optional[str] = None
+) -> List[Dict[str, Any]]:
+    tenant_id, org_id = _resolve_tenant(tenant_id, org_id)
     rows = conn.execute(
-        "SELECT code, name, is_active, created_at FROM voucher_templates ORDER BY code"
+        """
+        SELECT code, name, is_active, created_at FROM voucher_templates
+        WHERE tenant_id = ? AND org_id = ?
+        ORDER BY code
+        """,
+        (tenant_id, org_id),
     ).fetchall()
     return [dict(row) for row in rows]
 
 
-def disable_voucher_template(conn, code: str) -> None:
+def disable_voucher_template(
+    conn, code: str, tenant_id: Optional[str] = None, org_id: Optional[str] = None
+) -> None:
+    tenant_id, org_id = _resolve_tenant(tenant_id, org_id)
     row = conn.execute(
-        "SELECT 1 FROM voucher_templates WHERE code = ?",
-        (code,),
+        """
+        SELECT 1 FROM voucher_templates
+        WHERE code = ? AND tenant_id = ? AND org_id = ?
+        """,
+        (code, tenant_id, org_id),
     ).fetchone()
     if not row:
         raise LedgerError("TEMPLATE_NOT_FOUND", f"模板不存在: {code}")
-    conn.execute("UPDATE voucher_templates SET is_active = 0 WHERE code = ?", (code,))
+    conn.execute(
+        """
+        UPDATE voucher_templates SET is_active = 0
+        WHERE code = ? AND tenant_id = ? AND org_id = ?
+        """,
+        (code, tenant_id, org_id),
+    )
 
 
 def _eval_expr(expr: str, context: Dict[str, Any]) -> float:
@@ -2667,10 +3003,16 @@ def generate_voucher_from_template(
     code: str,
     payload: Dict[str, Any],
     date: Optional[str] = None,
+    tenant_id: Optional[str] = None,
+    org_id: Optional[str] = None,
 ) -> Dict[str, Any]:
+    tenant_id, org_id = _resolve_tenant(tenant_id, org_id)
     row = conn.execute(
-        "SELECT * FROM voucher_templates WHERE code = ?",
-        (code,),
+        """
+        SELECT * FROM voucher_templates
+        WHERE code = ? AND tenant_id = ? AND org_id = ?
+        """,
+        (code, tenant_id, org_id),
     ).fetchone()
     if not row:
         raise LedgerError("TEMPLATE_NOT_FOUND", f"模板不存在: {code}")
@@ -2692,17 +3034,20 @@ def generate_voucher_from_template(
     event_id = payload.get("event_id")
     if event_id:
         existing = conn.execute(
-            "SELECT voucher_id FROM voucher_events WHERE event_id = ?",
-            (event_id,),
+            """
+            SELECT voucher_id FROM voucher_events
+            WHERE event_id = ? AND tenant_id = ? AND org_id = ?
+            """,
+            (event_id, tenant_id, org_id),
         ).fetchone()
         if existing:
             voucher_row = conn.execute(
                 """
                 SELECT id, voucher_no, period, confirmed_at
                 FROM vouchers
-                WHERE id = ?
+                WHERE id = ? AND tenant_id = ? AND org_id = ?
                 """,
-                (existing["voucher_id"],),
+                (existing["voucher_id"], tenant_id, org_id),
             ).fetchone()
             if not voucher_row:
                 raise LedgerError("TEMPLATE_EVENT_INVALID", "事件已存在但凭证缺失")
@@ -2747,7 +3092,9 @@ def generate_voucher_from_template(
             }
         )
 
-    entries, total_debit, total_credit = build_entries(conn, entries_data, voucher_date)
+    entries, total_debit, total_credit = build_entries(
+        conn, entries_data, voucher_date, tenant_id=tenant_id, org_id=org_id
+    )
     if abs(total_debit - total_credit) >= 0.01:
         raise LedgerError("NOT_BALANCED", "模板生成凭证不平衡")
     voucher_id, voucher_no, period, _ = insert_voucher(
@@ -2760,16 +3107,20 @@ def generate_voucher_from_template(
         },
         entries,
         "reviewed",
+        tenant_id=tenant_id,
+        org_id=org_id,
     )
     if event_id:
         conn.execute(
             """
-            INSERT INTO voucher_events (event_id, template_code, voucher_id)
-            VALUES (?, ?, ?)
+            INSERT INTO voucher_events (
+              tenant_id, org_id, event_id, template_code, voucher_id
+            )
+            VALUES (?, ?, ?, ?, ?)
             """,
-            (event_id, code, voucher_id),
+            (tenant_id, org_id, event_id, code, voucher_id),
         )
-    voucher = confirm_voucher(conn, voucher_id)
+    voucher = confirm_voucher(conn, voucher_id, tenant_id=tenant_id, org_id=org_id)
     return {
         "voucher_id": voucher_id,
         "voucher_no": voucher_no,
@@ -2820,10 +3171,16 @@ def _build_income_close_entries(
     return entries, net_by_dims
 
 
-def _load_closing_template(conn, code: str) -> Dict[str, Any]:
+def _load_closing_template(
+    conn, code: str, tenant_id: Optional[str] = None, org_id: Optional[str] = None
+) -> Dict[str, Any]:
+    tenant_id, org_id = _resolve_tenant(tenant_id, org_id)
     row = conn.execute(
-        "SELECT * FROM closing_templates WHERE code = ?",
-        (code,),
+        """
+        SELECT * FROM closing_templates
+        WHERE code = ? AND tenant_id = ? AND org_id = ?
+        """,
+        (code, tenant_id, org_id),
     ).fetchone()
     if not row:
         raise LedgerError("CLOSE_TEMPLATE_NOT_FOUND", f"结转模板不存在: {code}")
@@ -2837,7 +3194,11 @@ def _load_closing_template(conn, code: str) -> Dict[str, Any]:
 
 
 def _build_template_close_entries(
-    conn, balances: List[Dict[str, Any]], template: Dict[str, Any]
+    conn,
+    balances: List[Dict[str, Any]],
+    template: Dict[str, Any],
+    tenant_id: Optional[str] = None,
+    org_id: Optional[str] = None,
 ) -> List[Dict[str, Any]]:
     rules = template.get("rules")
     if isinstance(rules, dict):
@@ -2885,7 +3246,9 @@ def _build_template_close_entries(
             _append_entry(
                 entries,
                 target_account,
-                find_account(conn, target_account)["name"],
+                find_account(conn, target_account, tenant_id=tenant_id, org_id=org_id)[
+                    "name"
+                ],
                 debit,
                 credit,
                 dims,
@@ -3066,17 +3429,22 @@ def _dims_for_type(dim_type: str, dim_id: int) -> Dict[str, Optional[int]]:
 
 
 def _allocation_ratios_from_basis(
-    conn, period: str
+    conn,
+    period: str,
+    tenant_id: Optional[str] = None,
+    org_id: Optional[str] = None,
 ) -> List[Tuple[str, int, float]]:
+    tenant_id, org_id = _resolve_tenant(tenant_id, org_id)
     dim_priority = ["department", "project", "customer", "supplier", "employee"]
     for dim_type in dim_priority:
         rows = conn.execute(
             """
             SELECT dim_id, value FROM allocation_basis_values
             WHERE period = ? AND dim_type = ?
+              AND tenant_id = ? AND org_id = ?
             ORDER BY dim_id
             """,
-            (period, dim_type),
+            (period, dim_type, tenant_id, org_id),
         ).fetchall()
         if not rows:
             continue
@@ -3162,6 +3530,7 @@ def add_ar_item(
 ) -> Dict[str, Any]:
     if amount <= 0:
         raise LedgerError("AR_AMOUNT_INVALID", "应收金额必须大于 0")
+    tenant_id, org_id = _resolve_tenant(tenant_id, org_id)
     customer_id = find_dimension(
         conn, "customer", customer_code, tenant_id=tenant_id, org_id=org_id
     )
@@ -3191,11 +3560,25 @@ def add_ar_item(
         VALUES (?, ?, ?, ?, ?, 0, 'open')
         """,
         (
-            *_resolve_tenant(tenant_id, org_id),
+            tenant_id,
+            org_id,
             customer_id,
             voucher["voucher_id"],
             round(amount, 2),
         ),
+    )
+    record_event(
+        conn,
+        tenant_id,
+        org_id,
+        "ar.item.created",
+        {
+            "item_id": cur.lastrowid,
+            "customer_id": customer_id,
+            "amount": round(amount, 2),
+            "voucher_id": voucher["voucher_id"],
+            "date": date,
+        },
     )
     return {
         "item_id": cur.lastrowid,
@@ -3260,7 +3643,13 @@ def settle_ar_item(
         """,
         (new_settled, status, item_id, tenant_id, org_id),
     )
-    _apply_credit_usage(conn, int(row["customer_id"]), -amount)
+    _apply_credit_usage(
+        conn,
+        int(row["customer_id"]),
+        -amount,
+        tenant_id=tenant_id,
+        org_id=org_id,
+    )
     return {
         "item_id": item_id,
         "voucher_id": voucher["voucher_id"],
@@ -3431,6 +3820,7 @@ def add_ap_item(
 ) -> Dict[str, Any]:
     if amount <= 0:
         raise LedgerError("AP_AMOUNT_INVALID", "应付金额必须大于 0")
+    tenant_id, org_id = _resolve_tenant(tenant_id, org_id)
     supplier_id = find_dimension(
         conn, "supplier", supplier_code, tenant_id=tenant_id, org_id=org_id
     )
@@ -3460,11 +3850,25 @@ def add_ap_item(
         VALUES (?, ?, ?, ?, ?, 0, 'open')
         """,
         (
-            *_resolve_tenant(tenant_id, org_id),
+            tenant_id,
+            org_id,
             supplier_id,
             voucher["voucher_id"],
             round(amount, 2),
         ),
+    )
+    record_event(
+        conn,
+        tenant_id,
+        org_id,
+        "ap.item.created",
+        {
+            "item_id": cur.lastrowid,
+            "supplier_id": supplier_id,
+            "amount": round(amount, 2),
+            "voucher_id": voucher["voucher_id"],
+            "date": date,
+        },
     )
     return {
         "item_id": cur.lastrowid,
@@ -3529,7 +3933,13 @@ def settle_ap_item(
         """,
         (new_settled, status, item_id, tenant_id, org_id),
     )
-    _apply_credit_usage(conn, int(row["supplier_id"]), -amount)
+    _apply_credit_usage(
+        conn,
+        int(row["supplier_id"]),
+        -amount,
+        tenant_id=tenant_id,
+        org_id=org_id,
+    )
     return {
         "item_id": item_id,
         "voucher_id": voucher["voucher_id"],
@@ -3682,15 +4092,20 @@ def create_payment_plan(
     item_id: int,
     due_date: str,
     amount: float,
+    tenant_id: Optional[str] = None,
+    org_id: Optional[str] = None,
 ) -> Dict[str, Any]:
     if amount <= 0:
         raise LedgerError("PAYMENT_PLAN_AMOUNT_INVALID", "计划金额必须大于 0")
+    tenant_id, org_id = _resolve_tenant(tenant_id, org_id)
     cur = conn.execute(
         """
-        INSERT INTO payment_plans (item_type, item_id, due_date, amount, status)
-        VALUES (?, ?, ?, ?, 'pending')
+        INSERT INTO payment_plans (
+          tenant_id, org_id, item_type, item_id, due_date, amount, status
+        )
+        VALUES (?, ?, ?, ?, ?, ?, 'pending')
         """,
-        (item_type, item_id, due_date, round(amount, 2)),
+        (tenant_id, org_id, item_type, item_id, due_date, round(amount, 2)),
     )
     return {
         "plan_id": cur.lastrowid,
@@ -3702,24 +4117,53 @@ def create_payment_plan(
     }
 
 
-def settle_payment_plan(conn, plan_id: int, date: str) -> Dict[str, Any]:
-    plan = conn.execute("SELECT * FROM payment_plans WHERE id = ?", (plan_id,)).fetchone()
+def settle_payment_plan(
+    conn,
+    plan_id: int,
+    date: str,
+    tenant_id: Optional[str] = None,
+    org_id: Optional[str] = None,
+) -> Dict[str, Any]:
+    tenant_id, org_id = _resolve_tenant(tenant_id, org_id)
+    plan = conn.execute(
+        "SELECT * FROM payment_plans WHERE id = ? AND tenant_id = ? AND org_id = ?",
+        (plan_id, tenant_id, org_id),
+    ).fetchone()
     if not plan:
         raise LedgerError("PAYMENT_PLAN_NOT_FOUND", f"计划不存在: {plan_id}")
     if plan["status"] != "pending":
         raise LedgerError("PAYMENT_PLAN_STATUS_INVALID", "计划已处理")
     voucher_id = None
     if plan["item_type"] == "ar":
-        result = settle_ar_item(conn, plan["item_id"], plan["amount"], date, "plan settle")
+        result = settle_ar_item(
+            conn,
+            plan["item_id"],
+            plan["amount"],
+            date,
+            "plan settle",
+            tenant_id=tenant_id,
+            org_id=org_id,
+        )
         voucher_id = result["voucher_id"]
     elif plan["item_type"] == "ap":
-        result = settle_ap_item(conn, plan["item_id"], plan["amount"], date, "plan settle")
+        result = settle_ap_item(
+            conn,
+            plan["item_id"],
+            plan["amount"],
+            date,
+            "plan settle",
+            tenant_id=tenant_id,
+            org_id=org_id,
+        )
         voucher_id = result["voucher_id"]
     else:
         raise LedgerError("PAYMENT_PLAN_TYPE_INVALID", "不支持的计划类型")
     conn.execute(
-        "UPDATE payment_plans SET status = 'settled', voucher_id = ? WHERE id = ?",
-        (voucher_id, plan_id),
+        """
+        UPDATE payment_plans SET status = 'settled', voucher_id = ?
+        WHERE id = ? AND tenant_id = ? AND org_id = ?
+        """,
+        (voucher_id, plan_id, tenant_id, org_id),
     )
     return {"plan_id": plan_id, "status": "settled", "voucher_id": voucher_id}
 
@@ -3733,11 +4177,14 @@ def add_bill(
     maturity_date: Optional[str] = None,
     item_type: Optional[str] = None,
     item_id: Optional[int] = None,
+    tenant_id: Optional[str] = None,
+    org_id: Optional[str] = None,
 ) -> Dict[str, Any]:
     if amount <= 0:
         raise LedgerError("BILL_AMOUNT_INVALID", "票据金额必须大于 0")
     if bill_type not in {"ar", "ap"}:
         raise LedgerError("BILL_TYPE_INVALID", "票据类型无效")
+    tenant_id, org_id = _resolve_tenant(tenant_id, org_id)
     mapping = _load_subledger_mapping()[bill_type]
     description = f"Bill {bill_no}"
     if bill_type == "ar":
@@ -3750,14 +4197,31 @@ def add_bill(
             (mapping["ap_account"], amount, 0.0),
             (mapping["bill_account"], 0.0, amount),
         ]
-    entries = _build_entries(conn, lines, description=description)
-    voucher = _create_posted_voucher(conn, date, description, entries)
+    entries = _build_entries(
+        conn, lines, description=description, tenant_id=tenant_id, org_id=org_id
+    )
+    voucher = _create_posted_voucher(
+        conn, date, description, entries, tenant_id=tenant_id, org_id=org_id
+    )
     cur = conn.execute(
         """
-        INSERT INTO bills (bill_no, bill_type, amount, status, maturity_date, item_type, item_id, voucher_id)
-        VALUES (?, ?, ?, 'holding', ?, ?, ?, ?)
+        INSERT INTO bills (
+          tenant_id, org_id, bill_no, bill_type, amount, status,
+          maturity_date, item_type, item_id, voucher_id
+        )
+        VALUES (?, ?, ?, ?, ?, 'holding', ?, ?, ?, ?)
         """,
-        (bill_no, bill_type, round(amount, 2), maturity_date, item_type, item_id, voucher["voucher_id"]),
+        (
+            tenant_id,
+            org_id,
+            bill_no,
+            bill_type,
+            round(amount, 2),
+            maturity_date,
+            item_type,
+            item_id,
+            voucher["voucher_id"],
+        ),
     )
     return {"bill_id": cur.lastrowid, "voucher_id": voucher["voucher_id"], "status": "holding"}
 
@@ -3768,8 +4232,14 @@ def update_bill_status(
     status: str,
     date: str,
     description: Optional[str] = None,
+    tenant_id: Optional[str] = None,
+    org_id: Optional[str] = None,
 ) -> Dict[str, Any]:
-    bill = conn.execute("SELECT * FROM bills WHERE bill_no = ?", (bill_no,)).fetchone()
+    tenant_id, org_id = _resolve_tenant(tenant_id, org_id)
+    bill = conn.execute(
+        "SELECT * FROM bills WHERE bill_no = ? AND tenant_id = ? AND org_id = ?",
+        (bill_no, tenant_id, org_id),
+    ).fetchone()
     if not bill:
         raise LedgerError("BILL_NOT_FOUND", f"票据不存在: {bill_no}")
     if status not in {"endorsed", "discounted", "settled"}:
@@ -3790,22 +4260,37 @@ def update_bill_status(
                 (mapping["bill_account"], bill["amount"], 0.0),
                 (target_account, 0.0, bill["amount"]),
             ]
-        entries = _build_entries(conn, lines, description=description)
-        voucher = _create_posted_voucher(conn, date, description, entries)
+        entries = _build_entries(
+            conn, lines, description=description, tenant_id=tenant_id, org_id=org_id
+        )
+        voucher = _create_posted_voucher(
+            conn, date, description, entries, tenant_id=tenant_id, org_id=org_id
+        )
         voucher_id = voucher["voucher_id"]
     conn.execute(
-        "UPDATE bills SET status = ?, voucher_id = ? WHERE id = ?",
-        (status, voucher_id, bill["id"]),
+        """
+        UPDATE bills SET status = ?, voucher_id = ?
+        WHERE id = ? AND tenant_id = ? AND org_id = ?
+        """,
+        (status, voucher_id, bill["id"], tenant_id, org_id),
     )
     return {"bill_id": bill["id"], "status": status, "voucher_id": voucher_id}
 
 
 def provision_bad_debt(
-    conn, period: str, customer_code: str, amount: float
+    conn,
+    period: str,
+    customer_code: str,
+    amount: float,
+    tenant_id: Optional[str] = None,
+    org_id: Optional[str] = None,
 ) -> Dict[str, Any]:
     if amount <= 0:
         raise LedgerError("BAD_DEBT_AMOUNT_INVALID", "计提金额必须大于 0")
-    customer_id = find_dimension(conn, "customer", customer_code)
+    customer_id = find_dimension(
+        conn, "customer", customer_code, tenant_id=tenant_id, org_id=org_id
+    )
+    tenant_id, org_id = _resolve_tenant(tenant_id, org_id)
     mapping = _load_subledger_mapping()["ar"]
     description = f"Bad debt {period}"
     entries = _build_entries(
@@ -3816,22 +4301,34 @@ def provision_bad_debt(
         ],
         dims={"customer_id": customer_id},
         description=description,
+        tenant_id=tenant_id,
+        org_id=org_id,
     )
-    voucher = _create_posted_voucher(conn, f"{period}-01", description, entries)
+    voucher = _create_posted_voucher(
+        conn, f"{period}-01", description, entries, tenant_id=tenant_id, org_id=org_id
+    )
     cur = conn.execute(
         """
-        INSERT INTO bad_debt_provisions (period, customer_id, amount, voucher_id)
-        VALUES (?, ?, ?, ?)
+        INSERT INTO bad_debt_provisions (
+          tenant_id, org_id, period, customer_id, amount, voucher_id
+        )
+        VALUES (?, ?, ?, ?, ?, ?)
         """,
-        (period, customer_id, round(amount, 2), voucher["voucher_id"]),
+        (tenant_id, org_id, period, customer_id, round(amount, 2), voucher["voucher_id"]),
     )
     return {"provision_id": cur.lastrowid, "voucher_id": voucher["voucher_id"]}
 
 
-def _calculate_bad_debt_amount(conn, period: str, customer_code: str) -> float:
+def _calculate_bad_debt_amount(
+    conn,
+    period: str,
+    customer_code: str,
+    tenant_id: Optional[str] = None,
+    org_id: Optional[str] = None,
+) -> float:
     config = _load_bad_debt_config()
     as_of = _period_end_date(period)
-    buckets = ar_aging(conn, as_of, customer_code)
+    buckets = ar_aging(conn, as_of, customer_code, tenant_id=tenant_id, org_id=org_id)
     total_open = sum(buckets.values())
     fixed_ratio = config.get("fixed_ratio")
     if fixed_ratio is not None:
@@ -3844,22 +4341,38 @@ def _calculate_bad_debt_amount(conn, period: str, customer_code: str) -> float:
 
 
 def provision_bad_debt_auto(
-    conn, period: str, customer_code: str
+    conn,
+    period: str,
+    customer_code: str,
+    tenant_id: Optional[str] = None,
+    org_id: Optional[str] = None,
 ) -> Dict[str, Any]:
-    amount = _calculate_bad_debt_amount(conn, period, customer_code)
+    amount = _calculate_bad_debt_amount(
+        conn, period, customer_code, tenant_id=tenant_id, org_id=org_id
+    )
     if amount <= 0:
         raise LedgerError("BAD_DEBT_AMOUNT_INVALID", "自动计提金额必须大于 0")
-    result = provision_bad_debt(conn, period, customer_code, amount)
+    result = provision_bad_debt(
+        conn, period, customer_code, amount, tenant_id=tenant_id, org_id=org_id
+    )
     result["amount"] = amount
     return result
 
 
 def reverse_bad_debt(
-    conn, period: str, customer_code: str, amount: float
+    conn,
+    period: str,
+    customer_code: str,
+    amount: float,
+    tenant_id: Optional[str] = None,
+    org_id: Optional[str] = None,
 ) -> Dict[str, Any]:
     if amount <= 0:
         raise LedgerError("BAD_DEBT_AMOUNT_INVALID", "冲回金额必须大于 0")
-    customer_id = find_dimension(conn, "customer", customer_code)
+    customer_id = find_dimension(
+        conn, "customer", customer_code, tenant_id=tenant_id, org_id=org_id
+    )
+    tenant_id, org_id = _resolve_tenant(tenant_id, org_id)
     mapping = _load_subledger_mapping()["ar"]
     description = f"Bad debt reverse {period}"
     entries = _build_entries(
@@ -3870,14 +4383,20 @@ def reverse_bad_debt(
         ],
         dims={"customer_id": customer_id},
         description=description,
+        tenant_id=tenant_id,
+        org_id=org_id,
     )
-    voucher = _create_posted_voucher(conn, f"{period}-01", description, entries)
+    voucher = _create_posted_voucher(
+        conn, f"{period}-01", description, entries, tenant_id=tenant_id, org_id=org_id
+    )
     cur = conn.execute(
         """
-        INSERT INTO bad_debt_provisions (period, customer_id, amount, voucher_id)
-        VALUES (?, ?, ?, ?)
+        INSERT INTO bad_debt_provisions (
+          tenant_id, org_id, period, customer_id, amount, voucher_id
+        )
+        VALUES (?, ?, ?, ?, ?, ?)
         """,
-        (period, customer_id, round(-amount, 2), voucher["voucher_id"]),
+        (tenant_id, org_id, period, customer_id, round(-amount, 2), voucher["voucher_id"]),
     )
     return {"provision_id": cur.lastrowid, "voucher_id": voucher["voucher_id"]}
 
@@ -3988,57 +4507,110 @@ def _upsert_inventory_balance(
     )
 
 
-def create_warehouse(conn, code: str, name: str) -> int:
+def create_warehouse(
+    conn,
+    code: str,
+    name: str,
+    tenant_id: Optional[str] = None,
+    org_id: Optional[str] = None,
+) -> int:
+    tenant_id, org_id = _resolve_tenant(tenant_id, org_id)
     cur = conn.execute(
-        "INSERT OR IGNORE INTO warehouses (code, name) VALUES (?, ?)",
-        (code, name),
-    )
-    if cur.lastrowid:
-        return cur.lastrowid
-    row = conn.execute("SELECT id FROM warehouses WHERE code = ?", (code,)).fetchone()
-    return int(row["id"]) if row else 0
-
-
-def create_location(conn, warehouse_id: int, code: str, name: str) -> int:
-    cur = conn.execute(
-        "INSERT OR IGNORE INTO locations (warehouse_id, code, name) VALUES (?, ?, ?)",
-        (warehouse_id, code, name),
+        "INSERT OR IGNORE INTO warehouses (tenant_id, org_id, code, name) VALUES (?, ?, ?, ?)",
+        (tenant_id, org_id, code, name),
     )
     if cur.lastrowid:
         return cur.lastrowid
     row = conn.execute(
-        "SELECT id FROM locations WHERE warehouse_id = ? AND code = ?",
-        (warehouse_id, code),
+        "SELECT id FROM warehouses WHERE code = ? AND tenant_id = ? AND org_id = ?",
+        (code, tenant_id, org_id),
+    ).fetchone()
+    return int(row["id"]) if row else 0
+
+
+def create_location(
+    conn,
+    warehouse_id: int,
+    code: str,
+    name: str,
+    tenant_id: Optional[str] = None,
+    org_id: Optional[str] = None,
+) -> int:
+    tenant_id, org_id = _resolve_tenant(tenant_id, org_id)
+    cur = conn.execute(
+        """
+        INSERT OR IGNORE INTO locations (tenant_id, org_id, warehouse_id, code, name)
+        VALUES (?, ?, ?, ?, ?)
+        """,
+        (tenant_id, org_id, warehouse_id, code, name),
+    )
+    if cur.lastrowid:
+        return cur.lastrowid
+    row = conn.execute(
+        """
+        SELECT id FROM locations
+        WHERE warehouse_id = ? AND code = ? AND tenant_id = ? AND org_id = ?
+        """,
+        (warehouse_id, code, tenant_id, org_id),
     ).fetchone()
     return int(row["id"]) if row else 0
 
 
 def _resolve_warehouse_location(
-    conn, warehouse_code: Optional[str], location_code: Optional[str]
+    conn,
+    warehouse_code: Optional[str],
+    location_code: Optional[str],
+    tenant_id: Optional[str] = None,
+    org_id: Optional[str] = None,
 ) -> Tuple[int, int]:
     if not warehouse_code:
         return 0, 0
-    warehouse_id = create_warehouse(conn, warehouse_code, warehouse_code)
+    warehouse_id = create_warehouse(
+        conn, warehouse_code, warehouse_code, tenant_id=tenant_id, org_id=org_id
+    )
     if not location_code:
         return warehouse_id, 0
-    location_id = create_location(conn, warehouse_id, location_code, location_code)
+    location_id = create_location(
+        conn, warehouse_id, location_code, location_code, tenant_id=tenant_id, org_id=org_id
+    )
     return warehouse_id, location_id
 
 
-def set_standard_cost(conn, sku: str, period: str, cost: float, variance_account: str) -> None:
+def set_standard_cost(
+    conn,
+    sku: str,
+    period: str,
+    cost: float,
+    variance_account: str,
+    tenant_id: Optional[str] = None,
+    org_id: Optional[str] = None,
+) -> None:
+    tenant_id, org_id = _resolve_tenant(tenant_id, org_id)
     conn.execute(
         """
-        INSERT OR REPLACE INTO standard_costs (sku, period, cost, variance_account)
-        VALUES (?, ?, ?, ?)
+        INSERT OR REPLACE INTO standard_costs (
+          tenant_id, org_id, sku, period, cost, variance_account
+        )
+        VALUES (?, ?, ?, ?, ?, ?)
         """,
-        (sku, period, round(cost, 2), variance_account),
+        (tenant_id, org_id, sku, period, round(cost, 2), variance_account),
     )
 
 
-def _get_standard_cost(conn, sku: str, period: str) -> Optional[Dict[str, Any]]:
+def _get_standard_cost(
+    conn,
+    sku: str,
+    period: str,
+    tenant_id: Optional[str] = None,
+    org_id: Optional[str] = None,
+) -> Optional[Dict[str, Any]]:
+    tenant_id, org_id = _resolve_tenant(tenant_id, org_id)
     row = conn.execute(
-        "SELECT cost, variance_account FROM standard_costs WHERE sku = ? AND period = ?",
-        (sku, period),
+        """
+        SELECT cost, variance_account FROM standard_costs
+        WHERE sku = ? AND period = ? AND tenant_id = ? AND org_id = ?
+        """,
+        (sku, period, tenant_id, org_id),
     ).fetchone()
     return dict(row) if row else None
 
@@ -4060,19 +4632,33 @@ def _latest_inventory_cost(
 
 
 def _consume_fifo_batches(
-    conn, sku: str, qty: float, warehouse_id: int, location_id: int
+    conn,
+    sku: str,
+    qty: float,
+    warehouse_id: int,
+    location_id: int,
+    tenant_id: Optional[str] = None,
+    org_id: Optional[str] = None,
 ) -> Tuple[List[Dict[str, Any]], float]:
+    tenant_id, org_id = _resolve_tenant(tenant_id, org_id)
     remaining = qty
     lines: List[Dict[str, Any]] = []
     batches = conn.execute(
         """
         SELECT * FROM inventory_batches
         WHERE sku = ? AND status = 'open'
+          AND tenant_id = ? AND org_id = ?
           AND (warehouse_id IS NULL OR warehouse_id = ?)
           AND (location_id IS NULL OR location_id = ?)
         ORDER BY created_at, id
         """,
-        (sku, warehouse_id if warehouse_id else None, location_id if location_id else None),
+        (
+            sku,
+            tenant_id,
+            org_id,
+            warehouse_id if warehouse_id else None,
+            location_id if location_id else None,
+        ),
     ).fetchall()
     for batch in batches:
         if remaining <= 0:
@@ -4094,8 +4680,11 @@ def _consume_fifo_batches(
         new_remaining = round(available - use_qty, 2)
         status = "closed" if new_remaining <= 0 else "open"
         conn.execute(
-            "UPDATE inventory_batches SET remaining_qty = ?, status = ? WHERE id = ?",
-            (new_remaining, status, batch["id"]),
+            """
+            UPDATE inventory_batches SET remaining_qty = ?, status = ?
+            WHERE id = ? AND tenant_id = ? AND org_id = ?
+            """,
+            (new_remaining, status, batch["id"], tenant_id, org_id),
         )
     if remaining > 0.01:
         raise LedgerError("INVENTORY_INSUFFICIENT", "库存数量不足")
@@ -4208,6 +4797,7 @@ def inventory_move_in(
 ) -> Dict[str, Any]:
     if qty <= 0 or unit_cost < 0:
         raise LedgerError("INVENTORY_AMOUNT_INVALID", "入库数量或成本无效")
+    tenant_id, org_id = _resolve_tenant(tenant_id, org_id)
     serials = _normalize_serials(serial_numbers)
     if serials:
         if abs(qty - round(qty)) > 0.0001:
@@ -4216,7 +4806,7 @@ def inventory_move_in(
             raise LedgerError("INVENTORY_SERIAL_MISMATCH", "序列号数量不匹配")
     _ensure_inventory_item(conn, sku, name, unit, tenant_id=tenant_id, org_id=org_id)
     warehouse_id, location_id = _resolve_warehouse_location(
-        conn, warehouse_code, location_code
+        conn, warehouse_code, location_code, tenant_id=tenant_id, org_id=org_id
     )
     config = _load_inventory_config()
     method = (cost_method or config.get("cost_method") or "avg").lower()
@@ -4228,7 +4818,7 @@ def inventory_move_in(
     total_cost = actual_total
     lines = []
     if method == "standard":
-        std = _get_standard_cost(conn, sku, period)
+        std = _get_standard_cost(conn, sku, period, tenant_id=tenant_id, org_id=org_id)
         if not std:
             raise LedgerError("STANDARD_COST_MISSING", "标准成本未设置")
         standard_total = round(qty * float(std["cost"]), 2)
@@ -4276,19 +4866,23 @@ def inventory_move_in(
     if serials:
         for serial in serials:
             existing = conn.execute(
-                "SELECT 1 FROM inventory_serials WHERE serial_no = ?",
-                (serial,),
+                """
+                SELECT 1 FROM inventory_serials
+                WHERE serial_no = ? AND tenant_id = ? AND org_id = ?
+                """,
+                (serial, *_resolve_tenant(tenant_id, org_id)),
             ).fetchone()
             if existing:
                 raise LedgerError("INVENTORY_SERIAL_EXISTS", f"序列号已存在: {serial}")
             conn.execute(
                 """
                 INSERT INTO inventory_serials (
-                  serial_no, sku, status, move_in_id, warehouse_id, location_id, updated_at
+                  tenant_id, org_id, serial_no, sku, status, move_in_id, warehouse_id, location_id, updated_at
                 )
-                VALUES (?, ?, 'in', ?, ?, ?, CURRENT_TIMESTAMP)
+                VALUES (?, ?, ?, ?, 'in', ?, ?, ?, CURRENT_TIMESTAMP)
                 """,
                 (
+                    *_resolve_tenant(tenant_id, org_id),
                     serial,
                     sku,
                     move_id,
@@ -4302,11 +4896,13 @@ def inventory_move_in(
         cur = conn.execute(
             """
             INSERT INTO inventory_batches (
-              sku, batch_no, qty, remaining_qty, unit_cost, total_cost, warehouse_id, location_id
+              tenant_id, org_id, sku, batch_no, qty, remaining_qty, unit_cost,
+              total_cost, warehouse_id, location_id
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
+                *_resolve_tenant(tenant_id, org_id),
                 sku,
                 batch_no,
                 batch_qty,
@@ -4320,10 +4916,19 @@ def inventory_move_in(
         batch_id = cur.lastrowid
         conn.execute(
             """
-            INSERT INTO inventory_move_lines (move_id, batch_id, qty, unit_cost, total_cost)
-            VALUES (?, ?, ?, ?, ?)
+            INSERT INTO inventory_move_lines (
+              tenant_id, org_id, move_id, batch_id, qty, unit_cost, total_cost
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?)
             """,
-            (move_id, batch_id, batch_qty, round(unit_cost, 2), batch_total),
+            (
+                *_resolve_tenant(tenant_id, org_id),
+                move_id,
+                batch_id,
+                batch_qty,
+                round(unit_cost, 2),
+                batch_total,
+            ),
         )
     current_qty, current_amount = _get_inventory_balance(
         conn,
@@ -4362,6 +4967,22 @@ def inventory_move_in(
         tenant_id=tenant_id,
         org_id=org_id,
     )
+    record_event(
+        conn,
+        tenant_id,
+        org_id,
+        "inventory.move_in",
+        {
+            "sku": sku,
+            "qty": round(qty, 2),
+            "unit_cost": round(unit_cost, 2),
+            "total_cost": round(total_cost, 2),
+            "voucher_id": voucher["voucher_id"],
+            "warehouse_id": warehouse_id,
+            "location_id": location_id,
+            "period": period,
+        },
+    )
     return {
         "sku": sku,
         "voucher_id": voucher["voucher_id"],
@@ -4389,6 +5010,7 @@ def inventory_move_out(
 ) -> Dict[str, Any]:
     if qty <= 0:
         raise LedgerError("INVENTORY_AMOUNT_INVALID", "出库数量无效")
+    tenant_id, org_id = _resolve_tenant(tenant_id, org_id)
     serials = _normalize_serials(serial_numbers)
     if serials:
         if abs(qty - round(qty)) > 0.0001:
@@ -4399,7 +5021,7 @@ def inventory_move_out(
     description = description or "Inventory out"
     period = parse_period(date)
     warehouse_id, location_id = _resolve_warehouse_location(
-        conn, warehouse_code, location_code
+        conn, warehouse_code, location_code, tenant_id=tenant_id, org_id=org_id
     )
     config = _load_inventory_config()
     method = (cost_method or config.get("cost_method") or "avg").lower()
@@ -4421,11 +5043,17 @@ def inventory_move_out(
     unit_cost = 0.0
     if method == "fifo":
         move_lines, total_cost = _consume_fifo_batches(
-            conn, sku, qty, warehouse_id or 0, location_id or 0
+            conn,
+            sku,
+            qty,
+            warehouse_id or 0,
+            location_id or 0,
+            tenant_id=tenant_id,
+            org_id=org_id,
         )
         unit_cost = round(total_cost / qty, 2) if qty else 0.0
     elif method == "standard":
-        std = _get_standard_cost(conn, sku, period)
+        std = _get_standard_cost(conn, sku, period, tenant_id=tenant_id, org_id=org_id)
         if not std:
             raise LedgerError("STANDARD_COST_MISSING", "标准成本未设置")
         unit_cost = round(float(std["cost"]), 2)
@@ -4484,9 +5112,9 @@ def inventory_move_out(
                 """
                 SELECT serial_no, sku, status, warehouse_id, location_id
                 FROM inventory_serials
-                WHERE serial_no = ?
+                WHERE serial_no = ? AND tenant_id = ? AND org_id = ?
                 """,
-                (serial,),
+                (serial, *_resolve_tenant(tenant_id, org_id)),
             ).fetchone()
             if not row:
                 raise LedgerError("INVENTORY_SERIAL_NOT_FOUND", f"序列号不存在: {serial}")
@@ -4502,18 +5130,21 @@ def inventory_move_out(
                 """
                 UPDATE inventory_serials
                 SET status = 'out', move_out_id = ?, updated_at = CURRENT_TIMESTAMP
-                WHERE serial_no = ?
+                WHERE serial_no = ? AND tenant_id = ? AND org_id = ?
                 """,
-                (move_id, serial),
+                (move_id, serial, *_resolve_tenant(tenant_id, org_id)),
             )
     if move_lines:
         for line in move_lines:
             conn.execute(
                 """
-                INSERT INTO inventory_move_lines (move_id, batch_id, qty, unit_cost, total_cost)
-                VALUES (?, ?, ?, ?, ?)
+                INSERT INTO inventory_move_lines (
+                  tenant_id, org_id, move_id, batch_id, qty, unit_cost, total_cost
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
+                    *_resolve_tenant(tenant_id, org_id),
                     move_id,
                     line["batch_id"],
                     line["qty"],
@@ -4533,6 +5164,22 @@ def inventory_move_out(
         location_id or 0,
         tenant_id=tenant_id,
         org_id=org_id,
+    )
+    record_event(
+        conn,
+        tenant_id,
+        org_id,
+        "inventory.move_out",
+        {
+            "sku": sku,
+            "qty": round(qty, 2),
+            "unit_cost": round(unit_cost, 2),
+            "total_cost": round(total_cost, 2),
+            "voucher_id": voucher["voucher_id"],
+            "warehouse_id": warehouse_id,
+            "location_id": location_id,
+            "period": period,
+        },
     )
     return {
         "sku": sku,
@@ -4586,7 +5233,10 @@ def inventory_count(
 ) -> Dict[str, Any]:
     if counted_qty < 0:
         raise LedgerError("INVENTORY_COUNT_INVALID", "盘点数量无效")
-    warehouse_id, _ = _resolve_warehouse_location(conn, warehouse_code, None)
+    tenant_id, org_id = _resolve_tenant(tenant_id, org_id)
+    warehouse_id, _ = _resolve_warehouse_location(
+        conn, warehouse_code, None, tenant_id=tenant_id, org_id=org_id
+    )
     period = parse_period(date)
     current_qty, current_amount = _get_inventory_balance(
         conn,
@@ -4626,10 +5276,13 @@ def inventory_count(
     )
     conn.execute(
         """
-        INSERT INTO inventory_counts (sku, warehouse_id, counted_qty, book_qty, diff_qty, date, voucher_id)
-        VALUES (?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO inventory_counts (
+          tenant_id, org_id, sku, warehouse_id, counted_qty, book_qty, diff_qty, date, voucher_id
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (
+            *_resolve_tenant(tenant_id, org_id),
             sku,
             warehouse_id if warehouse_id else None,
             round(counted_qty, 2),
@@ -4651,6 +5304,22 @@ def inventory_count(
         0,
         tenant_id=tenant_id,
         org_id=org_id,
+    )
+    record_event(
+        conn,
+        tenant_id,
+        org_id,
+        "inventory.counted",
+        {
+            "sku": sku,
+            "counted_qty": round(counted_qty, 2),
+            "book_qty": round(current_qty, 2),
+            "diff_qty": diff_qty,
+            "voucher_id": voucher["voucher_id"],
+            "warehouse_id": warehouse_id,
+            "date": date,
+            "period": period,
+        },
     )
     return {"sku": sku, "diff_qty": diff_qty, "voucher_id": voucher["voucher_id"]}
 
@@ -4702,6 +5371,7 @@ def add_fixed_asset(
         raise LedgerError("ASSET_COST_INVALID", "固定资产成本必须大于 0")
     if life_years <= 0:
         raise LedgerError("ASSET_LIFE_INVALID", "固定资产年限必须大于 0")
+    tenant_id, org_id = _resolve_tenant(tenant_id, org_id)
     dept_id = None
     project_id = None
     if department_code:
@@ -4744,6 +5414,19 @@ def add_fixed_asset(
             dept_id,
             project_id,
         ),
+    )
+    record_event(
+        conn,
+        tenant_id,
+        org_id,
+        "fixed_asset.added",
+        {
+            "asset_id": cur.lastrowid,
+            "name": name,
+            "cost": round(cost, 2),
+            "acquired_at": acquired_at,
+            "voucher_id": voucher["voucher_id"],
+        },
     )
     return {"asset_id": cur.lastrowid, "voucher_id": voucher["voucher_id"]}
 
@@ -4797,11 +5480,16 @@ def depreciate_assets(
     total_amount = round(sum(amount for _, amount in entries), 2)
     description = f"Depreciation {period}"
     voucher_entries: List[Dict[str, Any]] = []
-    basis_ratios = _allocation_ratios_from_basis(conn, period)
+    basis_ratios = _allocation_ratios_from_basis(
+        conn, period, tenant_id=tenant_id, org_id=org_id
+    )
     for asset_id, amount in entries:
         allocations = conn.execute(
-            "SELECT * FROM fixed_asset_allocations WHERE asset_id = ?",
-            (asset_id,),
+            """
+            SELECT * FROM fixed_asset_allocations
+            WHERE asset_id = ? AND tenant_id = ? AND org_id = ?
+            """,
+            (asset_id, tenant_id, org_id),
         ).fetchall()
         if allocations:
             total_allocated = 0.0
@@ -4941,15 +5629,34 @@ def dispose_fixed_asset(
         """,
         (asset_id, tenant_id, org_id),
     )
+    record_event(
+        conn,
+        tenant_id,
+        org_id,
+        "fixed_asset.disposed",
+        {
+            "asset_id": asset_id,
+            "voucher_id": voucher["voucher_id"],
+            "date": date,
+        },
+    )
     return {"asset_id": asset_id, "voucher_id": voucher["voucher_id"], "status": "disposed"}
 
 
-def upgrade_fixed_asset(conn, asset_id: int, amount: float, date: str) -> Dict[str, Any]:
+def upgrade_fixed_asset(
+    conn,
+    asset_id: int,
+    amount: float,
+    date: str,
+    tenant_id: Optional[str] = None,
+    org_id: Optional[str] = None,
+) -> Dict[str, Any]:
     if amount <= 0:
         raise LedgerError("ASSET_UPGRADE_INVALID", "改扩建金额必须大于 0")
+    tenant_id, org_id = _resolve_tenant(tenant_id, org_id)
     asset = conn.execute(
-        "SELECT * FROM fixed_assets WHERE id = ?",
-        (asset_id,),
+        "SELECT * FROM fixed_assets WHERE id = ? AND tenant_id = ? AND org_id = ?",
+        (asset_id, tenant_id, org_id),
     ).fetchone()
     if not asset:
         raise LedgerError("ASSET_NOT_FOUND", f"固定资产不存在: {asset_id}")
@@ -4962,18 +5669,24 @@ def upgrade_fixed_asset(conn, asset_id: int, amount: float, date: str) -> Dict[s
             (mapping["bank_account"], 0.0, amount),
         ],
         description=description,
+        tenant_id=tenant_id,
+        org_id=org_id,
     )
-    voucher = _create_posted_voucher(conn, date, description, entries)
+    voucher = _create_posted_voucher(
+        conn, date, description, entries, tenant_id=tenant_id, org_id=org_id
+    )
     conn.execute(
-        "UPDATE fixed_assets SET cost = ? WHERE id = ?",
-        (round(float(asset["cost"]) + amount, 2), asset_id),
+        "UPDATE fixed_assets SET cost = ? WHERE id = ? AND tenant_id = ? AND org_id = ?",
+        (round(float(asset["cost"]) + amount, 2), asset_id, tenant_id, org_id),
     )
     cur = conn.execute(
         """
-        INSERT INTO fixed_asset_changes (asset_id, change_type, amount, date, voucher_id)
-        VALUES (?, 'upgrade', ?, ?, ?)
+        INSERT INTO fixed_asset_changes (
+          tenant_id, org_id, asset_id, change_type, amount, date, voucher_id
+        )
+        VALUES (?, ?, ?, 'upgrade', ?, ?, ?)
         """,
-        (asset_id, round(amount, 2), date, voucher["voucher_id"]),
+        (tenant_id, org_id, asset_id, round(amount, 2), date, voucher["voucher_id"]),
     )
     return {"change_id": cur.lastrowid, "voucher_id": voucher["voucher_id"]}
 
@@ -4984,37 +5697,56 @@ def transfer_fixed_asset(
     department_code: Optional[str] = None,
     project_code: Optional[str] = None,
     date: Optional[str] = None,
+    tenant_id: Optional[str] = None,
+    org_id: Optional[str] = None,
 ) -> Dict[str, Any]:
+    tenant_id, org_id = _resolve_tenant(tenant_id, org_id)
     asset = conn.execute(
-        "SELECT * FROM fixed_assets WHERE id = ?",
-        (asset_id,),
+        "SELECT * FROM fixed_assets WHERE id = ? AND tenant_id = ? AND org_id = ?",
+        (asset_id, tenant_id, org_id),
     ).fetchone()
     if not asset:
         raise LedgerError("ASSET_NOT_FOUND", f"固定资产不存在: {asset_id}")
     dept_id = asset["dept_id"]
     project_id = asset["project_id"]
     if department_code:
-        dept_id = find_dimension(conn, "department", department_code)
+        dept_id = find_dimension(
+            conn, "department", department_code, tenant_id=tenant_id, org_id=org_id
+        )
     if project_code:
-        project_id = find_dimension(conn, "project", project_code)
+        project_id = find_dimension(
+            conn, "project", project_code, tenant_id=tenant_id, org_id=org_id
+        )
     conn.execute(
-        "UPDATE fixed_assets SET dept_id = ?, project_id = ? WHERE id = ?",
-        (dept_id, project_id, asset_id),
+        """
+        UPDATE fixed_assets SET dept_id = ?, project_id = ?
+        WHERE id = ? AND tenant_id = ? AND org_id = ?
+        """,
+        (dept_id, project_id, asset_id, tenant_id, org_id),
     )
     cur = conn.execute(
         """
-        INSERT INTO fixed_asset_changes (asset_id, change_type, amount, date, voucher_id)
-        VALUES (?, 'transfer', 0, ?, NULL)
+        INSERT INTO fixed_asset_changes (
+          tenant_id, org_id, asset_id, change_type, amount, date, voucher_id
+        )
+        VALUES (?, ?, ?, 'transfer', 0, ?, NULL)
         """,
-        (asset_id, date or datetime.now().strftime("%Y-%m-%d")),
+        (tenant_id, org_id, asset_id, date or datetime.now().strftime("%Y-%m-%d")),
     )
     return {"change_id": cur.lastrowid, "asset_id": asset_id}
 
 
-def split_fixed_asset(conn, asset_id: int, ratios: List[float]) -> Dict[str, Any]:
+def split_fixed_asset(
+    conn,
+    asset_id: int,
+    ratios: List[float],
+    tenant_id: Optional[str] = None,
+    org_id: Optional[str] = None,
+) -> Dict[str, Any]:
+    tenant_id, org_id = _resolve_tenant(tenant_id, org_id)
     asset = conn.execute(
-        "SELECT * FROM fixed_assets WHERE id = ?",
-        (asset_id,),
+        "SELECT * FROM fixed_assets WHERE id = ? AND tenant_id = ? AND org_id = ?",
+        (asset_id, tenant_id, org_id),
     ).fetchone()
     if not asset:
         raise LedgerError("ASSET_NOT_FOUND", f"固定资产不存在: {asset_id}")
@@ -5030,11 +5762,14 @@ def split_fixed_asset(conn, asset_id: int, ratios: List[float]) -> Dict[str, Any
         cur = conn.execute(
             """
             INSERT INTO fixed_assets (
-              name, cost, acquired_at, life_years, salvage_value, dept_id, project_id, status
+              tenant_id, org_id, name, cost, acquired_at, life_years, salvage_value,
+              dept_id, project_id, status
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, 'active')
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'active')
             """,
             (
+                tenant_id,
+                org_id,
                 f"{asset['name']}-S{idx}",
                 new_cost,
                 asset["acquired_at"],
@@ -5046,29 +5781,44 @@ def split_fixed_asset(conn, asset_id: int, ratios: List[float]) -> Dict[str, Any
         )
         new_assets.append(cur.lastrowid)
     conn.execute(
-        "UPDATE fixed_assets SET cost = ?, salvage_value = ? WHERE id = ?",
+        """
+        UPDATE fixed_assets SET cost = ?, salvage_value = ?
+        WHERE id = ? AND tenant_id = ? AND org_id = ?
+        """,
         (
             round(original_cost * ratios[0] / total_ratio, 2),
             round(original_salvage * ratios[0] / total_ratio, 2),
             asset_id,
+            tenant_id,
+            org_id,
         ),
     )
     conn.execute(
         """
-        INSERT INTO fixed_asset_changes (asset_id, change_type, amount, date, voucher_id)
-        VALUES (?, 'split', 0, ?, NULL)
+        INSERT INTO fixed_asset_changes (
+          tenant_id, org_id, asset_id, change_type, amount, date, voucher_id
+        )
+        VALUES (?, ?, ?, 'split', 0, ?, NULL)
         """,
-        (asset_id, datetime.now().strftime("%Y-%m-%d")),
+        (tenant_id, org_id, asset_id, datetime.now().strftime("%Y-%m-%d")),
     )
     return {"asset_id": asset_id, "new_asset_ids": new_assets}
 
 
-def impair_fixed_asset(conn, asset_id: int, period: str, amount: float) -> Dict[str, Any]:
+def impair_fixed_asset(
+    conn,
+    asset_id: int,
+    period: str,
+    amount: float,
+    tenant_id: Optional[str] = None,
+    org_id: Optional[str] = None,
+) -> Dict[str, Any]:
     if amount <= 0:
         raise LedgerError("ASSET_IMPAIRMENT_INVALID", "减值金额必须大于 0")
+    tenant_id, org_id = _resolve_tenant(tenant_id, org_id)
     asset = conn.execute(
-        "SELECT * FROM fixed_assets WHERE id = ?",
-        (asset_id,),
+        "SELECT * FROM fixed_assets WHERE id = ? AND tenant_id = ? AND org_id = ?",
+        (asset_id, tenant_id, org_id),
     ).fetchone()
     if not asset:
         raise LedgerError("ASSET_NOT_FOUND", f"固定资产不存在: {asset_id}")
@@ -5081,26 +5831,38 @@ def impair_fixed_asset(conn, asset_id: int, period: str, amount: float) -> Dict[
             (mapping["impairment_reserve_account"], 0.0, amount),
         ],
         description=description,
+        tenant_id=tenant_id,
+        org_id=org_id,
     )
-    voucher = _create_posted_voucher(conn, f"{period}-01", description, entries)
+    voucher = _create_posted_voucher(
+        conn, f"{period}-01", description, entries, tenant_id=tenant_id, org_id=org_id
+    )
     cur = conn.execute(
         """
-        INSERT INTO fixed_asset_impairments (asset_id, period, amount, voucher_id)
-        VALUES (?, ?, ?, ?)
+        INSERT INTO fixed_asset_impairments (
+          tenant_id, org_id, asset_id, period, amount, voucher_id
+        )
+        VALUES (?, ?, ?, ?, ?, ?)
         """,
-        (asset_id, period, round(amount, 2), voucher["voucher_id"]),
+        (tenant_id, org_id, asset_id, period, round(amount, 2), voucher["voucher_id"]),
     )
     return {"impairment_id": cur.lastrowid, "voucher_id": voucher["voucher_id"]}
 
 
 def reverse_fixed_asset_impairment(
-    conn, asset_id: int, period: str, amount: float
+    conn,
+    asset_id: int,
+    period: str,
+    amount: float,
+    tenant_id: Optional[str] = None,
+    org_id: Optional[str] = None,
 ) -> Dict[str, Any]:
     if amount <= 0:
         raise LedgerError("ASSET_IMPAIRMENT_INVALID", "冲回金额必须大于 0")
+    tenant_id, org_id = _resolve_tenant(tenant_id, org_id)
     asset = conn.execute(
-        "SELECT * FROM fixed_assets WHERE id = ?",
-        (asset_id,),
+        "SELECT * FROM fixed_assets WHERE id = ? AND tenant_id = ? AND org_id = ?",
+        (asset_id, tenant_id, org_id),
     ).fetchone()
     if not asset:
         raise LedgerError("ASSET_NOT_FOUND", f"固定资产不存在: {asset_id}")
@@ -5113,29 +5875,49 @@ def reverse_fixed_asset_impairment(
             (mapping["impairment_loss_account"], 0.0, amount),
         ],
         description=description,
+        tenant_id=tenant_id,
+        org_id=org_id,
     )
-    voucher = _create_posted_voucher(conn, f"{period}-01", description, entries)
+    voucher = _create_posted_voucher(
+        conn, f"{period}-01", description, entries, tenant_id=tenant_id, org_id=org_id
+    )
     cur = conn.execute(
         """
-        INSERT INTO fixed_asset_impairments (asset_id, period, amount, voucher_id)
-        VALUES (?, ?, ?, ?)
+        INSERT INTO fixed_asset_impairments (
+          tenant_id, org_id, asset_id, period, amount, voucher_id
+        )
+        VALUES (?, ?, ?, ?, ?, ?)
         """,
-        (asset_id, period, round(-amount, 2), voucher["voucher_id"]),
+        (tenant_id, org_id, asset_id, period, round(-amount, 2), voucher["voucher_id"]),
     )
     return {"impairment_id": cur.lastrowid, "voucher_id": voucher["voucher_id"]}
 
 
-def create_cip_project(conn, name: str) -> int:
+def create_cip_project(
+    conn, name: str, tenant_id: Optional[str] = None, org_id: Optional[str] = None
+) -> int:
+    tenant_id, org_id = _resolve_tenant(tenant_id, org_id)
     cur = conn.execute(
-        "INSERT INTO cip_projects (name, cost, status) VALUES (?, 0, 'ongoing')",
-        (name,),
+        """
+        INSERT INTO cip_projects (tenant_id, org_id, name, cost, status)
+        VALUES (?, ?, ?, 0, 'ongoing')
+        """,
+        (tenant_id, org_id, name),
     )
     return cur.lastrowid
 
 
-def add_cip_cost(conn, project_id: int, amount: float, date: str) -> Dict[str, Any]:
+def add_cip_cost(
+    conn,
+    project_id: int,
+    amount: float,
+    date: str,
+    tenant_id: Optional[str] = None,
+    org_id: Optional[str] = None,
+) -> Dict[str, Any]:
     if amount <= 0:
         raise LedgerError("CIP_AMOUNT_INVALID", "在建工程金额必须大于 0")
+    tenant_id, org_id = _resolve_tenant(tenant_id, org_id)
     mapping = _load_subledger_mapping()["fixed_asset"]
     description = f"CIP cost {project_id}"
     entries = _build_entries(
@@ -5145,11 +5927,15 @@ def add_cip_cost(conn, project_id: int, amount: float, date: str) -> Dict[str, A
             (mapping["bank_account"], 0.0, amount),
         ],
         description=description,
+        tenant_id=tenant_id,
+        org_id=org_id,
     )
-    voucher = _create_posted_voucher(conn, date, description, entries)
+    voucher = _create_posted_voucher(
+        conn, date, description, entries, tenant_id=tenant_id, org_id=org_id
+    )
     conn.execute(
-        "UPDATE cip_projects SET cost = cost + ? WHERE id = ?",
-        (round(amount, 2), project_id),
+        "UPDATE cip_projects SET cost = cost + ? WHERE id = ? AND tenant_id = ? AND org_id = ?",
+        (round(amount, 2), project_id, tenant_id, org_id),
     )
     return {"project_id": project_id, "voucher_id": voucher["voucher_id"]}
 
@@ -5162,10 +5948,13 @@ def transfer_cip_to_asset(
     salvage_value: float,
     date: str,
     amount: Optional[float] = None,
+    tenant_id: Optional[str] = None,
+    org_id: Optional[str] = None,
 ) -> Dict[str, Any]:
+    tenant_id, org_id = _resolve_tenant(tenant_id, org_id)
     project = conn.execute(
-        "SELECT * FROM cip_projects WHERE id = ?",
-        (project_id,),
+        "SELECT * FROM cip_projects WHERE id = ? AND tenant_id = ? AND org_id = ?",
+        (project_id, tenant_id, org_id),
     ).fetchone()
     if not project:
         raise LedgerError("CIP_NOT_FOUND", f"CIP 不存在: {project_id}")
@@ -5184,45 +5973,86 @@ def transfer_cip_to_asset(
             (mapping["cip_account"], 0.0, transfer_amount),
         ],
         description=description,
+        tenant_id=tenant_id,
+        org_id=org_id,
     )
-    voucher = _create_posted_voucher(conn, date, description, entries)
+    voucher = _create_posted_voucher(
+        conn, date, description, entries, tenant_id=tenant_id, org_id=org_id
+    )
     cur = conn.execute(
         """
         INSERT INTO fixed_assets (
-          name, cost, acquired_at, life_years, salvage_value, dept_id, project_id, status
+          tenant_id, org_id, name, cost, acquired_at, life_years, salvage_value,
+          dept_id, project_id, status
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, 'active')
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'active')
         """,
-        (asset_name, transfer_amount, date, life_years, round(salvage_value, 2), None, None),
+        (
+            tenant_id,
+            org_id,
+            asset_name,
+            transfer_amount,
+            date,
+            life_years,
+            round(salvage_value, 2),
+            None,
+            None,
+        ),
     )
     asset_id = cur.lastrowid
     remaining = round(total_cost - transfer_amount, 2)
     new_status = "converted" if remaining <= 0.01 else "ongoing"
     conn.execute(
-        "UPDATE cip_projects SET cost = ?, status = ? WHERE id = ?",
-        (max(remaining, 0.0), new_status, project_id),
+        """
+        UPDATE cip_projects SET cost = ?, status = ?
+        WHERE id = ? AND tenant_id = ? AND org_id = ?
+        """,
+        (max(remaining, 0.0), new_status, project_id, tenant_id, org_id),
     )
     conn.execute(
         """
-        INSERT INTO cip_transfers (project_id, asset_id, amount, date, voucher_id)
-        VALUES (?, ?, ?, ?, ?)
+        INSERT INTO cip_transfers (
+          tenant_id, org_id, project_id, asset_id, amount, date, voucher_id
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?)
         """,
-        (project_id, asset_id, transfer_amount, date, voucher["voucher_id"]),
+        (
+            tenant_id,
+            org_id,
+            project_id,
+            asset_id,
+            transfer_amount,
+            date,
+            voucher["voucher_id"],
+        ),
     )
     return {"project_id": project_id, "asset_id": asset_id, "voucher_id": voucher["voucher_id"]}
 
 
 def set_fixed_asset_allocations(
-    conn, asset_id: int, allocations: List[Tuple[str, int, float]]
+    conn,
+    asset_id: int,
+    allocations: List[Tuple[str, int, float]],
+    tenant_id: Optional[str] = None,
+    org_id: Optional[str] = None,
 ) -> None:
-    conn.execute("DELETE FROM fixed_asset_allocations WHERE asset_id = ?", (asset_id,))
+    tenant_id, org_id = _resolve_tenant(tenant_id, org_id)
+    conn.execute(
+        """
+        DELETE FROM fixed_asset_allocations
+        WHERE asset_id = ? AND tenant_id = ? AND org_id = ?
+        """,
+        (asset_id, tenant_id, org_id),
+    )
     for dim_type, dim_id, ratio in allocations:
         conn.execute(
             """
-            INSERT INTO fixed_asset_allocations (asset_id, dim_type, dim_id, ratio)
-            VALUES (?, ?, ?, ?)
+            INSERT INTO fixed_asset_allocations (
+              tenant_id, org_id, asset_id, dim_type, dim_id, ratio
+            )
+            VALUES (?, ?, ?, ?, ?, ?)
             """,
-            (asset_id, dim_type, dim_id, ratio),
+            (tenant_id, org_id, asset_id, dim_type, dim_id, ratio),
         )
 
 
@@ -5325,6 +6155,8 @@ def create_allocation_rule(
     target_dim: str,
     basis: str,
     period: Optional[str] = None,
+    tenant_id: Optional[str] = None,
+    org_id: Optional[str] = None,
 ) -> Dict[str, Any]:
     if target_dim not in {"department", "project"}:
         raise LedgerError("ALLOCATION_DIM_INVALID", "分摊维度无效")
@@ -5333,12 +6165,23 @@ def create_allocation_rule(
     accounts = [acc.strip() for acc in source_accounts if acc.strip()]
     if not accounts:
         raise LedgerError("ALLOCATION_SOURCE_EMPTY", "分摊来源科目不能为空")
+    tenant_id, org_id = _resolve_tenant(tenant_id, org_id)
     cur = conn.execute(
         """
-        INSERT INTO allocation_rules (name, source_accounts, target_dim, basis, period)
-        VALUES (?, ?, ?, ?, ?)
+        INSERT INTO allocation_rules (
+          tenant_id, org_id, name, source_accounts, target_dim, basis, period
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?)
         """,
-        (name, json.dumps(accounts, ensure_ascii=False), target_dim, basis, period),
+        (
+            tenant_id,
+            org_id,
+            name,
+            json.dumps(accounts, ensure_ascii=False),
+            target_dim,
+            basis,
+            period,
+        ),
     )
     return {
         "rule_id": cur.lastrowid,
@@ -5350,22 +6193,43 @@ def create_allocation_rule(
 
 
 def set_allocation_rule_lines(
-    conn, rule_id: int, lines: List[Tuple[int, float]]
+    conn,
+    rule_id: int,
+    lines: List[Tuple[int, float]],
+    tenant_id: Optional[str] = None,
+    org_id: Optional[str] = None,
 ) -> None:
-    conn.execute("DELETE FROM allocation_rule_lines WHERE rule_id = ?", (rule_id,))
+    tenant_id, org_id = _resolve_tenant(tenant_id, org_id)
+    conn.execute(
+        """
+        DELETE FROM allocation_rule_lines
+        WHERE rule_id = ? AND tenant_id = ? AND org_id = ?
+        """,
+        (rule_id, tenant_id, org_id),
+    )
     for dim_id, ratio in lines:
         conn.execute(
             """
-            INSERT INTO allocation_rule_lines (rule_id, target_dim_id, ratio)
-            VALUES (?, ?, ?)
+            INSERT INTO allocation_rule_lines (
+              tenant_id, org_id, rule_id, target_dim_id, ratio
+            )
+            VALUES (?, ?, ?, ?, ?)
             """,
-            (rule_id, dim_id, float(ratio)),
+            (tenant_id, org_id, rule_id, dim_id, float(ratio)),
         )
 
 
-def list_allocation_rules(conn) -> List[Dict[str, Any]]:
+def list_allocation_rules(
+    conn, tenant_id: Optional[str] = None, org_id: Optional[str] = None
+) -> List[Dict[str, Any]]:
+    tenant_id, org_id = _resolve_tenant(tenant_id, org_id)
     rows = conn.execute(
-        "SELECT * FROM allocation_rules ORDER BY id"
+        """
+        SELECT * FROM allocation_rules
+        WHERE tenant_id = ? AND org_id = ?
+        ORDER BY id
+        """,
+        (tenant_id, org_id),
     ).fetchall()
     rules = []
     for row in rows:
@@ -5386,18 +6250,27 @@ def _allocation_basis_dim_type(dim_type: str) -> str:
 
 
 def set_allocation_basis_value(
-    conn, period: str, dim_type: str, dim_code: str, value: float
+    conn,
+    period: str,
+    dim_type: str,
+    dim_code: str,
+    value: float,
+    tenant_id: Optional[str] = None,
+    org_id: Optional[str] = None,
 ) -> Dict[str, Any]:
     if value < 0:
         raise LedgerError("ALLOCATION_BASIS_VALUE_INVALID", "分摊基础值无效")
     base_type = _allocation_basis_dim_type(dim_type)
-    dim_id = find_dimension(conn, base_type, dim_code)
+    dim_id = find_dimension(conn, base_type, dim_code, tenant_id=tenant_id, org_id=org_id)
+    tenant_id, org_id = _resolve_tenant(tenant_id, org_id)
     conn.execute(
         """
-        INSERT OR REPLACE INTO allocation_basis_values (period, dim_type, dim_id, value)
-        VALUES (?, ?, ?, ?)
+        INSERT OR REPLACE INTO allocation_basis_values (
+          tenant_id, org_id, period, dim_type, dim_id, value
+        )
+        VALUES (?, ?, ?, ?, ?, ?)
         """,
-        (period, dim_type, dim_id, round(value, 2)),
+        (tenant_id, org_id, period, dim_type, dim_id, round(value, 2)),
     )
     return {
         "period": period,
@@ -5408,10 +6281,15 @@ def set_allocation_basis_value(
 
 
 def list_allocation_basis_values(
-    conn, period: Optional[str] = None, dim_type: Optional[str] = None
+    conn,
+    period: Optional[str] = None,
+    dim_type: Optional[str] = None,
+    tenant_id: Optional[str] = None,
+    org_id: Optional[str] = None,
 ) -> List[Dict[str, Any]]:
-    conditions: List[str] = []
-    params: List[Any] = []
+    tenant_id, org_id = _resolve_tenant(tenant_id, org_id)
+    conditions: List[str] = ["tenant_id = ?", "org_id = ?"]
+    params: List[Any] = [tenant_id, org_id]
     if period:
         conditions.append("period = ?")
         params.append(period)
@@ -5427,15 +6305,25 @@ def list_allocation_basis_values(
 
 
 def _allocation_basis_ratios(
-    conn, period: str, target_dim: str, basis: str, rule_id: int
+    conn,
+    period: str,
+    target_dim: str,
+    basis: str,
+    rule_id: int,
+    tenant_id: Optional[str] = None,
+    org_id: Optional[str] = None,
 ) -> List[Tuple[int, float]]:
+    tenant_id, org_id = _resolve_tenant(tenant_id, org_id)
     dim_field = _allocation_dim_field(target_dim)
     if not dim_field:
         return []
     if basis == "fixed":
         rows = conn.execute(
-            "SELECT target_dim_id, ratio FROM allocation_rule_lines WHERE rule_id = ?",
-            (rule_id,),
+            """
+            SELECT target_dim_id, ratio FROM allocation_rule_lines
+            WHERE rule_id = ? AND tenant_id = ? AND org_id = ?
+            """,
+            (rule_id, tenant_id, org_id),
         ).fetchall()
         total = sum(float(row["ratio"] or 0) for row in rows)
         if total <= 0:
@@ -5447,11 +6335,15 @@ def _allocation_basis_ratios(
             f"""
             SELECT b.{dim_field} AS dim_id, COALESCE(SUM(b.credit_amount), 0) AS total
             FROM balances b
-            JOIN accounts a ON b.account_code = a.code
+            JOIN accounts a
+              ON b.account_code = a.code
+             AND a.tenant_id = b.tenant_id
+             AND a.org_id = b.org_id
             WHERE b.period = ? AND a.type = 'revenue'
+              AND b.tenant_id = ? AND b.org_id = ?
             GROUP BY b.{dim_field}
             """,
-            (period,),
+            (period, tenant_id, org_id),
         ).fetchall()
         total = sum(float(row["total"] or 0) for row in rows)
         if total <= 0:
@@ -5463,9 +6355,10 @@ def _allocation_basis_ratios(
         """
         SELECT dim_id, value FROM allocation_basis_values
         WHERE period = ? AND dim_type = ?
+          AND tenant_id = ? AND org_id = ?
         ORDER BY dim_id
         """,
-        (period, basis_type),
+        (period, basis_type, tenant_id, org_id),
     ).fetchall()
     total = sum(float(row["value"] or 0) for row in rows)
     if total <= 0:
@@ -5479,10 +6372,16 @@ def run_allocation(
     period: str,
     date: Optional[str] = None,
     description: Optional[str] = None,
+    tenant_id: Optional[str] = None,
+    org_id: Optional[str] = None,
 ) -> Dict[str, Any]:
+    tenant_id, org_id = _resolve_tenant(tenant_id, org_id)
     rule = conn.execute(
-        "SELECT * FROM allocation_rules WHERE id = ?",
-        (rule_id,),
+        """
+        SELECT * FROM allocation_rules
+        WHERE id = ? AND tenant_id = ? AND org_id = ?
+        """,
+        (rule_id, tenant_id, org_id),
     ).fetchone()
     if not rule:
         raise LedgerError("ALLOCATION_RULE_NOT_FOUND", f"分摊规则不存在: {rule_id}")
@@ -5494,7 +6393,15 @@ def run_allocation(
     dim_field = _allocation_dim_field(target_dim)
     if not dim_field:
         raise LedgerError("ALLOCATION_DIM_INVALID", "分摊维度无效")
-    ratios = _allocation_basis_ratios(conn, period, target_dim, basis, rule_id)
+    ratios = _allocation_basis_ratios(
+        conn,
+        period,
+        target_dim,
+        basis,
+        rule_id,
+        tenant_id=tenant_id,
+        org_id=org_id,
+    )
     if not ratios:
         raise LedgerError("ALLOCATION_BASIS_EMPTY", "分摊基础数据为空")
 
@@ -5507,8 +6414,9 @@ def run_allocation(
             FROM balances
             WHERE period = ? AND account_code = ?
               AND dept_id = 0 AND project_id = 0 AND customer_id = 0 AND supplier_id = 0 AND employee_id = 0
+              AND tenant_id = ? AND org_id = ?
             """,
-            (period, account_code),
+            (period, account_code, tenant_id, org_id),
         ).fetchone()
         total_amount = float(amount_row["total"] or 0)
         if total_amount <= 0.01:
@@ -5540,7 +6448,13 @@ def run_allocation(
     if not alloc_entries:
         raise LedgerError("ALLOCATION_EMPTY", "分摊金额为空")
 
-    entries, total_debit, total_credit = build_entries(conn, alloc_entries, date or f"{period}-01")
+    entries, total_debit, total_credit = build_entries(
+        conn,
+        alloc_entries,
+        date or f"{period}-01",
+        tenant_id=tenant_id,
+        org_id=org_id,
+    )
     if abs(total_debit - total_credit) >= 0.01:
         raise LedgerError("NOT_BALANCED", "分摊凭证不平衡")
     voucher_id, voucher_no, _, _ = insert_voucher(
@@ -5551,8 +6465,10 @@ def run_allocation(
         },
         entries,
         "reviewed",
+        tenant_id=tenant_id,
+        org_id=org_id,
     )
-    voucher = confirm_voucher(conn, voucher_id)
+    voucher = confirm_voucher(conn, voucher_id, tenant_id=tenant_id, org_id=org_id)
     return {
         "rule_id": rule_id,
         "voucher_id": voucher_id,
@@ -5568,18 +6484,21 @@ def set_budget(
     dim_type: str,
     dim_code: str,
     amount: float,
+    tenant_id: Optional[str] = None,
+    org_id: Optional[str] = None,
 ) -> Dict[str, Any]:
     if amount < 0:
         raise LedgerError("BUDGET_AMOUNT_INVALID", "预算金额无效")
     if dim_type not in {"department", "project"}:
         raise LedgerError("BUDGET_DIM_INVALID", "预算维度无效")
-    dim_id = find_dimension(conn, dim_type, dim_code)
+    dim_id = find_dimension(conn, dim_type, dim_code, tenant_id=tenant_id, org_id=org_id)
+    tenant_id, org_id = _resolve_tenant(tenant_id, org_id)
     conn.execute(
         """
-        INSERT OR REPLACE INTO budgets (period, dim_type, dim_id, amount)
-        VALUES (?, ?, ?, ?)
+        INSERT OR REPLACE INTO budgets (tenant_id, org_id, period, dim_type, dim_id, amount)
+        VALUES (?, ?, ?, ?, ?, ?)
         """,
-        (period, dim_type, dim_id, round(amount, 2)),
+        (tenant_id, org_id, period, dim_type, dim_id, round(amount, 2)),
     )
     return {
         "period": period,
@@ -5590,10 +6509,15 @@ def set_budget(
 
 
 def list_budgets(
-    conn, period: Optional[str] = None, dim_type: Optional[str] = None
+    conn,
+    period: Optional[str] = None,
+    dim_type: Optional[str] = None,
+    tenant_id: Optional[str] = None,
+    org_id: Optional[str] = None,
 ) -> List[Dict[str, Any]]:
-    conditions: List[str] = []
-    params: List[Any] = []
+    tenant_id, org_id = _resolve_tenant(tenant_id, org_id)
+    conditions: List[str] = ["tenant_id = ?", "org_id = ?"]
+    params: List[Any] = [tenant_id, org_id]
     if period:
         conditions.append("period = ?")
         params.append(period)
@@ -5609,14 +6533,29 @@ def list_budgets(
 
 
 def budget_variance(
-    conn, period: str, dim_type: str, dim_code: Optional[str] = None
+    conn,
+    period: str,
+    dim_type: str,
+    dim_code: Optional[str] = None,
+    tenant_id: Optional[str] = None,
+    org_id: Optional[str] = None,
 ) -> Dict[str, Any]:
     if dim_type not in {"department", "project"}:
         raise LedgerError("BUDGET_DIM_INVALID", "预算维度无效")
-    dim_id = find_dimension(conn, dim_type, dim_code) if dim_code else None
+    dim_id = (
+        find_dimension(conn, dim_type, dim_code, tenant_id=tenant_id, org_id=org_id)
+        if dim_code
+        else None
+    )
+    tenant_id, org_id = _resolve_tenant(tenant_id, org_id)
     dim_field = _allocation_dim_field(dim_type)
-    conditions = ["b.period = ?", "a.type = 'expense'"]
-    params: List[Any] = [period]
+    conditions = [
+        "b.period = ?",
+        "a.type = 'expense'",
+        "b.tenant_id = ?",
+        "b.org_id = ?",
+    ]
+    params: List[Any] = [period, tenant_id, org_id]
     if dim_id is not None:
         conditions.append(f"b.{dim_field} = ?")
         params.append(dim_id)
@@ -5624,7 +6563,10 @@ def budget_variance(
         f"""
         SELECT COALESCE(SUM(b.debit_amount - b.credit_amount), 0) AS total
         FROM balances b
-        JOIN accounts a ON b.account_code = a.code
+        JOIN accounts a
+          ON b.account_code = a.code
+         AND a.tenant_id = b.tenant_id
+         AND a.org_id = b.org_id
         WHERE {" AND ".join(conditions)}
         """,
         params,
@@ -5635,8 +6577,9 @@ def budget_variance(
         SELECT COALESCE(SUM(amount), 0) AS total
         FROM budgets
         WHERE period = ? AND dim_type = ? AND (? IS NULL OR dim_id = ?)
+          AND tenant_id = ? AND org_id = ?
         """,
-        (period, dim_type, dim_id, dim_id),
+        (period, dim_type, dim_id, dim_id, tenant_id, org_id),
     ).fetchone()
     budget = float(budget_row["total"] or 0)
     return {
@@ -5668,6 +6611,8 @@ def add_invoice(
     tax_amount: Optional[float] = None,
     status: str = "issued",
     voucher_id: Optional[int] = None,
+    tenant_id: Optional[str] = None,
+    org_id: Optional[str] = None,
 ) -> Dict[str, Any]:
     if not number:
         raise LedgerError("INVOICE_NUMBER_REQUIRED", "发票号码不能为空")
@@ -5680,8 +6625,9 @@ def add_invoice(
     if not period or len(period) < 7:
         raise LedgerError("INVOICE_DATE_INVALID", f"无效发票日期: {date}")
 
+    tenant_id, org_id = _resolve_tenant(tenant_id, org_id)
     if voucher_id is not None:
-        voucher = fetch_voucher(conn, voucher_id)
+        voucher = fetch_voucher(conn, voucher_id, tenant_id=tenant_id, org_id=org_id)
         if not voucher:
             raise LedgerError("VOUCHER_NOT_FOUND", f"凭证不存在: {voucher_id}")
 
@@ -5705,11 +6651,13 @@ def add_invoice(
     cur = conn.execute(
         """
         INSERT INTO invoices (
-          type, code, number, date, period, amount, tax_rate, tax_amount, status, voucher_id
+          tenant_id, org_id, type, code, number, date, period, amount, tax_rate, tax_amount, status, voucher_id
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (
+            tenant_id,
+            org_id,
             invoice_type,
             code,
             number,
@@ -5736,19 +6684,58 @@ def add_invoice(
     }
 
 
-def link_invoice(conn, invoice_id: int, voucher_id: int) -> Dict[str, Any]:
+def sync_tax_control(
+    conn,
+    invoice_id: int,
+    action: str = "issue",
+    payload: Optional[Dict[str, Any]] = None,
+    tenant_id: Optional[str] = None,
+    org_id: Optional[str] = None,
+) -> Dict[str, Any]:
+    tenant_id, org_id = _resolve_tenant(tenant_id, org_id)
+    row = conn.execute(
+        "SELECT id, type, code, number, status FROM invoices WHERE id = ? AND tenant_id = ? AND org_id = ?",
+        (invoice_id, tenant_id, org_id),
+    ).fetchone()
+    if not row:
+        raise LedgerError("INVOICE_NOT_FOUND", f"发票不存在: {invoice_id}")
+    return {
+        "invoice_id": invoice_id,
+        "action": action,
+        "status": "pending",
+        "invoice": {
+            "type": row["type"],
+            "code": row["code"],
+            "number": row["number"],
+            "status": row["status"],
+        },
+        "payload": payload or {},
+    }
+
+
+def link_invoice(
+    conn,
+    invoice_id: int,
+    voucher_id: int,
+    tenant_id: Optional[str] = None,
+    org_id: Optional[str] = None,
+) -> Dict[str, Any]:
+    tenant_id, org_id = _resolve_tenant(tenant_id, org_id)
     invoice = conn.execute(
-        "SELECT id FROM invoices WHERE id = ?",
-        (invoice_id,),
+        "SELECT id FROM invoices WHERE id = ? AND tenant_id = ? AND org_id = ?",
+        (invoice_id, tenant_id, org_id),
     ).fetchone()
     if not invoice:
         raise LedgerError("INVOICE_NOT_FOUND", f"发票不存在: {invoice_id}")
-    voucher = fetch_voucher(conn, voucher_id)
+    voucher = fetch_voucher(conn, voucher_id, tenant_id=tenant_id, org_id=org_id)
     if not voucher:
         raise LedgerError("VOUCHER_NOT_FOUND", f"凭证不存在: {voucher_id}")
     conn.execute(
-        "UPDATE invoices SET voucher_id = ? WHERE id = ?",
-        (voucher_id, invoice_id),
+        """
+        UPDATE invoices SET voucher_id = ?
+        WHERE id = ? AND tenant_id = ? AND org_id = ?
+        """,
+        (voucher_id, invoice_id, tenant_id, org_id),
     )
     return {"invoice_id": invoice_id, "voucher_id": voucher_id}
 
@@ -5761,9 +6748,12 @@ def list_invoices(
     voucher_id: Optional[int] = None,
     code: Optional[str] = None,
     number: Optional[str] = None,
+    tenant_id: Optional[str] = None,
+    org_id: Optional[str] = None,
 ) -> List[Dict[str, Any]]:
-    conditions: List[str] = []
-    params: List[Any] = []
+    tenant_id, org_id = _resolve_tenant(tenant_id, org_id)
+    conditions: List[str] = ["tenant_id = ?", "org_id = ?"]
+    params: List[Any] = [tenant_id, org_id]
     if invoice_type:
         normalized = _normalize_invoice_type(invoice_type)
         conditions.append("type = ?")
@@ -5795,16 +6785,20 @@ def vat_summary(
     conn,
     period: str,
     taxpayer_type: str = "general",
+    tenant_id: Optional[str] = None,
+    org_id: Optional[str] = None,
 ) -> Dict[str, Any]:
     if taxpayer_type not in {"general", "small_scale"}:
         raise LedgerError("TAXPAYER_TYPE_INVALID", "纳税人类型无效")
+    tenant_id, org_id = _resolve_tenant(tenant_id, org_id)
     rows = conn.execute(
         """
         SELECT type, amount, tax_amount
         FROM invoices
         WHERE period = ? AND status != 'voided'
+          AND tenant_id = ? AND org_id = ?
         """,
-        (period,),
+        (period, tenant_id, org_id),
     ).fetchall()
     output_tax = 0.0
     input_tax = 0.0
@@ -5840,8 +6834,16 @@ def post_vat_summary(
     description: Optional[str] = None,
     taxpayer_type: str = "general",
     mapping: Optional[Dict[str, str]] = None,
+    tenant_id: Optional[str] = None,
+    org_id: Optional[str] = None,
 ) -> Dict[str, Any]:
-    summary = vat_summary(conn, period, taxpayer_type=taxpayer_type)
+    summary = vat_summary(
+        conn,
+        period,
+        taxpayer_type=taxpayer_type,
+        tenant_id=tenant_id,
+        org_id=org_id,
+    )
     if summary["invoice_count"] == 0:
         raise LedgerError("VAT_EMPTY", "没有可汇总的发票")
 
@@ -5865,8 +6867,12 @@ def post_vat_summary(
 
     description = description or f"VAT {period} 结转"
     date = date or _period_end_date(period)
-    entries = _build_entries(conn, lines, description=description)
-    voucher = _create_posted_voucher(conn, date, description, entries)
+    entries = _build_entries(
+        conn, lines, description=description, tenant_id=tenant_id, org_id=org_id
+    )
+    voucher = _create_posted_voucher(
+        conn, date, description, entries, tenant_id=tenant_id, org_id=org_id
+    )
     return {
         **summary,
         "voucher_id": voucher["voucher_id"],
@@ -5882,22 +6888,35 @@ def record_tax_adjustment(
     amount: float,
     description: Optional[str] = None,
     voucher_id: Optional[int] = None,
+    tenant_id: Optional[str] = None,
+    org_id: Optional[str] = None,
 ) -> Dict[str, Any]:
     if adjustment_type not in {"permanent", "temporary"}:
         raise LedgerError("TAX_ADJUSTMENT_TYPE_INVALID", "差异类型无效")
     if abs(amount) < 0.01:
         raise LedgerError("TAX_ADJUSTMENT_AMOUNT_INVALID", "差异金额不能为 0")
+    tenant_id, org_id = _resolve_tenant(tenant_id, org_id)
     if voucher_id is not None:
-        voucher = fetch_voucher(conn, voucher_id)
+        voucher = fetch_voucher(conn, voucher_id, tenant_id=tenant_id, org_id=org_id)
         if not voucher:
             raise LedgerError("VOUCHER_NOT_FOUND", f"凭证不存在: {voucher_id}")
-    ensure_period(conn, period)
+    ensure_period(conn, period, tenant_id=tenant_id, org_id=org_id)
     cur = conn.execute(
         """
-        INSERT INTO tax_adjustments (period, adjustment_type, amount, description, voucher_id)
-        VALUES (?, ?, ?, ?, ?)
+        INSERT INTO tax_adjustments (
+          tenant_id, org_id, period, adjustment_type, amount, description, voucher_id
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?)
         """,
-        (period, adjustment_type, round(float(amount), 2), description, voucher_id),
+        (
+            tenant_id,
+            org_id,
+            period,
+            adjustment_type,
+            round(float(amount), 2),
+            description,
+            voucher_id,
+        ),
     )
     return {
         "adjustment_id": cur.lastrowid,
@@ -5913,9 +6932,12 @@ def list_tax_adjustments(
     conn,
     period: Optional[str] = None,
     adjustment_type: Optional[str] = None,
+    tenant_id: Optional[str] = None,
+    org_id: Optional[str] = None,
 ) -> List[Dict[str, Any]]:
-    conditions: List[str] = []
-    params: List[Any] = []
+    tenant_id, org_id = _resolve_tenant(tenant_id, org_id)
+    conditions: List[str] = ["tenant_id = ?", "org_id = ?"]
+    params: List[Any] = [tenant_id, org_id]
     if period:
         conditions.append("period = ?")
         params.append(period)
@@ -5930,8 +6952,15 @@ def list_tax_adjustments(
     return [dict(row) for row in rows]
 
 
-def summarize_tax_adjustments(conn, period: str) -> Dict[str, Any]:
-    items = list_tax_adjustments(conn, period)
+def summarize_tax_adjustments(
+    conn,
+    period: str,
+    tenant_id: Optional[str] = None,
+    org_id: Optional[str] = None,
+) -> Dict[str, Any]:
+    items = list_tax_adjustments(
+        conn, period, tenant_id=tenant_id, org_id=org_id
+    )
     summary = {
         "permanent": {"add": 0.0, "subtract": 0.0, "net": 0.0},
         "temporary": {"add": 0.0, "subtract": 0.0, "net": 0.0},
@@ -6010,13 +7039,17 @@ def accrue_income_tax(
     period: Optional[str] = None,
     include_adjustments: bool = False,
     mapping: Optional[Dict[str, str]] = None,
+    tenant_id: Optional[str] = None,
+    org_id: Optional[str] = None,
 ) -> Dict[str, Any]:
     period = period or (parse_period(date) if date else None)
     if not period:
         raise LedgerError("PERIOD_REQUIRED", "缺少期间")
     date = date or _period_end_date(period)
     if include_adjustments:
-        adjustment_bundle = summarize_tax_adjustments(conn, period)
+        adjustment_bundle = summarize_tax_adjustments(
+            conn, period, tenant_id=tenant_id, org_id=org_id
+        )
         adjustments = adjustment_bundle["adjustments"]
     else:
         adjustment_bundle = None
@@ -6038,8 +7071,12 @@ def accrue_income_tax(
             (mapping["income_tax_payable_account"], 0.0, result["tax_payable"]),
         ],
         description=description,
+        tenant_id=tenant_id,
+        org_id=org_id,
     )
-    voucher = _create_posted_voucher(conn, date, description, entries)
+    voucher = _create_posted_voucher(
+        conn, date, description, entries, tenant_id=tenant_id, org_id=org_id
+    )
     output = {
         **result,
         "voucher_id": voucher["voucher_id"],

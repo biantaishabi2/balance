@@ -9,7 +9,6 @@ from typing import Any, Dict, List, Optional
 
 from ledger import services
 from ledger.utils import LedgerError
-from ledger.webhooks import record_event
 
 
 def _ensure_tenant_org(conn, tenant_id: str, org_id: str) -> None:
@@ -109,19 +108,6 @@ class LedgerAPI:
             "credit_total": round(total_credit, 2),
         }
 
-        record_event(
-            self.conn,
-            tenant_id,
-            org_id,
-            "voucher.created",
-            {
-                "voucher_id": voucher_id,
-                "voucher_no": voucher_no,
-                "period": period,
-                "status": status,
-            },
-        )
-
         if auto_confirm:
             if status == "draft":
                 services.review_voucher(
@@ -132,17 +118,6 @@ class LedgerAPI:
                     self.conn, voucher_id, tenant_id=tenant_id, org_id=org_id
                 )
                 result["status"] = confirmed["status"]
-                record_event(
-                    self.conn,
-                    tenant_id,
-                    org_id,
-                    "voucher.confirmed",
-                    {
-                        "voucher_id": voucher_id,
-                        "voucher_no": voucher_no,
-                        "period": period,
-                    },
-                )
 
         return result
 
@@ -211,12 +186,5 @@ class LedgerAPI:
             before_period,
             tenant_id=tenant_id,
             org_id=org_id,
-        )
-        record_event(
-            self.conn,
-            tenant_id,
-            org_id,
-            "vouchers.archived",
-            result,
         )
         return result
