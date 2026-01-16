@@ -22,9 +22,7 @@ feature
 - 成本可按维度归集与分摊
 - 预算可控制并形成差异闭环
 
-## 当前问题（需要解决）
-- 成本只在总账，缺少分摊
-- 无预算口径与控制流程
+## 当前问题（已解决）
 
 ## 核心设计
 
@@ -42,9 +40,10 @@ feature
   - `ratio` 仅用于固定比例，其余口径由基础数据计算
 - 基础数据来源：
   - 收入：按期间汇总收入科目发生额
-  - 人工：`allocation_basis_values(period, dim_id, value)` 维护人数
-  - 面积：`allocation_basis_values(period, dim_id, value)` 维护面积
+  - 人工：`allocation_basis_values(period, dim_type, dim_id, value)` 维护人数
+  - 面积：`allocation_basis_values(period, dim_type, dim_id, value)` 维护面积
   - 计算公式：目标比重 = 目标指标值 / 指标值合计
+  - `dim_type` 约定：`{target_dim}_headcount` / `{target_dim}_area`
 
 ### 3. 预算控制
 - `budgets`：
@@ -52,6 +51,7 @@ feature
 - `budget_controls`：
   - `id, period, dim_type, dim_id, used_amount, locked_amount`
 - 录入费用类凭证时占用预算，超额时提示或阻断
+- 预算策略通过 `data/budget_config.json` 配置（`warn`/`block`）
 
 ### 4. 预算-实际差异
 - 汇总实际发生额与预算差异
@@ -62,15 +62,15 @@ feature
 
 ## 落地步骤与测试（统一版）
 
-0. **成本中心与分摊规则（待做）**
+0. **成本中心与分摊规则（已完成）**
    - 做什么：新增分摊规则与分摊凭证
    - 测试：分摊金额与规则一致
 
-1. **预算控制（待做）**
+1. **预算控制（已完成）**
    - 做什么：预算表与占用逻辑
    - 测试：超额提示或阻断
 
-2. **差异分析（待做）**
+2. **差异分析（已完成）**
    - 做什么：预算-实际报表
    - 测试：差异金额准确
 

@@ -19,6 +19,8 @@ from .fx import add_parser as add_fx_parser
 from .template import add_parser as add_template_parser
 from .auto import add_parser as add_auto_parser
 from .period import add_parser as add_period_parser
+from .allocation import add_parser as add_allocation_parser
+from .budget import add_parser as add_budget_parser
 
 __all__ = [
     "add_init_parser",
@@ -42,4 +44,6 @@ __all__ = [
     "add_template_parser",
     "add_auto_parser",
     "add_period_parser",
+    "add_allocation_parser",
+    "add_budget_parser",
 ]

@@ -29,6 +29,7 @@ def run(args):
             "message": "凭证已确认，余额已更新，三表已生成",
             "confirmed_at": voucher.get("confirmed_at"),
             "balances_updated": voucher.get("balances_updated"),
+            "budget_warnings": voucher.get("budget_warnings", []),
             "reports_generated": True,
         }
     )

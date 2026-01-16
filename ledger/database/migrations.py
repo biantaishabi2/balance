@@ -218,6 +218,48 @@ def run_migrations(conn: sqlite3.Connection) -> None:
           created_at TEXT DEFAULT CURRENT_TIMESTAMP
         );
 
+        CREATE TABLE IF NOT EXISTS allocation_rules (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          name TEXT NOT NULL,
+          source_accounts TEXT NOT NULL,
+          target_dim TEXT NOT NULL,
+          basis TEXT NOT NULL,
+          period TEXT,
+          created_at TEXT DEFAULT CURRENT_TIMESTAMP
+        );
+
+        CREATE TABLE IF NOT EXISTS allocation_rule_lines (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          rule_id INTEGER NOT NULL,
+          target_dim_id INTEGER NOT NULL,
+          ratio REAL NOT NULL,
+          created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+          FOREIGN KEY (rule_id) REFERENCES allocation_rules(id)
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_allocation_rule_lines_rule ON allocation_rule_lines(rule_id);
+
+        CREATE TABLE IF NOT EXISTS budgets (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          period TEXT NOT NULL,
+          dim_type TEXT NOT NULL,
+          dim_id INTEGER NOT NULL,
+          amount REAL NOT NULL,
+          created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+          UNIQUE(period, dim_type, dim_id)
+        );
+
+        CREATE TABLE IF NOT EXISTS budget_controls (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          period TEXT NOT NULL,
+          dim_type TEXT NOT NULL,
+          dim_id INTEGER NOT NULL,
+          used_amount REAL NOT NULL DEFAULT 0,
+          locked_amount REAL NOT NULL DEFAULT 0,
+          updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+          UNIQUE(period, dim_type, dim_id)
+        );
+
         CREATE TABLE IF NOT EXISTS voucher_events (
           event_id TEXT PRIMARY KEY,
           template_code TEXT NOT NULL,

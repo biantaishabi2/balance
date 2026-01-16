@@ -103,6 +103,11 @@ DEFAULT_CREDIT_CONFIG = {
 }
 
 
+DEFAULT_BUDGET_CONFIG = {
+    "mode": "warn",
+}
+
+
 DEFAULT_BAD_DEBT_CONFIG = {
     "fixed_ratio": None,
     "aging_ratios": {
@@ -383,11 +388,15 @@ def build_entries(
             "supplier_id": None,
             "employee_id": None,
         }
+        for dim_field in dims:
+            if dim_field in entry and entry[dim_field] is not None:
+                dims[dim_field] = int(entry[dim_field])
         for key, dim_type in DIMENSION_FIELDS.items():
             code = entry.get(key)
-            if code:
+            dim_field = f"{key}_id" if key != "department" else "dept_id"
+            if code and dims[dim_field] is None:
                 dim_id = find_dimension(conn, dim_type, code)
-                dims[f"{key}_id" if key != "department" else "dept_id"] = dim_id
+                dims[dim_field] = dim_id
 
         entries.append(
             {
@@ -725,6 +734,105 @@ def fetch_entries(conn, voucher_id: int) -> List[Dict[str, Any]]:
     return [dict(r) for r in rows]
 
 
+def _budget_dim_from_entry(entry: Dict[str, Any]) -> Tuple[Optional[str], Optional[int]]:
+    def _value(key: str) -> Optional[Any]:
+        if isinstance(entry, dict):
+            return entry.get(key)
+        try:
+            return entry[key]
+        except (KeyError, TypeError, IndexError):
+            return None
+
+    dept_id = _value("dept_id") or 0
+    project_id = _value("project_id") or 0
+    if dept_id:
+        return "department", int(dept_id)
+    if project_id:
+        return "project", int(project_id)
+    return None, None
+
+
+def _apply_budget_controls(conn, voucher_id: int, period: str) -> List[Dict[str, Any]]:
+    config = _load_budget_config()
+    mode = (config.get("mode") or "warn").lower()
+    if mode not in {"warn", "block"}:
+        return []
+    rows = conn.execute(
+        """
+        SELECT ve.*, a.type AS account_type
+        FROM voucher_entries ve
+        JOIN accounts a ON ve.account_code = a.code
+        WHERE ve.voucher_id = ?
+        """,
+        (voucher_id,),
+    ).fetchall()
+    warnings: List[Dict[str, Any]] = []
+    for row in rows:
+        if row["account_type"] != "expense":
+            continue
+        amount = float(row["debit_amount"] or 0) - float(row["credit_amount"] or 0)
+        if abs(amount) < 0.01:
+            continue
+        dim_type, dim_id = _budget_dim_from_entry(row)
+        if not dim_type:
+            continue
+        budget_row = conn.execute(
+            """
+            SELECT amount FROM budgets
+            WHERE period = ? AND dim_type = ? AND dim_id = ?
+            """,
+            (period, dim_type, dim_id),
+        ).fetchone()
+        if not budget_row:
+            continue
+        budget_amount = float(budget_row["amount"] or 0)
+        ctrl_row = conn.execute(
+            """
+            SELECT id, used_amount FROM budget_controls
+            WHERE period = ? AND dim_type = ? AND dim_id = ?
+            """,
+            (period, dim_type, dim_id),
+        ).fetchone()
+        if not ctrl_row:
+            conn.execute(
+                """
+                INSERT INTO budget_controls (period, dim_type, dim_id, used_amount, locked_amount)
+                VALUES (?, ?, ?, 0, 0)
+                """,
+                (period, dim_type, dim_id),
+            )
+            ctrl_row = conn.execute(
+                """
+                SELECT id, used_amount FROM budget_controls
+                WHERE period = ? AND dim_type = ? AND dim_id = ?
+                """,
+                (period, dim_type, dim_id),
+            ).fetchone()
+        used_amount = float(ctrl_row["used_amount"] or 0)
+        new_used = used_amount + amount
+        if new_used < 0:
+            new_used = 0.0
+        if amount > 0 and new_used - budget_amount > 0.01:
+            warning = {
+                "dim_type": dim_type,
+                "dim_id": dim_id,
+                "budget": round(budget_amount, 2),
+                "used": round(new_used, 2),
+                "exceeded": round(new_used - budget_amount, 2),
+            }
+            if mode == "block":
+                raise LedgerError("BUDGET_EXCEEDED", "超预算")
+            warnings.append(warning)
+        conn.execute(
+            """
+            UPDATE budget_controls SET used_amount = ?, updated_at = CURRENT_TIMESTAMP
+            WHERE id = ?
+            """,
+            (round(new_used, 2), ctrl_row["id"]),
+        )
+    return warnings
+
+
 def review_voucher(conn, voucher_id: int) -> Dict[str, Any]:
     voucher = fetch_voucher(conn, voucher_id)
     if not voucher:
@@ -778,6 +886,7 @@ def confirm_voucher(conn, voucher_id: int) -> Dict[str, Any]:
             },
         )
 
+    budget_warnings = _apply_budget_controls(conn, voucher_id, voucher["period"])
     confirmed_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     conn.execute(
         "UPDATE vouchers SET status = 'confirmed', confirmed_at = ? WHERE id = ?",
@@ -789,6 +898,8 @@ def confirm_voucher(conn, voucher_id: int) -> Dict[str, Any]:
     voucher["balances_updated"] = balances_updated
     if voucher.get("entry_type") == "adjustment":
         _apply_adjustment_rollforward(conn, voucher["period"])
+    if budget_warnings:
+        voucher["budget_warnings"] = budget_warnings
     return voucher
 
 
@@ -3927,6 +4038,297 @@ def reconcile_fixed_assets(conn, period: str) -> Dict[str, Any]:
     }
 
 
+def _allocation_dim_field(target_dim: str) -> Optional[str]:
+    if target_dim == "department":
+        return "dept_id"
+    if target_dim == "project":
+        return "project_id"
+    return None
+
+
+def create_allocation_rule(
+    conn,
+    name: str,
+    source_accounts: List[str],
+    target_dim: str,
+    basis: str,
+    period: Optional[str] = None,
+) -> Dict[str, Any]:
+    if target_dim not in {"department", "project"}:
+        raise LedgerError("ALLOCATION_DIM_INVALID", "分摊维度无效")
+    if basis not in {"revenue", "headcount", "area", "fixed"}:
+        raise LedgerError("ALLOCATION_BASIS_INVALID", "分摊口径无效")
+    accounts = [acc.strip() for acc in source_accounts if acc.strip()]
+    if not accounts:
+        raise LedgerError("ALLOCATION_SOURCE_EMPTY", "分摊来源科目不能为空")
+    cur = conn.execute(
+        """
+        INSERT INTO allocation_rules (name, source_accounts, target_dim, basis, period)
+        VALUES (?, ?, ?, ?, ?)
+        """,
+        (name, json.dumps(accounts, ensure_ascii=False), target_dim, basis, period),
+    )
+    return {
+        "rule_id": cur.lastrowid,
+        "name": name,
+        "target_dim": target_dim,
+        "basis": basis,
+        "period": period,
+    }
+
+
+def set_allocation_rule_lines(
+    conn, rule_id: int, lines: List[Tuple[int, float]]
+) -> None:
+    conn.execute("DELETE FROM allocation_rule_lines WHERE rule_id = ?", (rule_id,))
+    for dim_id, ratio in lines:
+        conn.execute(
+            """
+            INSERT INTO allocation_rule_lines (rule_id, target_dim_id, ratio)
+            VALUES (?, ?, ?)
+            """,
+            (rule_id, dim_id, float(ratio)),
+        )
+
+
+def list_allocation_rules(conn) -> List[Dict[str, Any]]:
+    rows = conn.execute(
+        "SELECT * FROM allocation_rules ORDER BY id"
+    ).fetchall()
+    rules = []
+    for row in rows:
+        data = dict(row)
+        try:
+            data["source_accounts"] = json.loads(data.get("source_accounts") or "[]")
+        except json.JSONDecodeError:
+            data["source_accounts"] = []
+        rules.append(data)
+    return rules
+
+
+def _allocation_basis_ratios(
+    conn, period: str, target_dim: str, basis: str, rule_id: int
+) -> List[Tuple[int, float]]:
+    dim_field = _allocation_dim_field(target_dim)
+    if not dim_field:
+        return []
+    if basis == "fixed":
+        rows = conn.execute(
+            "SELECT target_dim_id, ratio FROM allocation_rule_lines WHERE rule_id = ?",
+            (rule_id,),
+        ).fetchall()
+        total = sum(float(row["ratio"] or 0) for row in rows)
+        if total <= 0:
+            return []
+        return [(int(row["target_dim_id"]), float(row["ratio"]) / total) for row in rows]
+
+    if basis == "revenue":
+        rows = conn.execute(
+            f"""
+            SELECT b.{dim_field} AS dim_id, COALESCE(SUM(b.credit_amount), 0) AS total
+            FROM balances b
+            JOIN accounts a ON b.account_code = a.code
+            WHERE b.period = ? AND a.type = 'revenue'
+            GROUP BY b.{dim_field}
+            """,
+            (period,),
+        ).fetchall()
+        total = sum(float(row["total"] or 0) for row in rows)
+        if total <= 0:
+            return []
+        return [(int(row["dim_id"]), float(row["total"]) / total) for row in rows if row["dim_id"]]
+
+    basis_type = f"{target_dim}_{basis}"
+    rows = conn.execute(
+        """
+        SELECT dim_id, value FROM allocation_basis_values
+        WHERE period = ? AND dim_type = ?
+        ORDER BY dim_id
+        """,
+        (period, basis_type),
+    ).fetchall()
+    total = sum(float(row["value"] or 0) for row in rows)
+    if total <= 0:
+        return []
+    return [(int(row["dim_id"]), float(row["value"]) / total) for row in rows]
+
+
+def run_allocation(
+    conn,
+    rule_id: int,
+    period: str,
+    date: Optional[str] = None,
+    description: Optional[str] = None,
+) -> Dict[str, Any]:
+    rule = conn.execute(
+        "SELECT * FROM allocation_rules WHERE id = ?",
+        (rule_id,),
+    ).fetchone()
+    if not rule:
+        raise LedgerError("ALLOCATION_RULE_NOT_FOUND", f"分摊规则不存在: {rule_id}")
+    target_dim = rule["target_dim"]
+    basis = rule["basis"]
+    source_accounts = json.loads(rule["source_accounts"] or "[]")
+    if not source_accounts:
+        raise LedgerError("ALLOCATION_SOURCE_EMPTY", "分摊来源科目不能为空")
+    dim_field = _allocation_dim_field(target_dim)
+    if not dim_field:
+        raise LedgerError("ALLOCATION_DIM_INVALID", "分摊维度无效")
+    ratios = _allocation_basis_ratios(conn, period, target_dim, basis, rule_id)
+    if not ratios:
+        raise LedgerError("ALLOCATION_BASIS_EMPTY", "分摊基础数据为空")
+
+    alloc_entries: List[Dict[str, Any]] = []
+    description = description or f"Allocation {rule['name']} {period}"
+    for account_code in source_accounts:
+        amount_row = conn.execute(
+            """
+            SELECT COALESCE(SUM(debit_amount - credit_amount), 0) AS total
+            FROM balances
+            WHERE period = ? AND account_code = ?
+              AND dept_id = 0 AND project_id = 0 AND customer_id = 0 AND supplier_id = 0 AND employee_id = 0
+            """,
+            (period, account_code),
+        ).fetchone()
+        total_amount = float(amount_row["total"] or 0)
+        if total_amount <= 0.01:
+            continue
+        alloc_entries.append(
+            {
+                "account": account_code,
+                "debit": 0.0,
+                "credit": round(total_amount, 2),
+                "description": description,
+            }
+        )
+        allocated = 0.0
+        for idx, (dim_id, ratio) in enumerate(ratios):
+            alloc_amount = round(total_amount * ratio, 2)
+            if idx == len(ratios) - 1:
+                alloc_amount = round(total_amount - allocated, 2)
+            allocated += alloc_amount
+            alloc_entries.append(
+                {
+                    "account": account_code,
+                    "debit": alloc_amount,
+                    "credit": 0.0,
+                    dim_field: dim_id,
+                    "description": description,
+                }
+            )
+
+    if not alloc_entries:
+        raise LedgerError("ALLOCATION_EMPTY", "分摊金额为空")
+
+    entries, total_debit, total_credit = build_entries(conn, alloc_entries, date or f"{period}-01")
+    if abs(total_debit - total_credit) >= 0.01:
+        raise LedgerError("NOT_BALANCED", "分摊凭证不平衡")
+    voucher_id, voucher_no, _, _ = insert_voucher(
+        conn,
+        {
+            "date": date or f"{period}-01",
+            "description": description,
+        },
+        entries,
+        "reviewed",
+    )
+    voucher = confirm_voucher(conn, voucher_id)
+    return {
+        "rule_id": rule_id,
+        "voucher_id": voucher_id,
+        "voucher_no": voucher_no,
+        "period": period,
+        "confirmed_at": voucher.get("confirmed_at"),
+    }
+
+
+def set_budget(
+    conn,
+    period: str,
+    dim_type: str,
+    dim_code: str,
+    amount: float,
+) -> Dict[str, Any]:
+    if amount < 0:
+        raise LedgerError("BUDGET_AMOUNT_INVALID", "预算金额无效")
+    if dim_type not in {"department", "project"}:
+        raise LedgerError("BUDGET_DIM_INVALID", "预算维度无效")
+    dim_id = find_dimension(conn, dim_type, dim_code)
+    conn.execute(
+        """
+        INSERT OR REPLACE INTO budgets (period, dim_type, dim_id, amount)
+        VALUES (?, ?, ?, ?)
+        """,
+        (period, dim_type, dim_id, round(amount, 2)),
+    )
+    return {
+        "period": period,
+        "dim_type": dim_type,
+        "dim_id": dim_id,
+        "amount": round(amount, 2),
+    }
+
+
+def list_budgets(
+    conn, period: Optional[str] = None, dim_type: Optional[str] = None
+) -> List[Dict[str, Any]]:
+    conditions: List[str] = []
+    params: List[Any] = []
+    if period:
+        conditions.append("period = ?")
+        params.append(period)
+    if dim_type:
+        conditions.append("dim_type = ?")
+        params.append(dim_type)
+    where_clause = f"WHERE {' AND '.join(conditions)}" if conditions else ""
+    rows = conn.execute(
+        f"SELECT * FROM budgets {where_clause} ORDER BY period, dim_type, dim_id",
+        params,
+    ).fetchall()
+    return [dict(row) for row in rows]
+
+
+def budget_variance(
+    conn, period: str, dim_type: str, dim_code: Optional[str] = None
+) -> Dict[str, Any]:
+    if dim_type not in {"department", "project"}:
+        raise LedgerError("BUDGET_DIM_INVALID", "预算维度无效")
+    dim_id = find_dimension(conn, dim_type, dim_code) if dim_code else None
+    dim_field = _allocation_dim_field(dim_type)
+    conditions = ["b.period = ?", "a.type = 'expense'"]
+    params: List[Any] = [period]
+    if dim_id is not None:
+        conditions.append(f"b.{dim_field} = ?")
+        params.append(dim_id)
+    actual_row = conn.execute(
+        f"""
+        SELECT COALESCE(SUM(b.debit_amount - b.credit_amount), 0) AS total
+        FROM balances b
+        JOIN accounts a ON b.account_code = a.code
+        WHERE {" AND ".join(conditions)}
+        """,
+        params,
+    ).fetchone()
+    actual = float(actual_row["total"] or 0)
+    budget_row = conn.execute(
+        """
+        SELECT COALESCE(SUM(amount), 0) AS total
+        FROM budgets
+        WHERE period = ? AND dim_type = ? AND (? IS NULL OR dim_id = ?)
+        """,
+        (period, dim_type, dim_id, dim_id),
+    ).fetchone()
+    budget = float(budget_row["total"] or 0)
+    return {
+        "period": period,
+        "dim_type": dim_type,
+        "dim_id": dim_id,
+        "budget": round(budget, 2),
+        "actual": round(actual, 2),
+        "variance": round(budget - actual, 2),
+    }
+
+
 def build_balance_input(balances: List[Dict[str, Any]]) -> Dict[str, Any]:
     mapping = _load_balance_mapping()
     mapped = _apply_balance_mapping(balances, mapping)
@@ -4071,6 +4473,21 @@ def _load_credit_config() -> Dict[str, Any]:
     if not isinstance(data, dict):
         raise LedgerError("CREDIT_CONFIG_INVALID", "信用配置必须为对象")
     merged = dict(DEFAULT_CREDIT_CONFIG)
+    merged.update(data)
+    return merged
+
+
+def _load_budget_config() -> Dict[str, Any]:
+    config_path = Path(__file__).resolve().parents[1] / "data" / "budget_config.json"
+    if not config_path.exists():
+        return dict(DEFAULT_BUDGET_CONFIG)
+    try:
+        data = json.loads(config_path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as exc:
+        raise LedgerError("BUDGET_CONFIG_INVALID", f"预算配置JSON错误: {exc}") from exc
+    if not isinstance(data, dict):
+        raise LedgerError("BUDGET_CONFIG_INVALID", "预算配置必须为对象")
+    merged = dict(DEFAULT_BUDGET_CONFIG)
     merged.update(data)
     return merged
 
