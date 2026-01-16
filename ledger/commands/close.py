@@ -12,13 +12,14 @@ from ledger.utils import print_json
 def add_parser(subparsers, parents):
     parser = subparsers.add_parser("close", help="期末结账", parents=parents)
     parser.add_argument("--period", required=True, help="期间")
+    parser.add_argument("--template", help="结转模板代码")
     parser.set_defaults(func=run)
     return parser
 
 
 def run(args):
     with get_db(args.db_path) as conn:
-        result = close_period(conn, args.period)
+        result = close_period(conn, args.period, args.template)
 
     print_json(
         {

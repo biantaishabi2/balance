@@ -15,6 +15,10 @@ from .query import add_parser as add_query_parser
 from .report import add_parser as add_report_parser
 from .account import add_parser as add_account_parser
 from .dimension import add_parser as add_dimension_parser
+from .fx import add_parser as add_fx_parser
+from .template import add_parser as add_template_parser
+from .auto import add_parser as add_auto_parser
+from .period import add_parser as add_period_parser
 
 __all__ = [
     "add_init_parser",
@@ -34,4 +38,8 @@ __all__ = [
     "add_report_parser",
     "add_account_parser",
     "add_dimension_parser",
+    "add_fx_parser",
+    "add_template_parser",
+    "add_auto_parser",
+    "add_period_parser",
 ]

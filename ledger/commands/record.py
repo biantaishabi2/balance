@@ -27,7 +27,7 @@ def run(args):
         raise LedgerError("VOUCHER_NOT_FOUND", "缺少分录")
 
     with get_db(args.db_path) as conn:
-        entries, total_debit, total_credit = build_entries(conn, entries_data)
+        entries, total_debit, total_credit = build_entries(conn, entries_data, date)
         if abs(total_debit - total_credit) >= 0.01:
             raise LedgerError(
                 "NOT_BALANCED",

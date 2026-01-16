@@ -1,0 +1,6 @@
+{
+  "base_currency": "CNY",
+  "fx_gain_account": "6051",
+  "fx_loss_account": "6603",
+  "revaluable_accounts": ["1001", "1002", "1122", "2202"]
+}

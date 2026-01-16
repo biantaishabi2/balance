@@ -32,6 +32,9 @@ CREATE TABLE IF NOT EXISTS dimensions (
   name TEXT NOT NULL,
   parent_id INTEGER,
   extra TEXT,
+  credit_limit REAL DEFAULT 0,
+  credit_used REAL DEFAULT 0,
+  credit_days INTEGER DEFAULT 0,
   is_enabled INTEGER DEFAULT 1,
   created_at TEXT DEFAULT CURRENT_TIMESTAMP,
   UNIQUE(type, code)
@@ -46,6 +49,8 @@ CREATE TABLE IF NOT EXISTS vouchers (
   period TEXT NOT NULL,
   description TEXT,
   status TEXT NOT NULL DEFAULT 'draft',
+  entry_type TEXT NOT NULL DEFAULT 'normal',
+  source_template TEXT,
   void_reason TEXT,
   created_at TEXT DEFAULT CURRENT_TIMESTAMP,
   reviewed_at TEXT,
@@ -66,6 +71,10 @@ CREATE TABLE IF NOT EXISTS voucher_entries (
   description TEXT,
   debit_amount REAL DEFAULT 0,
   credit_amount REAL DEFAULT 0,
+  currency_code TEXT DEFAULT 'CNY',
+  fx_rate REAL DEFAULT 1,
+  foreign_debit_amount REAL DEFAULT 0,
+  foreign_credit_amount REAL DEFAULT 0,
   dept_id INTEGER,
   project_id INTEGER,
   customer_id INTEGER,
@@ -194,6 +203,10 @@ CREATE TABLE IF NOT EXISTS inventory_moves (
   total_cost REAL NOT NULL,
   voucher_id INTEGER NOT NULL,
   date TEXT NOT NULL,
+  warehouse_id INTEGER,
+  location_id INTEGER,
+  batch_id INTEGER,
+  pending_cost_adjustment REAL DEFAULT 0,
   created_at TEXT DEFAULT CURRENT_TIMESTAMP,
   FOREIGN KEY (voucher_id) REFERENCES vouchers(id)
 );
@@ -204,10 +217,12 @@ CREATE INDEX IF NOT EXISTS idx_inventory_moves_date ON inventory_moves(date);
 CREATE TABLE IF NOT EXISTS inventory_balances (
   sku TEXT NOT NULL,
   period TEXT NOT NULL,
+  warehouse_id INTEGER NOT NULL DEFAULT 0,
+  location_id INTEGER NOT NULL DEFAULT 0,
   qty REAL NOT NULL,
   amount REAL NOT NULL,
   updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
-  UNIQUE(sku, period)
+  UNIQUE(sku, period, warehouse_id, location_id)
 );
 
 CREATE INDEX IF NOT EXISTS idx_inventory_balances_sku ON inventory_balances(sku);
@@ -221,6 +236,233 @@ CREATE TABLE IF NOT EXISTS fixed_assets (
   salvage_value REAL NOT NULL DEFAULT 0,
   status TEXT NOT NULL DEFAULT 'active',
   created_at TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS currencies (
+  code TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  symbol TEXT,
+  precision INTEGER NOT NULL DEFAULT 2,
+  is_active INTEGER DEFAULT 1
+);
+
+CREATE TABLE IF NOT EXISTS exchange_rates (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  currency_code TEXT NOT NULL,
+  date TEXT NOT NULL,
+  rate REAL NOT NULL,
+  rate_type TEXT NOT NULL DEFAULT 'spot',
+  source TEXT,
+  created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE(currency_code, date, rate_type),
+  FOREIGN KEY (currency_code) REFERENCES currencies(code)
+);
+
+CREATE TABLE IF NOT EXISTS balances_fx (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  account_code TEXT NOT NULL,
+  period TEXT NOT NULL,
+  currency_code TEXT NOT NULL,
+  dept_id INTEGER NOT NULL DEFAULT 0,
+  project_id INTEGER NOT NULL DEFAULT 0,
+  customer_id INTEGER NOT NULL DEFAULT 0,
+  supplier_id INTEGER NOT NULL DEFAULT 0,
+  employee_id INTEGER NOT NULL DEFAULT 0,
+  foreign_opening REAL DEFAULT 0,
+  foreign_debit REAL DEFAULT 0,
+  foreign_credit REAL DEFAULT 0,
+  foreign_closing REAL DEFAULT 0,
+  updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE(
+    account_code,
+    period,
+    currency_code,
+    dept_id,
+    project_id,
+    customer_id,
+    supplier_id,
+    employee_id
+  )
+);
+
+CREATE TABLE IF NOT EXISTS closing_templates (
+  code TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  rule_json TEXT NOT NULL,
+  is_active INTEGER DEFAULT 1,
+  created_at TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS voucher_templates (
+  code TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  rule_json TEXT NOT NULL,
+  is_active INTEGER DEFAULT 1,
+  created_at TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS payment_plans (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  item_type TEXT NOT NULL,
+  item_id INTEGER NOT NULL,
+  due_date TEXT NOT NULL,
+  amount REAL NOT NULL,
+  status TEXT NOT NULL DEFAULT 'pending',
+  voucher_id INTEGER,
+  created_at TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS bills (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  bill_no TEXT NOT NULL,
+  bill_type TEXT NOT NULL,
+  amount REAL NOT NULL,
+  status TEXT NOT NULL DEFAULT 'holding',
+  maturity_date TEXT,
+  item_type TEXT,
+  item_id INTEGER,
+  voucher_id INTEGER,
+  created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE(bill_no)
+);
+
+CREATE TABLE IF NOT EXISTS bad_debt_provisions (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  period TEXT NOT NULL,
+  customer_id INTEGER NOT NULL,
+  amount REAL NOT NULL,
+  voucher_id INTEGER NOT NULL,
+  created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (customer_id) REFERENCES dimensions(id),
+  FOREIGN KEY (voucher_id) REFERENCES vouchers(id)
+);
+
+CREATE TABLE IF NOT EXISTS warehouses (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  code TEXT NOT NULL,
+  name TEXT NOT NULL,
+  created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE(code)
+);
+
+CREATE TABLE IF NOT EXISTS locations (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  warehouse_id INTEGER NOT NULL,
+  code TEXT NOT NULL,
+  name TEXT NOT NULL,
+  created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE(warehouse_id, code),
+  FOREIGN KEY (warehouse_id) REFERENCES warehouses(id)
+);
+
+CREATE TABLE IF NOT EXISTS inventory_batches (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  sku TEXT NOT NULL,
+  batch_no TEXT,
+  qty REAL NOT NULL,
+  remaining_qty REAL NOT NULL,
+  unit_cost REAL NOT NULL,
+  total_cost REAL NOT NULL,
+  warehouse_id INTEGER,
+  location_id INTEGER,
+  status TEXT NOT NULL DEFAULT 'open',
+  created_at TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_inventory_batches_sku ON inventory_batches(sku);
+
+CREATE TABLE IF NOT EXISTS inventory_move_lines (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  move_id INTEGER NOT NULL,
+  batch_id INTEGER,
+  qty REAL NOT NULL,
+  unit_cost REAL NOT NULL,
+  total_cost REAL NOT NULL,
+  FOREIGN KEY (move_id) REFERENCES inventory_moves(id),
+  FOREIGN KEY (batch_id) REFERENCES inventory_batches(id)
+);
+
+CREATE TABLE IF NOT EXISTS inventory_counts (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  sku TEXT NOT NULL,
+  warehouse_id INTEGER,
+  counted_qty REAL NOT NULL,
+  book_qty REAL NOT NULL,
+  diff_qty REAL NOT NULL,
+  date TEXT NOT NULL,
+  voucher_id INTEGER,
+  created_at TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS standard_costs (
+  sku TEXT NOT NULL,
+  period TEXT NOT NULL,
+  cost REAL NOT NULL,
+  variance_account TEXT,
+  UNIQUE(sku, period)
+);
+
+CREATE TABLE IF NOT EXISTS fixed_asset_changes (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  asset_id INTEGER NOT NULL,
+  change_type TEXT NOT NULL,
+  amount REAL NOT NULL,
+  date TEXT NOT NULL,
+  voucher_id INTEGER,
+  created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (asset_id) REFERENCES fixed_assets(id)
+);
+
+CREATE TABLE IF NOT EXISTS fixed_asset_impairments (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  asset_id INTEGER NOT NULL,
+  period TEXT NOT NULL,
+  amount REAL NOT NULL,
+  voucher_id INTEGER NOT NULL,
+  created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (asset_id) REFERENCES fixed_assets(id),
+  FOREIGN KEY (voucher_id) REFERENCES vouchers(id)
+);
+
+CREATE TABLE IF NOT EXISTS cip_projects (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  name TEXT NOT NULL,
+  cost REAL NOT NULL DEFAULT 0,
+  status TEXT NOT NULL DEFAULT 'ongoing',
+  created_at TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS cip_transfers (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  project_id INTEGER NOT NULL,
+  asset_id INTEGER NOT NULL,
+  amount REAL NOT NULL,
+  date TEXT NOT NULL,
+  voucher_id INTEGER,
+  created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (project_id) REFERENCES cip_projects(id),
+  FOREIGN KEY (asset_id) REFERENCES fixed_assets(id)
+);
+
+CREATE TABLE IF NOT EXISTS fixed_asset_allocations (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  asset_id INTEGER NOT NULL,
+  dim_type TEXT NOT NULL,
+  dim_id INTEGER NOT NULL,
+  ratio REAL NOT NULL,
+  created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE(asset_id, dim_type, dim_id),
+  FOREIGN KEY (asset_id) REFERENCES fixed_assets(id)
+);
+
+CREATE TABLE IF NOT EXISTS allocation_basis_values (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  period TEXT NOT NULL,
+  dim_type TEXT NOT NULL,
+  dim_id INTEGER NOT NULL,
+  value REAL NOT NULL,
+  created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE(period, dim_type, dim_id)
 );
 
 CREATE TABLE IF NOT EXISTS fixed_asset_depreciations (

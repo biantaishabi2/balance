@@ -1,0 +1,4 @@
+{
+  "cost_method": "avg",
+  "negative_policy": "reject"
+}

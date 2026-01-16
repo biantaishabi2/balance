@@ -7,7 +7,18 @@ from __future__ import annotations
 from datetime import datetime
 
 from ledger.database import get_db
-from ledger.services import add_ap_item, ap_aging, list_ap_items, reconcile_ap, settle_ap_item
+from ledger.services import (
+    add_ap_item,
+    ap_aging,
+    add_bill,
+    create_payment_plan,
+    list_ap_items,
+    reconcile_ap,
+    set_credit_profile,
+    settle_ap_item,
+    settle_payment_plan,
+    update_bill_status,
+)
 from ledger.utils import print_json
 
 
@@ -47,6 +58,37 @@ def add_parser(subparsers, parents):
     reconcile_cmd.add_argument("--period", required=True, help="期间")
     reconcile_cmd.add_argument("--supplier", help="供应商维度代码")
     reconcile_cmd.set_defaults(func=run_reconcile)
+
+    credit_cmd = sub.add_parser("credit", help="信用额度", parents=parents)
+    credit_cmd.add_argument("--supplier", required=True, help="供应商维度代码")
+    credit_cmd.add_argument("--limit", type=float, required=True, help="信用额度")
+    credit_cmd.add_argument("--days", type=int, default=0, help="账期天数")
+    credit_cmd.set_defaults(func=run_credit)
+
+    plan_cmd = sub.add_parser("plan", help="付款计划", parents=parents)
+    plan_cmd.add_argument("--item-id", type=int, required=True, help="应付ID")
+    plan_cmd.add_argument("--due-date", required=True, help="到期日")
+    plan_cmd.add_argument("--amount", type=float, required=True, help="金额")
+    plan_cmd.set_defaults(func=run_plan_add)
+
+    plan_settle_cmd = sub.add_parser("plan-settle", help="计划付款", parents=parents)
+    plan_settle_cmd.add_argument("--plan-id", type=int, required=True, help="计划ID")
+    plan_settle_cmd.add_argument("--date", default=_default_date(), help="付款日期")
+    plan_settle_cmd.set_defaults(func=run_plan_settle)
+
+    bill_cmd = sub.add_parser("bill", help="票据", parents=parents)
+    bill_cmd.add_argument("--bill-no", required=True, help="票据号")
+    bill_cmd.add_argument("--amount", type=float, required=True, help="金额")
+    bill_cmd.add_argument("--date", default=_default_date(), help="日期")
+    bill_cmd.add_argument("--maturity-date", help="到期日")
+    bill_cmd.add_argument("--item-id", type=int, help="应付ID")
+    bill_cmd.set_defaults(func=run_bill_add)
+
+    bill_status_cmd = sub.add_parser("bill-status", help="票据状态", parents=parents)
+    bill_status_cmd.add_argument("--bill-no", required=True, help="票据号")
+    bill_status_cmd.add_argument("--status", required=True, help="endorsed/discounted/settled")
+    bill_status_cmd.add_argument("--date", default=_default_date(), help="日期")
+    bill_status_cmd.set_defaults(func=run_bill_status)
 
     return parser
 
@@ -90,4 +132,43 @@ def run_aging(args):
 def run_reconcile(args):
     with get_db(args.db_path) as conn:
         result = reconcile_ap(conn, args.period, args.supplier)
+    print_json({"status": "success", **result})
+
+
+def run_credit(args):
+    with get_db(args.db_path) as conn:
+        result = set_credit_profile(conn, "supplier", args.supplier, args.limit, args.days)
+    print_json({"status": "success", **result})
+
+
+def run_plan_add(args):
+    with get_db(args.db_path) as conn:
+        result = create_payment_plan(conn, "ap", args.item_id, args.due_date, args.amount)
+    print_json({"status": "success", **result})
+
+
+def run_plan_settle(args):
+    with get_db(args.db_path) as conn:
+        result = settle_payment_plan(conn, args.plan_id, args.date)
+    print_json({"status": "success", **result})
+
+
+def run_bill_add(args):
+    with get_db(args.db_path) as conn:
+        result = add_bill(
+            conn,
+            args.bill_no,
+            "ap",
+            args.amount,
+            args.date,
+            args.maturity_date,
+            "ap" if args.item_id else None,
+            args.item_id,
+        )
+    print_json({"status": "success", **result})
+
+
+def run_bill_status(args):
+    with get_db(args.db_path) as conn:
+        result = update_bill_status(conn, args.bill_no, args.status, args.date)
     print_json({"status": "success", **result})

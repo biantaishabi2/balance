@@ -37,6 +37,10 @@ def build_parser() -> argparse.ArgumentParser:
     commands.add_ap_parser(subparsers, [common])
     commands.add_inventory_parser(subparsers, [common])
     commands.add_fixed_asset_parser(subparsers, [common])
+    commands.add_fx_parser(subparsers, [common])
+    commands.add_template_parser(subparsers, [common])
+    commands.add_auto_parser(subparsers, [common])
+    commands.add_period_parser(subparsers, [common])
 
     return parser
 
