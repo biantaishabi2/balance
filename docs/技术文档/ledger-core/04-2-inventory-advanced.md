@@ -34,7 +34,7 @@ feature
 - `inventory_moves` 增加 `warehouse_id` / `location_id`
 
 ### 2. 批次/序列号
-- `inventory_batches(id, sku, batch_no, qty, cost, status)`
+- `inventory_batches(id, sku, batch_no, qty, remaining_qty, unit_cost, total_cost, status)`
 - 入库生成批次，出库消耗批次
 - 序列号追溯：
   - `inventory_serials(serial_no, sku, status, move_in_id, move_out_id, warehouse_id, location_id)`
