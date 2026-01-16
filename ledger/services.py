@@ -45,6 +45,31 @@ DEFAULT_CLOSE_CONFIG = {
 }
 
 
+DEFAULT_SUBLEDGER_MAPPING = {
+    "ar": {
+        "ar_account": "1122",
+        "revenue_account": "6001",
+        "bank_account": "1002",
+    },
+    "ap": {
+        "ap_account": "2202",
+        "inventory_account": "1403",
+        "bank_account": "1002",
+    },
+    "inventory": {
+        "inventory_account": "1403",
+        "cost_account": "6401",
+        "offset_account": "1002",
+    },
+    "fixed_asset": {
+        "asset_account": "1601",
+        "accum_depreciation_account": "1602",
+        "depreciation_expense_account": "6602",
+        "bank_account": "1002",
+    },
+}
+
+
 def parse_period(date_str: str) -> str:
     return date_str[:7]
 
@@ -750,6 +775,616 @@ def _append_entry(
     )
 
 
+def _normalize_dims(dims: Optional[Dict[str, Optional[int]]] = None) -> Dict[str, Optional[int]]:
+    payload = dims or {}
+    return {
+        "dept_id": payload.get("dept_id"),
+        "project_id": payload.get("project_id"),
+        "customer_id": payload.get("customer_id"),
+        "supplier_id": payload.get("supplier_id"),
+        "employee_id": payload.get("employee_id"),
+    }
+
+
+def _build_entry_for_account(
+    conn,
+    account_code: str,
+    debit_amount: float,
+    credit_amount: float,
+    dims: Optional[Dict[str, Optional[int]]] = None,
+    description: Optional[str] = None,
+) -> Dict[str, Any]:
+    account = find_account(conn, account_code)
+    entry = {
+        "line_no": 0,
+        "account_code": account["code"],
+        "account_name": account["name"],
+        "description": description,
+        "debit_amount": round(debit_amount, 2),
+        "credit_amount": round(credit_amount, 2),
+    }
+    entry.update(_normalize_dims(dims))
+    return entry
+
+
+def _build_entries(
+    conn,
+    lines: List[Tuple[str, float, float]],
+    dims: Optional[Dict[str, Optional[int]]] = None,
+    description: Optional[str] = None,
+) -> List[Dict[str, Any]]:
+    entries: List[Dict[str, Any]] = []
+    for account_code, debit_amount, credit_amount in lines:
+        entry = _build_entry_for_account(
+            conn,
+            account_code,
+            debit_amount,
+            credit_amount,
+            dims=dims,
+            description=description,
+        )
+        entry["line_no"] = len(entries) + 1
+        entries.append(entry)
+    return entries
+
+
+def _create_posted_voucher(
+    conn, date: str, description: str, entries: List[Dict[str, Any]]
+) -> Dict[str, Any]:
+    total_debit = sum(e["debit_amount"] for e in entries)
+    total_credit = sum(e["credit_amount"] for e in entries)
+    if abs(total_debit - total_credit) >= 0.01:
+        raise LedgerError(
+            "NOT_BALANCED",
+            f"借贷不相等：借方{total_debit}，贷方{total_credit}",
+            {
+                "debit_total": round(total_debit, 2),
+                "credit_total": round(total_credit, 2),
+                "difference": round(total_debit - total_credit, 2),
+            },
+        )
+    voucher_id, voucher_no, period, _ = insert_voucher(
+        conn,
+        {"date": date, "description": description},
+        entries,
+        "reviewed",
+    )
+    voucher = confirm_voucher(conn, voucher_id)
+    return {
+        "voucher_id": voucher_id,
+        "voucher_no": voucher_no,
+        "period": period,
+        "confirmed_at": voucher.get("confirmed_at"),
+    }
+
+
+def add_ar_item(
+    conn, customer_code: str, amount: float, date: str, description: Optional[str] = None
+) -> Dict[str, Any]:
+    if amount <= 0:
+        raise LedgerError("AR_AMOUNT_INVALID", "应收金额必须大于 0")
+    customer_id = find_dimension(conn, "customer", customer_code)
+    mapping = _load_subledger_mapping()["ar"]
+    description = description or "AR item"
+    dims = {"customer_id": customer_id}
+    entries = _build_entries(
+        conn,
+        [
+            (mapping["ar_account"], amount, 0.0),
+            (mapping["revenue_account"], 0.0, amount),
+        ],
+        dims=dims,
+        description=description,
+    )
+    voucher = _create_posted_voucher(conn, date, description, entries)
+    cur = conn.execute(
+        """
+        INSERT INTO ar_items (customer_id, voucher_id, amount, settled_amount, status)
+        VALUES (?, ?, ?, 0, 'open')
+        """,
+        (customer_id, voucher["voucher_id"], round(amount, 2)),
+    )
+    return {
+        "item_id": cur.lastrowid,
+        "voucher_id": voucher["voucher_id"],
+        "amount": round(amount, 2),
+        "status": "open",
+    }
+
+
+def settle_ar_item(
+    conn, item_id: int, amount: float, date: str, description: Optional[str] = None
+) -> Dict[str, Any]:
+    row = conn.execute("SELECT * FROM ar_items WHERE id = ?", (item_id,)).fetchone()
+    if not row:
+        raise LedgerError("AR_ITEM_NOT_FOUND", f"应收不存在: {item_id}")
+    if amount <= 0:
+        raise LedgerError("AR_AMOUNT_INVALID", "核销金额必须大于 0")
+    remaining = float(row["amount"]) - float(row["settled_amount"] or 0)
+    if amount - remaining > 0.01:
+        raise LedgerError("AR_AMOUNT_EXCEED", "核销金额超过剩余应收")
+
+    mapping = _load_subledger_mapping()["ar"]
+    description = description or "AR settlement"
+    dims = {"customer_id": row["customer_id"]}
+    entries = _build_entries(
+        conn,
+        [
+            (mapping["bank_account"], amount, 0.0),
+            (mapping["ar_account"], 0.0, amount),
+        ],
+        dims=dims,
+        description=description,
+    )
+    voucher = _create_posted_voucher(conn, date, description, entries)
+    conn.execute(
+        """
+        INSERT INTO settlements (item_type, item_id, amount, voucher_id, date)
+        VALUES ('ar', ?, ?, ?, ?)
+        """,
+        (item_id, round(amount, 2), voucher["voucher_id"], date),
+    )
+    new_settled = round(float(row["settled_amount"] or 0) + amount, 2)
+    status = "settled" if new_settled >= float(row["amount"]) - 0.01 else "open"
+    conn.execute(
+        "UPDATE ar_items SET settled_amount = ?, status = ? WHERE id = ?",
+        (new_settled, status, item_id),
+    )
+    return {
+        "item_id": item_id,
+        "voucher_id": voucher["voucher_id"],
+        "settled_amount": new_settled,
+        "status": status,
+    }
+
+
+def list_ar_items(conn, status: Optional[str] = None) -> List[Dict[str, Any]]:
+    conditions: List[str] = []
+    params: List[Any] = []
+    if status and status != "all":
+        conditions.append("status = ?")
+        params.append(status)
+    where_clause = f"WHERE {' AND '.join(conditions)}" if conditions else ""
+    rows = conn.execute(
+        f"SELECT * FROM ar_items {where_clause} ORDER BY id",
+        params,
+    ).fetchall()
+    return [dict(row) for row in rows]
+
+
+def ar_aging(conn, as_of: str) -> Dict[str, float]:
+    rows = conn.execute(
+        """
+        SELECT ai.amount, ai.settled_amount, v.date
+        FROM ar_items ai
+        JOIN vouchers v ON ai.voucher_id = v.id
+        WHERE ai.status = 'open'
+        """
+    ).fetchall()
+    buckets = {"0_30": 0.0, "31_60": 0.0, "61_90": 0.0, "90_plus": 0.0}
+    as_of_date = datetime.strptime(as_of, "%Y-%m-%d")
+    for row in rows:
+        remaining = float(row["amount"]) - float(row["settled_amount"] or 0)
+        if remaining <= 0:
+            continue
+        delta = (as_of_date - datetime.strptime(row["date"], "%Y-%m-%d")).days
+        if delta <= 30:
+            buckets["0_30"] += remaining
+        elif delta <= 60:
+            buckets["31_60"] += remaining
+        elif delta <= 90:
+            buckets["61_90"] += remaining
+        else:
+            buckets["90_plus"] += remaining
+    return {k: round(v, 2) for k, v in buckets.items()}
+
+
+def add_ap_item(
+    conn, supplier_code: str, amount: float, date: str, description: Optional[str] = None
+) -> Dict[str, Any]:
+    if amount <= 0:
+        raise LedgerError("AP_AMOUNT_INVALID", "应付金额必须大于 0")
+    supplier_id = find_dimension(conn, "supplier", supplier_code)
+    mapping = _load_subledger_mapping()["ap"]
+    description = description or "AP item"
+    dims = {"supplier_id": supplier_id}
+    entries = _build_entries(
+        conn,
+        [
+            (mapping["inventory_account"], amount, 0.0),
+            (mapping["ap_account"], 0.0, amount),
+        ],
+        dims=dims,
+        description=description,
+    )
+    voucher = _create_posted_voucher(conn, date, description, entries)
+    cur = conn.execute(
+        """
+        INSERT INTO ap_items (supplier_id, voucher_id, amount, settled_amount, status)
+        VALUES (?, ?, ?, 0, 'open')
+        """,
+        (supplier_id, voucher["voucher_id"], round(amount, 2)),
+    )
+    return {
+        "item_id": cur.lastrowid,
+        "voucher_id": voucher["voucher_id"],
+        "amount": round(amount, 2),
+        "status": "open",
+    }
+
+
+def settle_ap_item(
+    conn, item_id: int, amount: float, date: str, description: Optional[str] = None
+) -> Dict[str, Any]:
+    row = conn.execute("SELECT * FROM ap_items WHERE id = ?", (item_id,)).fetchone()
+    if not row:
+        raise LedgerError("AP_ITEM_NOT_FOUND", f"应付不存在: {item_id}")
+    if amount <= 0:
+        raise LedgerError("AP_AMOUNT_INVALID", "核销金额必须大于 0")
+    remaining = float(row["amount"]) - float(row["settled_amount"] or 0)
+    if amount - remaining > 0.01:
+        raise LedgerError("AP_AMOUNT_EXCEED", "核销金额超过剩余应付")
+
+    mapping = _load_subledger_mapping()["ap"]
+    description = description or "AP settlement"
+    dims = {"supplier_id": row["supplier_id"]}
+    entries = _build_entries(
+        conn,
+        [
+            (mapping["ap_account"], amount, 0.0),
+            (mapping["bank_account"], 0.0, amount),
+        ],
+        dims=dims,
+        description=description,
+    )
+    voucher = _create_posted_voucher(conn, date, description, entries)
+    conn.execute(
+        """
+        INSERT INTO settlements (item_type, item_id, amount, voucher_id, date)
+        VALUES ('ap', ?, ?, ?, ?)
+        """,
+        (item_id, round(amount, 2), voucher["voucher_id"], date),
+    )
+    new_settled = round(float(row["settled_amount"] or 0) + amount, 2)
+    status = "settled" if new_settled >= float(row["amount"]) - 0.01 else "open"
+    conn.execute(
+        "UPDATE ap_items SET settled_amount = ?, status = ? WHERE id = ?",
+        (new_settled, status, item_id),
+    )
+    return {
+        "item_id": item_id,
+        "voucher_id": voucher["voucher_id"],
+        "settled_amount": new_settled,
+        "status": status,
+    }
+
+
+def list_ap_items(conn, status: Optional[str] = None) -> List[Dict[str, Any]]:
+    conditions: List[str] = []
+    params: List[Any] = []
+    if status and status != "all":
+        conditions.append("status = ?")
+        params.append(status)
+    where_clause = f"WHERE {' AND '.join(conditions)}" if conditions else ""
+    rows = conn.execute(
+        f"SELECT * FROM ap_items {where_clause} ORDER BY id",
+        params,
+    ).fetchall()
+    return [dict(row) for row in rows]
+
+
+def _get_inventory_item(conn, sku: str) -> Optional[Dict[str, Any]]:
+    row = conn.execute(
+        "SELECT * FROM inventory_items WHERE sku = ?",
+        (sku,),
+    ).fetchone()
+    return dict(row) if row else None
+
+
+def _ensure_inventory_item(
+    conn, sku: str, name: Optional[str] = None, unit: Optional[str] = None
+) -> Dict[str, Any]:
+    existing = _get_inventory_item(conn, sku)
+    if existing:
+        return existing
+    final_name = name or sku
+    final_unit = unit or "unit"
+    conn.execute(
+        "INSERT INTO inventory_items (sku, name, unit) VALUES (?, ?, ?)",
+        (sku, final_name, final_unit),
+    )
+    return {"sku": sku, "name": final_name, "unit": final_unit}
+
+
+def _get_inventory_balance(conn, sku: str, period: str) -> Tuple[float, float]:
+    row = conn.execute(
+        "SELECT qty, amount FROM inventory_balances WHERE sku = ? AND period = ?",
+        (sku, period),
+    ).fetchone()
+    if row:
+        return float(row["qty"]), float(row["amount"])
+    prev = conn.execute(
+        """
+        SELECT qty, amount FROM inventory_balances
+        WHERE sku = ? AND period < ?
+        ORDER BY period DESC
+        LIMIT 1
+        """,
+        (sku, period),
+    ).fetchone()
+    if prev:
+        return float(prev["qty"]), float(prev["amount"])
+    return 0.0, 0.0
+
+
+def _upsert_inventory_balance(conn, sku: str, period: str, qty: float, amount: float) -> None:
+    conn.execute(
+        """
+        INSERT INTO inventory_balances (sku, period, qty, amount, updated_at)
+        VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)
+        ON CONFLICT(sku, period) DO UPDATE SET
+          qty = excluded.qty,
+          amount = excluded.amount,
+          updated_at = CURRENT_TIMESTAMP
+        """,
+        (sku, period, round(qty, 2), round(amount, 2)),
+    )
+
+
+def inventory_move_in(
+    conn,
+    sku: str,
+    qty: float,
+    unit_cost: float,
+    date: str,
+    description: Optional[str] = None,
+    name: Optional[str] = None,
+    unit: Optional[str] = None,
+) -> Dict[str, Any]:
+    if qty <= 0 or unit_cost < 0:
+        raise LedgerError("INVENTORY_AMOUNT_INVALID", "入库数量或成本无效")
+    _ensure_inventory_item(conn, sku, name, unit)
+    mapping = _load_subledger_mapping()["inventory"]
+    description = description or "Inventory in"
+    total_cost = round(qty * unit_cost, 2)
+    entries = _build_entries(
+        conn,
+        [
+            (mapping["inventory_account"], total_cost, 0.0),
+            (mapping["offset_account"], 0.0, total_cost),
+        ],
+        description=description,
+    )
+    voucher = _create_posted_voucher(conn, date, description, entries)
+    conn.execute(
+        """
+        INSERT INTO inventory_moves (sku, direction, qty, unit_cost, total_cost, voucher_id, date)
+        VALUES (?, 'in', ?, ?, ?, ?, ?)
+        """,
+        (sku, round(qty, 2), round(unit_cost, 2), total_cost, voucher["voucher_id"], date),
+    )
+    period = parse_period(date)
+    current_qty, current_amount = _get_inventory_balance(conn, sku, period)
+    new_qty = round(current_qty + qty, 2)
+    new_amount = round(current_amount + total_cost, 2)
+    _upsert_inventory_balance(conn, sku, period, new_qty, new_amount)
+    return {
+        "sku": sku,
+        "voucher_id": voucher["voucher_id"],
+        "qty": round(qty, 2),
+        "unit_cost": round(unit_cost, 2),
+        "total_cost": total_cost,
+        "period": period,
+    }
+
+
+def inventory_move_out(
+    conn,
+    sku: str,
+    qty: float,
+    date: str,
+    description: Optional[str] = None,
+) -> Dict[str, Any]:
+    if qty <= 0:
+        raise LedgerError("INVENTORY_AMOUNT_INVALID", "出库数量无效")
+    mapping = _load_subledger_mapping()["inventory"]
+    description = description or "Inventory out"
+    period = parse_period(date)
+    current_qty, current_amount = _get_inventory_balance(conn, sku, period)
+    if current_qty <= 0 or qty - current_qty > 0.01:
+        raise LedgerError("INVENTORY_INSUFFICIENT", "库存数量不足")
+    avg_cost = current_amount / current_qty if current_qty else 0.0
+    unit_cost = round(avg_cost, 2)
+    total_cost = round(unit_cost * qty, 2)
+    entries = _build_entries(
+        conn,
+        [
+            (mapping["cost_account"], total_cost, 0.0),
+            (mapping["inventory_account"], 0.0, total_cost),
+        ],
+        description=description,
+    )
+    voucher = _create_posted_voucher(conn, date, description, entries)
+    conn.execute(
+        """
+        INSERT INTO inventory_moves (sku, direction, qty, unit_cost, total_cost, voucher_id, date)
+        VALUES (?, 'out', ?, ?, ?, ?, ?)
+        """,
+        (sku, round(qty, 2), unit_cost, total_cost, voucher["voucher_id"], date),
+    )
+    new_qty = round(current_qty - qty, 2)
+    new_amount = round(current_amount - total_cost, 2)
+    _upsert_inventory_balance(conn, sku, period, new_qty, new_amount)
+    return {
+        "sku": sku,
+        "voucher_id": voucher["voucher_id"],
+        "qty": round(qty, 2),
+        "unit_cost": unit_cost,
+        "total_cost": total_cost,
+        "period": period,
+    }
+
+
+def inventory_balance(conn, period: str, sku: Optional[str] = None) -> List[Dict[str, Any]]:
+    conditions = ["period = ?"]
+    params: List[Any] = [period]
+    if sku:
+        conditions.append("sku = ?")
+        params.append(sku)
+    rows = conn.execute(
+        f"SELECT * FROM inventory_balances WHERE {' AND '.join(conditions)} ORDER BY sku",
+        params,
+    ).fetchall()
+    return [dict(row) for row in rows]
+
+
+def add_fixed_asset(
+    conn,
+    name: str,
+    cost: float,
+    life_years: int,
+    salvage_value: float,
+    acquired_at: str,
+) -> Dict[str, Any]:
+    if cost <= 0:
+        raise LedgerError("ASSET_COST_INVALID", "固定资产成本必须大于 0")
+    if life_years <= 0:
+        raise LedgerError("ASSET_LIFE_INVALID", "固定资产年限必须大于 0")
+    mapping = _load_subledger_mapping()["fixed_asset"]
+    description = f"Fixed asset: {name}"
+    entries = _build_entries(
+        conn,
+        [
+            (mapping["asset_account"], cost, 0.0),
+            (mapping["bank_account"], 0.0, cost),
+        ],
+        description=description,
+    )
+    voucher = _create_posted_voucher(conn, acquired_at, description, entries)
+    cur = conn.execute(
+        """
+        INSERT INTO fixed_assets (name, cost, acquired_at, life_years, salvage_value, status)
+        VALUES (?, ?, ?, ?, ?, 'active')
+        """,
+        (name, round(cost, 2), acquired_at, life_years, round(salvage_value, 2)),
+    )
+    return {"asset_id": cur.lastrowid, "voucher_id": voucher["voucher_id"]}
+
+
+def depreciate_assets(conn, period: str) -> Dict[str, Any]:
+    mapping = _load_subledger_mapping()["fixed_asset"]
+    assets = conn.execute(
+        "SELECT * FROM fixed_assets WHERE status = 'active' ORDER BY id"
+    ).fetchall()
+    entries: List[Tuple[int, float]] = []
+    for asset in assets:
+        existing = conn.execute(
+            "SELECT 1 FROM fixed_asset_depreciations WHERE asset_id = ? AND period = ?",
+            (asset["id"], period),
+        ).fetchone()
+        if existing:
+            continue
+        total_depr_row = conn.execute(
+            "SELECT SUM(amount) AS total FROM fixed_asset_depreciations WHERE asset_id = ?",
+            (asset["id"],),
+        ).fetchone()
+        total_depr = float(total_depr_row["total"] or 0)
+        depreciable = float(asset["cost"]) - float(asset["salvage_value"] or 0)
+        remaining = depreciable - total_depr
+        if remaining <= 0:
+            continue
+        months = int(asset["life_years"]) * 12
+        monthly = round(depreciable / months, 2)
+        amount = monthly if remaining > monthly else round(remaining, 2)
+        if amount <= 0:
+            continue
+        entries.append((int(asset["id"]), amount))
+
+    if not entries:
+        raise LedgerError("DEPRECIATION_EMPTY", "没有可计提的资产")
+
+    total_amount = round(sum(amount for _, amount in entries), 2)
+    description = f"Depreciation {period}"
+    voucher_entries = _build_entries(
+        conn,
+        [
+            (mapping["depreciation_expense_account"], total_amount, 0.0),
+            (mapping["accum_depreciation_account"], 0.0, total_amount),
+        ],
+        description=description,
+    )
+    voucher = _create_posted_voucher(
+        conn,
+        f"{period}-01",
+        description,
+        voucher_entries,
+    )
+    for asset_id, amount in entries:
+        conn.execute(
+            """
+            INSERT INTO fixed_asset_depreciations (asset_id, period, amount, voucher_id)
+            VALUES (?, ?, ?, ?)
+            """,
+            (asset_id, period, amount, voucher["voucher_id"]),
+        )
+    return {
+        "voucher_id": voucher["voucher_id"],
+        "total_amount": total_amount,
+        "assets_count": len(entries),
+    }
+
+
+def dispose_fixed_asset(
+    conn, asset_id: int, date: str, description: Optional[str] = None
+) -> Dict[str, Any]:
+    asset = conn.execute(
+        "SELECT * FROM fixed_assets WHERE id = ?",
+        (asset_id,),
+    ).fetchone()
+    if not asset:
+        raise LedgerError("ASSET_NOT_FOUND", f"固定资产不存在: {asset_id}")
+    if asset["status"] != "active":
+        raise LedgerError("ASSET_STATUS_INVALID", "固定资产已处置")
+    mapping = _load_subledger_mapping()["fixed_asset"]
+    total_depr_row = conn.execute(
+        "SELECT SUM(amount) AS total FROM fixed_asset_depreciations WHERE asset_id = ?",
+        (asset_id,),
+    ).fetchone()
+    accumulated = round(float(total_depr_row["total"] or 0), 2)
+    cost = round(float(asset["cost"]), 2)
+    net_value = round(cost - accumulated, 2)
+    description = description or f"Dispose asset {asset_id}"
+    lines = []
+    if accumulated > 0:
+        lines.append((mapping["accum_depreciation_account"], accumulated, 0.0))
+    if net_value >= 0:
+        lines.append((mapping["depreciation_expense_account"], net_value, 0.0))
+    else:
+        lines.append((mapping["depreciation_expense_account"], 0.0, abs(net_value)))
+    lines.append((mapping["asset_account"], 0.0, cost))
+    entries = _build_entries(conn, lines, description=description)
+    voucher = _create_posted_voucher(conn, date, description, entries)
+    conn.execute(
+        "UPDATE fixed_assets SET status = 'disposed' WHERE id = ?",
+        (asset_id,),
+    )
+    return {"asset_id": asset_id, "voucher_id": voucher["voucher_id"], "status": "disposed"}
+
+
+def list_fixed_assets(conn, status: Optional[str] = None) -> List[Dict[str, Any]]:
+    conditions: List[str] = []
+    params: List[Any] = []
+    if status and status != "all":
+        conditions.append("status = ?")
+        params.append(status)
+    where_clause = f"WHERE {' AND '.join(conditions)}" if conditions else ""
+    rows = conn.execute(
+        f"SELECT * FROM fixed_assets {where_clause} ORDER BY id",
+        params,
+    ).fetchall()
+    return [dict(row) for row in rows]
+
+
 def build_balance_input(balances: List[Dict[str, Any]]) -> Dict[str, Any]:
     mapping = _load_balance_mapping()
     mapped = _apply_balance_mapping(balances, mapping)
@@ -850,6 +1485,25 @@ def _load_close_config() -> Dict[str, str]:
         "profit_account": data.get("profit_account", DEFAULT_CLOSE_CONFIG["profit_account"]),
         "retain_account": data.get("retain_account", DEFAULT_CLOSE_CONFIG["retain_account"]),
     }
+
+
+def _load_subledger_mapping() -> Dict[str, Dict[str, str]]:
+    mapping_path = Path(__file__).resolve().parents[1] / "data" / "subledger_mapping.json"
+    if not mapping_path.exists():
+        return DEFAULT_SUBLEDGER_MAPPING
+    try:
+        data = json.loads(mapping_path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as exc:
+        raise LedgerError("SUBLEDGER_MAPPING_INVALID", f"子账映射JSON错误: {exc}") from exc
+    if not isinstance(data, dict):
+        raise LedgerError("SUBLEDGER_MAPPING_INVALID", "子账映射必须为对象")
+    mapping = dict(DEFAULT_SUBLEDGER_MAPPING)
+    for key, value in data.items():
+        if isinstance(value, dict):
+            current = dict(mapping.get(key, {}))
+            current.update(value)
+            mapping[key] = current
+    return mapping
 
 
 def _load_balance_mapping() -> Dict[str, Any]:

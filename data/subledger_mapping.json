@@ -1,0 +1,23 @@
+{
+  "ar": {
+    "ar_account": "1122",
+    "revenue_account": "6001",
+    "bank_account": "1002"
+  },
+  "ap": {
+    "ap_account": "2202",
+    "inventory_account": "1403",
+    "bank_account": "1002"
+  },
+  "inventory": {
+    "inventory_account": "1403",
+    "cost_account": "6401",
+    "offset_account": "1002"
+  },
+  "fixed_asset": {
+    "asset_account": "1601",
+    "accum_depreciation_account": "1602",
+    "depreciation_expense_account": "6602",
+    "bank_account": "1002"
+  }
+}
