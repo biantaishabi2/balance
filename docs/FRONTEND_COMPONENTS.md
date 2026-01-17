@@ -226,36 +226,37 @@ delete  unreview     void
 
 ## 三、需新增组件清单（精简版）
 
-### 3.1 核心业务组件（必须新增）- 6 个
+> **设计思路**：AI 负责录入，人负责查看和确认。页面编辑是可选的增强功能。
 
-| # | 组件 | 用途 | 优先级 | 说明 |
-|---|------|------|--------|------|
-| 1 | `EntryTable` | 可编辑分录表 | **P0** | 凭证修改核心，支持行内编辑、新增/删除行、借贷平衡校验 |
-| 2 | `AccountSelector` | 科目选择器 | **P0** | 树形下拉 + 搜索，显示科目代码/名称/停用状态 |
-| 3 | `DimensionSelector` | 维度选择器 | **P0** | 通用选择器，通过 `type` 参数支持：department/project/customer/supplier/employee/item |
-| 4 | `HierarchyTable` | 层级分组表 | **P0** | 报表专用，建议用 AntV S2，支持展开/收起、小计/合计 |
-| 5 | `DataTable` | 通用数据表格 | **P0** | 配置化表格，支持：列定义、筛选、排序、分页、行选择、行操作按钮 |
-| 6 | `PeriodSelector` | 期间选择器 | **P1** | 年月选择，财务专用格式（YYYY-MM） |
+### 3.1 P0：查看/确认（必须新增）- 2 个
 
-### 3.2 通用 UI 组件（需新增）- 5 个
+这是最小可用版本，支持：看列表、看报表、点按钮确认。
 
-| # | 组件 | 用途 | 优先级 | 说明 |
-|---|------|------|--------|------|
-| 7 | `StatusBadge` | 状态徽章 | **P1** | 通用状态显示，通过 `type` 参数支持：voucher/period/ar/ap 等不同状态集 |
-| 8 | `BalanceIndicator` | 借贷平衡指示器 | **P1** | 显示借方合计、贷方合计、是否平衡 |
-| 9 | `FormDialog` | 通用表单对话框 | **P1** | 配置化表单弹窗，支持字段定义、校验、提交 |
-| 10 | `ConfirmDialog` | 确认对话框 | **P1** | 二次确认弹窗，支持标题、说明文字、危险操作样式 |
-| 11 | `ExportMenu` | 导出菜单 | **P2** | 下拉菜单，支持 Excel/PDF/CSV 格式导出 |
+| # | 组件 | 用途 | 说明 |
+|---|------|------|------|
+| 1 | `DataTable` | 通用数据表格 | 配置化表格，支持：列定义、筛选、排序、分页、行选择、行操作按钮。用于凭证列表、余额表、AR/AP 列表等所有列表页面 |
+| 2 | `HierarchyTable` | 层级分组表 | 报表专用，建议用 AntV S2，支持展开/收起、小计/合计。用于资产负债表、利润表、现金流量表 |
 
-### 3.3 业务专用组件（需新增）- 5 个
+**其他 UI 复用 zcpg**：状态用文字/颜色、确认用 Modal、期间用下拉框、导出用按钮。
 
-| # | 组件 | 用途 | 优先级 | 说明 |
-|---|------|------|--------|------|
-| 12 | `AgingReport` | 账龄分析表 | **P1** | AR/AP 共用，按 0-30/31-60/61-90/90+ 天分组 |
-| 13 | `BudgetCompareView` | 预算对比视图 | **P2** | 显示预算/实际/差异/执行率 |
-| 14 | `AuditTimeline` | 审计轨迹 | **P2** | 基于 zcpg timeline 改造，显示操作历史 |
-| 15 | `ReportParams` | 报表参数面板 | **P1** | 组合筛选：期间、口径、维度、预算对比开关 |
-| 16 | `JSONEditor` | JSON 编辑器 | **P2** | 模板配置用，语法高亮、格式校验 |
+### 3.2 P1：页面编辑（如需在页面上修改）- 3 个
+
+如果需要支持用户在页面上直接修改凭证（而不是告诉 AI 改），则需要这些组件：
+
+| # | 组件 | 用途 | 说明 |
+|---|------|------|------|
+| 3 | `EntryTable` | 可编辑分录表 | 凭证修改核心，支持行内编辑、新增/删除行、借贷平衡校验 |
+| 4 | `AccountSelector` | 科目选择器 | 树形下拉 + 搜索，显示科目代码/名称/停用状态。在 EntryTable 中使用 |
+| 5 | `DimensionSelector` | 维度选择器 | 通用选择器，通过 `type` 参数支持：department/project/customer/supplier/employee/item。在 EntryTable 中使用 |
+
+### 3.3 P2：增强功能（可选）
+
+| # | 组件 | 用途 | 说明 |
+|---|------|------|------|
+| 6 | `AgingReport` | 账龄分析表 | AR/AP 共用，按 0-30/31-60/61-90/90+ 天分组 |
+| 7 | `BudgetCompareView` | 预算对比视图 | 显示预算/实际/差异/执行率 |
+| 8 | `AuditTimeline` | 审计轨迹 | 基于 zcpg timeline 改造，显示操作历史 |
+| 9 | `JSONEditor` | JSON 编辑器 | 模板配置用，语法高亮、格式校验 |
 
 ---
 
@@ -591,27 +592,32 @@ const s2Options = {
 
 ### 组件数量统计
 
-| 类别 | 数量 |
-|------|------|
-| 核心业务组件（新增） | 6 |
-| 通用 UI 组件（新增） | 5 |
-| 业务专用组件（新增） | 5 |
-| **需新增总计** | **16** |
-| 可复用 zcpg | 10 |
-| **总计** | **26** |
+| 类别 | 数量 | 说明 |
+|------|------|------|
+| P0 查看/确认 | 2 | DataTable、HierarchyTable |
+| P1 页面编辑 | 3 | EntryTable、AccountSelector、DimensionSelector |
+| P2 增强功能 | 4 | AgingReport、BudgetCompareView、AuditTimeline、JSONEditor |
+| **需新增总计** | **9** | |
+| 可复用 zcpg | 10 | Modal、Button、Select、Tabs 等 |
 
 ### 开发优先级
 
 | 优先级 | 组件 | 说明 |
 |--------|------|------|
-| **P0** | `EntryTable`, `AccountSelector`, `DimensionSelector`, `HierarchyTable`, `DataTable` | 凭证和报表核心 |
-| **P1** | `PeriodSelector`, `StatusBadge`, `BalanceIndicator`, `FormDialog`, `ConfirmDialog`, `AgingReport`, `ReportParams` | 基础交互 |
-| **P2** | `ExportMenu`, `BudgetCompareView`, `AuditTimeline`, `JSONEditor` | 增强功能 |
+| **P0** | `DataTable`, `HierarchyTable` | 最小可用版本：看列表、看报表、点确认 |
+| **P1** | `EntryTable`, `AccountSelector`, `DimensionSelector` | 页面编辑功能（如需在页面上改凭证） |
+| **P2** | `AgingReport`, `BudgetCompareView`, `AuditTimeline`, `JSONEditor` | 增强功能 |
 
-### 页面开发顺序建议
+### 开发路径建议
 
-1. **P0**：凭证工作台 + 凭证详情（依赖 EntryTable、AccountSelector、DimensionSelector、DataTable）
-2. **P0**：报表中心（依赖 HierarchyTable、ReportParams）
-3. **P1**：余额查询、期间管理
-4. **P1**：子账管理（AR/AP/存货/固定资产）- 主要复用 DataTable + FormDialog
-5. **P2**：配置页面
+**最小可用（P0）**：
+1. 凭证工作台：DataTable 显示凭证列表 + 操作按钮（审核/确认）
+2. 报表中心：HierarchyTable 显示三表
+3. 其他列表页面：复用 DataTable
+
+**增加页面编辑（P1）**：
+4. 凭证详情页：EntryTable + AccountSelector + DimensionSelector
+5. 用户可以在页面上直接修改分录
+
+**增强功能（P2）**：
+6. 按需添加账龄分析、预算对比、审计轨迹等
