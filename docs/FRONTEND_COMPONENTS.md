@@ -224,99 +224,238 @@ delete  unreview     void
 
 ---
 
-## 三、页面详细设计 + 组件需求
+## 三、需新增组件清单（精简版）
 
-### 3.1 凭证工作台 `/vouchers`
+### 3.1 核心业务组件（必须新增）- 6 个
 
-**功能**：查看待处理凭证、执行审核/确认操作
+| # | 组件 | 用途 | 优先级 | 说明 |
+|---|------|------|--------|------|
+| 1 | `EntryTable` | 可编辑分录表 | **P0** | 凭证修改核心，支持行内编辑、新增/删除行、借贷平衡校验 |
+| 2 | `AccountSelector` | 科目选择器 | **P0** | 树形下拉 + 搜索，显示科目代码/名称/停用状态 |
+| 3 | `DimensionSelector` | 维度选择器 | **P0** | 通用选择器，通过 `type` 参数支持：department/project/customer/supplier/employee/item |
+| 4 | `HierarchyTable` | 层级分组表 | **P0** | 报表专用，建议用 AntV S2，支持展开/收起、小计/合计 |
+| 5 | `DataTable` | 通用数据表格 | **P0** | 配置化表格，支持：列定义、筛选、排序、分页、行选择、行操作按钮 |
+| 6 | `PeriodSelector` | 期间选择器 | **P1** | 年月选择，财务专用格式（YYYY-MM） |
 
-**页面布局**：
-```
-┌─────────────────────────────────────────────────────────┐
-│ [筛选工具条]                                            │
-│ 期间选择 | 状态筛选 | 科目筛选 | 凭证号搜索 | 导出按钮  │
-├─────────────────────────────────────────────────────────┤
-│ [统计卡片]                                              │
-│ 待审核: 12  | 已审核待确认: 5  | 本期已确认: 48         │
-├─────────────────────────────────────────────────────────┤
-│ [凭证列表表格]                                          │
-│ ☐ | 凭证号 | 日期 | 摘要 | 借方合计 | 贷方合计 | 状态 | 操作 │
-│ ☐ | 2025-01-001 | 01-15 | 销售收入 | 10,000 | 10,000 | draft | [审核][删除] │
-│ ☐ | 2025-01-002 | 01-16 | 采购付款 | 5,000 | 5,000 | reviewed | [确认][反审核] │
-├─────────────────────────────────────────────────────────┤
-│ [批量操作栏]                                            │
-│ 已选 3 条 | [批量审核] [批量确认]                        │
-└─────────────────────────────────────────────────────────┘
-```
+### 3.2 通用 UI 组件（需新增）- 5 个
 
-**需要的组件**：
+| # | 组件 | 用途 | 优先级 | 说明 |
+|---|------|------|--------|------|
+| 7 | `StatusBadge` | 状态徽章 | **P1** | 通用状态显示，通过 `type` 参数支持：voucher/period/ar/ap 等不同状态集 |
+| 8 | `BalanceIndicator` | 借贷平衡指示器 | **P1** | 显示借方合计、贷方合计、是否平衡 |
+| 9 | `FormDialog` | 通用表单对话框 | **P1** | 配置化表单弹窗，支持字段定义、校验、提交 |
+| 10 | `ConfirmDialog` | 确认对话框 | **P1** | 二次确认弹窗，支持标题、说明文字、危险操作样式 |
+| 11 | `ExportMenu` | 导出菜单 | **P2** | 下拉菜单，支持 Excel/PDF/CSV 格式导出 |
 
-| 组件 | 描述 | 复用/新增 |
-|------|------|---------|
-| `PeriodSelector` | 期间选择器（年月） | 新增 |
-| `StatusFilter` | 状态筛选（draft/reviewed/confirmed/voided） | 可复用 zcpg |
-| `AccountSelector` | 科目选择器（树形/搜索） | 新增 |
-| `VoucherTable` | 凭证列表表格（可选择、可排序） | 新增 |
-| `StatCards` | 统计卡片组 | 可复用 zcpg |
-| `BatchActionBar` | 批量操作栏 | 新增 |
-| `ExportButton` | 导出按钮（CSV/Excel） | 可复用 zcpg |
+### 3.3 业务专用组件（需新增）- 5 个
+
+| # | 组件 | 用途 | 优先级 | 说明 |
+|---|------|------|--------|------|
+| 12 | `AgingReport` | 账龄分析表 | **P1** | AR/AP 共用，按 0-30/31-60/61-90/90+ 天分组 |
+| 13 | `BudgetCompareView` | 预算对比视图 | **P2** | 显示预算/实际/差异/执行率 |
+| 14 | `AuditTimeline` | 审计轨迹 | **P2** | 基于 zcpg timeline 改造，显示操作历史 |
+| 15 | `ReportParams` | 报表参数面板 | **P1** | 组合筛选：期间、口径、维度、预算对比开关 |
+| 16 | `JSONEditor` | JSON 编辑器 | **P2** | 模板配置用，语法高亮、格式校验 |
 
 ---
 
-### 3.2 凭证详情 `/vouchers/:id`
+## 四、可复用 zcpg 组件 - 10 个
 
-**功能**：查看凭证详情、修改分录、执行操作
+| # | 组件 | 来源 | 用途 |
+|---|------|------|------|
+| 1 | `Table` | `data_card_components.ex` | 基础表格（只读场景） |
+| 2 | `Timeline` | `ui_components.ex` | 时间线基础组件 |
+| 3 | `StatCard` | `multiboard_card_components.ex` | 统计卡片 |
+| 4 | `Modal` | 通用 UI | 弹窗容器 |
+| 5 | `Button/ButtonGroup` | 通用 UI | 按钮 |
+| 6 | `Select/Dropdown` | 通用 UI | 下拉选择 |
+| 7 | `DatePicker` | 通用 UI | 日期选择 |
+| 8 | `FileUpload` | 通用 UI | 文件上传 |
+| 9 | `Tabs` | 通用 UI | Tab 切换 |
+| 10 | `Charts` | ECharts | 图表 |
 
-**页面布局**：
+---
+
+## 五、组件复用说明
+
+### 5.1 DataTable 复用场景
+
+`DataTable` 是通用表格组件，通过配置列定义复用于所有列表页面：
+
+| 页面 | 列配置示例 |
+|------|-----------|
+| 凭证列表 | `[凭证号, 日期, 摘要, 借方, 贷方, 状态, 操作]` |
+| 应收列表 | `[客户, 金额, 已收, 余额, 日期, 账龄, 操作]` |
+| 应付列表 | `[供应商, 金额, 已付, 余额, 日期, 账龄, 操作]` |
+| 固定资产列表 | `[资产编号, 名称, 原值, 累计折旧, 净值, 状态, 操作]` |
+| 存货结存 | `[物料, 数量, 单位成本, 金额]` |
+| 票据列表 | `[票据号, 金额, 到期日, 状态, 操作]` |
+| 收/付款计划 | `[关联单据, 到期日, 金额, 状态, 操作]` |
+| 科目列表 | `[代码, 名称, 类型, 方向, 状态, 操作]` |
+| 维度列表 | `[代码, 名称, 状态, 操作]` |
+| 预算列表 | `[期间, 维度, 金额, 操作]` |
+| 模板列表 | `[名称, 描述, 状态, 操作]` |
+| 币种/汇率 | `[币种, 汇率, 日期]` |
+
+### 5.2 DimensionSelector 复用场景
+
+`DimensionSelector` 通过 `type` 参数复用：
+
+```typescript
+// 部门选择
+<DimensionSelector type="department" />
+
+// 客户选择
+<DimensionSelector type="customer" />
+
+// 供应商选择
+<DimensionSelector type="supplier" />
+
+// 存货选择
+<DimensionSelector type="item" />
 ```
-┌─────────────────────────────────────────────────────────┐
-│ [凭证头信息]                                            │
-│ 凭证号: 2025-01-001    日期: 2025-01-15    状态: draft  │
-│ 摘要: 销售收入                                          │
-│ [编辑] [审核] [确认] [作废] [删除]                      │
-├─────────────────────────────────────────────────────────┤
-│ [分录表格] (可编辑)                                     │
-│ 行号 | 科目 | 科目名称 | 摘要 | 借方 | 贷方 | 部门 | 项目 │
-│ 1 | [1001▼] | 银行存款 | | 10,000.00 | | [销售部▼] | |
-│ 2 | [6001▼] | 主营收入 | | | 10,000.00 | | |
-│ [+ 新增行]                                              │
-├─────────────────────────────────────────────────────────┤
-│ [合计行]                                                │
-│ 借方合计: 10,000.00  贷方合计: 10,000.00  ✓ 平衡        │
-├─────────────────────────────────────────────────────────┤
-│ [附件区域]                                              │
-│ 📎 发票_001.pdf  📎 合同_A.pdf  [上传附件]              │
-├─────────────────────────────────────────────────────────┤
-│ [审计轨迹]                                              │
-│ 2025-01-15 10:30 AI 创建草稿                            │
-│ 2025-01-15 14:20 张三 审核通过                          │
-└─────────────────────────────────────────────────────────┘
+
+### 5.3 FormDialog 复用场景
+
+`FormDialog` 通过配置字段复用于所有新增/编辑场景：
+
+| 场景 | 字段配置 |
+|------|---------|
+| 新增科目 | `[代码, 名称, 类型, 方向, 上级科目]` |
+| 新增维度 | `[代码, 名称]` |
+| 核销操作 | `[核销金额, 核销日期, 备注]` |
+| 资产处置 | `[处置日期, 处置收入, 备注]` |
+| 设置预算 | `[期间, 维度, 金额]` |
+| 汇兑重估 | `[期间, 币种]` |
+
+### 5.4 StatusBadge 复用场景
+
+`StatusBadge` 通过 `type` 参数显示不同状态集：
+
+```typescript
+// 凭证状态
+<StatusBadge type="voucher" status="draft" />     // 草稿
+<StatusBadge type="voucher" status="reviewed" />  // 已审核
+<StatusBadge type="voucher" status="confirmed" /> // 已确认
+<StatusBadge type="voucher" status="voided" />    // 已作废
+
+// 期间状态
+<StatusBadge type="period" status="open" />       // 开放
+<StatusBadge type="period" status="closed" />     // 已结账
+<StatusBadge type="period" status="adjustment" /> // 调整期
+
+// AR/AP 状态
+<StatusBadge type="ar" status="open" />           // 未结清
+<StatusBadge type="ar" status="settled" />        // 已结清
 ```
 
-**需要的组件**：
+---
 
-| 组件 | 描述 | 复用/新增 |
-|------|------|---------|
-| `VoucherHeader` | 凭证头信息展示 | 新增 |
-| `VoucherStatusBadge` | 状态徽章 | 新增 |
-| `EntryTable` | **可编辑分录表**（核心组件） | **新增** |
-| `AccountSelector` | 科目选择器（下拉树/搜索） | **新增** |
-| `DimensionSelector` | 维度选择器（部门/项目/客户/供应商/员工） | **新增** |
-| `BalanceIndicator` | 借贷平衡指示器 | 新增 |
-| `AttachmentList` | 附件列表 | 可复用 zcpg |
-| `FileUpload` | 文件上传 | 可复用 zcpg |
-| `AuditTimeline` | 审计时间线 | 新增（基于 zcpg timeline） |
-| `ActionButtons` | 操作按钮组（审核/确认/作废/删除） | 新增 |
-| `ConfirmDialog` | 确认对话框（二次确认） | 可复用 zcpg |
+## 六、页面与组件对应关系
 
-**EntryTable 可编辑分录表 - 详细规格**：
+### 6.1 凭证工作台 `/vouchers`
+
+| 组件 | 来源 |
+|------|------|
+| `PeriodSelector` | 新增 |
+| `DataTable` | 新增（凭证列表配置） |
+| `StatusBadge` | 新增（type=voucher） |
+| `ConfirmDialog` | 新增（批量操作确认） |
+| `StatCard` | 复用 zcpg |
+| `Tabs` | 复用 zcpg |
+
+### 6.2 凭证详情 `/vouchers/:id`
+
+| 组件 | 来源 |
+|------|------|
+| `EntryTable` | **新增**（核心） |
+| `AccountSelector` | **新增**（核心） |
+| `DimensionSelector` | **新增**（核心） |
+| `BalanceIndicator` | 新增 |
+| `StatusBadge` | 新增 |
+| `AuditTimeline` | 新增 |
+| `ConfirmDialog` | 新增（操作确认） |
+| `FileUpload` | 复用 zcpg |
+
+### 6.3 报表中心 `/reports`
+
+| 组件 | 来源 |
+|------|------|
+| `HierarchyTable` | **新增**（核心） |
+| `ReportParams` | 新增 |
+| `PeriodSelector` | 新增 |
+| `DimensionSelector` | 新增 |
+| `BudgetCompareView` | 新增 |
+| `ExportMenu` | 新增 |
+| `Tabs` | 复用 zcpg |
+
+### 6.4 余额查询 `/balances`
+
+| 组件 | 来源 |
+|------|------|
+| `DataTable` | 新增（余额表配置） |
+| `PeriodSelector` | 新增 |
+| `AccountSelector` | 新增 |
+| `DimensionSelector` | 新增 |
+| `Tabs` | 复用 zcpg |
+
+### 6.5 期间管理 `/periods`
+
+| 组件 | 来源 |
+|------|------|
+| `DataTable` | 新增（期间列表配置） |
+| `StatusBadge` | 新增（type=period） |
+| `ConfirmDialog` | 新增（结账确认） |
+
+### 6.6 应收/应付管理 `/ar`, `/ap`
+
+| 组件 | 来源 |
+|------|------|
+| `DataTable` | 新增（AR/AP/票据/计划列表配置） |
+| `AgingReport` | 新增 |
+| `DimensionSelector` | 新增（客户/供应商选择） |
+| `FormDialog` | 新增（核销操作） |
+| `StatusBadge` | 新增 |
+| `Tabs` | 复用 zcpg |
+
+### 6.7 存货管理 `/inventory`
+
+| 组件 | 来源 |
+|------|------|
+| `DataTable` | 新增（结存/出入库列表配置） |
+| `DimensionSelector` | 新增（type=item） |
+| `FormDialog` | 新增（盘点录入） |
+
+### 6.8 固定资产 `/fixed-assets`
+
+| 组件 | 来源 |
+|------|------|
+| `DataTable` | 新增（资产/CIP列表配置） |
+| `FormDialog` | 新增（处置/转移操作） |
+| `DimensionSelector` | 新增（部门/项目选择） |
+
+### 6.9 配置页面（科目/维度/预算/模板/外汇）
+
+| 组件 | 来源 |
+|------|------|
+| `DataTable` | 新增（各列表配置） |
+| `FormDialog` | 新增（新增/编辑操作） |
+| `AccountSelector` | 新增（上级科目选择） |
+| `JSONEditor` | 新增（模板编辑） |
+| `Tabs` | 复用 zcpg |
+
+---
+
+## 七、核心组件详细规格
+
+### 7.1 EntryTable 可编辑分录表
 
 ```typescript
 interface EntryTableProps {
   entries: VoucherEntry[];
   editable: boolean;  // draft 状态可编辑
   onChange: (entries: VoucherEntry[]) => void;
-  accounts: Account[];  // 科目列表
+  accounts: Account[];
   dimensions: {
     departments: Dimension[];
     projects: Dimension[];
@@ -341,430 +480,138 @@ interface VoucherEntry {
 }
 ```
 
-功能要求：
+**功能要求**：
 - 行内编辑（点击单元格进入编辑模式）
-- 科目列：下拉树 + 搜索
-- 金额列：数字输入，自动格式化
-- 维度列：下拉选择
+- 科目列：使用 `AccountSelector`
+- 维度列：使用 `DimensionSelector`
+- 金额列：数字输入，自动千分位格式化
 - 新增/删除行
 - 实时计算借贷合计
-- 平衡校验提示
+- 平衡校验提示（使用 `BalanceIndicator`）
 
----
+**技术建议**：基于 Ant Design ProComponents - EditableProTable
 
-### 3.3 余额查询 `/balances`
-
-**页面布局**：
-```
-┌─────────────────────────────────────────────────────────┐
-│ [Tab 切换]                                              │
-│ [余额表] [试算平衡表]                                   │
-├─────────────────────────────────────────────────────────┤
-│ [筛选工具条]                                            │
-│ 期间: [2025-01▼] | 科目: [全部▼] | 部门: [全部▼] | 项目: [全部▼] │
-├─────────────────────────────────────────────────────────┤
-│ [余额表格]                                              │
-│ 科目代码 | 科目名称 | 期初余额 | 本期借方 | 本期贷方 | 期末余额 │
-│ 1001 | 银行存款 | 100,000 | 50,000 | 30,000 | 120,000 │
-│ 1002 | 应收账款 | 80,000 | 20,000 | 15,000 | 85,000 │
-│ ...                                                     │
-├─────────────────────────────────────────────────────────┤
-│ [导出] [打印]                                           │
-└─────────────────────────────────────────────────────────┘
-```
-
-**需要的组件**：
-
-| 组件 | 描述 | 复用/新增 |
-|------|------|---------|
-| `TabNav` | Tab 导航 | 可复用 zcpg |
-| `PeriodSelector` | 期间选择 | 复用 |
-| `AccountSelector` | 科目筛选 | 复用 |
-| `DimensionFilter` | 维度筛选组 | 新增 |
-| `BalanceTable` | 余额表格 | 新增 |
-| `TrialBalanceTable` | 试算平衡表 | 新增 |
-
----
-
-### 3.4 报表中心 `/reports`
-
-**页面布局**：
-```
-┌─────────────────────────────────────────────────────────┐
-│ [报表类型选择]                                          │
-│ [资产负债表] [利润表] [现金流量表] [合并报表] [税务报表] │
-├─────────────────────────────────────────────────────────┤
-│ [参数设置]                                              │
-│ 期间: [2025-01▼]  口径: [全部▼]  部门: [全部▼]          │
-│ ☐ 预算对比  预算维度: [部门▼]                           │
-├─────────────────────────────────────────────────────────┤
-│ [报表展示 - 层级表]                                     │
-│ 项目                    | 期末余额   | 年初余额   |     │
-│ ▼ 资产                  | 500,000   | 450,000   |     │
-│   ▼ 流动资产            | 300,000   | 280,000   |     │
-│     货币资金            | 120,000   | 100,000   |     │
-│     应收账款            | 85,000    | 80,000    |     │
-│     存货                | 95,000    | 100,000   |     │
-│   ▼ 非流动资产          | 200,000   | 170,000   |     │
-│     固定资产            | 180,000   | 150,000   |     │
-│     无形资产            | 20,000    | 20,000    |     │
-│ ▼ 负债                  | 200,000   | 180,000   |     │
-│ ...                                                     │
-├─────────────────────────────────────────────────────────┤
-│ [对平校验]                                              │
-│ ✓ 资产 = 负债 + 所有者权益 (500,000 = 200,000 + 300,000) │
-├─────────────────────────────────────────────────────────┤
-│ [导出 Excel] [导出 PDF] [打印]                          │
-└─────────────────────────────────────────────────────────┘
-```
-
-**需要的组件**：
-
-| 组件 | 描述 | 复用/新增 |
-|------|------|---------|
-| `ReportTypeNav` | 报表类型导航 | 新增 |
-| `ReportParams` | 报表参数面板 | 新增 |
-| `ScopeSelector` | 口径选择器（normal/adjustment/all） | 新增 |
-| `HierarchyTable` | **层级分组表**（核心组件，建议用 AntV S2） | **新增** |
-| `BalanceCheckCard` | 对平校验卡片 | 新增 |
-| `BudgetCompareView` | 预算对比视图（预算/实际/差异列） | 新增 |
-| `ExportMenu` | 导出菜单（Excel/PDF） | 新增 |
-
-**HierarchyTable 层级表 - 详细规格**：
-
-建议使用 **AntV S2** 实现：
+### 7.2 HierarchyTable 层级分组表
 
 ```typescript
-// S2 配置示例
+interface HierarchyTableProps {
+  data: ReportRow[];
+  columns: ColumnDef[];
+  expandable?: boolean;
+  showSubTotals?: boolean;
+  showGrandTotals?: boolean;
+}
+
+interface ReportRow {
+  account_code: string;
+  account_name: string;
+  account_path: string[];  // 层级路径 ["资产", "流动资产", "货币资金"]
+  level: number;
+  amounts: Record<string, number>;  // { "期末余额": 100000, "年初余额": 90000 }
+}
+```
+
+**功能要求**：
+- 按层级展开/收起
+- 自动计算小计/合计
+- 支持多列（多期间对比）
+- 金额格式化（千分位、负数红色）
+- 点击行下钻
+
+**技术建议**：使用 AntV S2，配置 `hierarchyType: 'tree'`
+
+### 7.3 DataTable 通用数据表格
+
+```typescript
+interface DataTableProps<T> {
+  columns: ColumnDef<T>[];
+  data: T[];
+  loading?: boolean;
+  pagination?: { page: number; pageSize: number; total: number };
+  filters?: FilterDef[];
+  rowSelection?: { selectedKeys: string[]; onChange: (keys: string[]) => void };
+  rowActions?: ActionDef[];
+  onRowClick?: (row: T) => void;
+  exportable?: boolean;
+}
+
+interface ColumnDef<T> {
+  key: string;
+  title: string;
+  dataIndex: keyof T;
+  sortable?: boolean;
+  render?: (value: any, row: T) => ReactNode;
+}
+
+interface ActionDef {
+  key: string;
+  label: string;
+  onClick: (row: any) => void;
+  visible?: (row: any) => boolean;
+  danger?: boolean;
+}
+```
+
+**功能要求**：
+- 列定义配置化
+- 筛选、排序、分页
+- 行选择（单选/多选）
+- 行操作按钮（可配置可见性）
+- 导出功能
+
+---
+
+## 八、技术建议
+
+### 8.1 层级表方案
+
+**推荐：AntV S2**
+
+```typescript
 const s2Options = {
-  hierarchyType: 'tree',  // 树形层级
+  hierarchyType: 'tree',
   totals: {
     row: { showGrandTotals: true, showSubTotals: true },
     col: { showGrandTotals: true },
   },
-  style: {
-    cellCfg: { height: 32 },
-  },
-};
-
-const s2DataConfig = {
-  fields: {
-    rows: ['account_path'],  // 层级路径
-    columns: ['period'],
-    values: ['amount'],
-  },
-  data: reportData,
 };
 ```
 
-功能要求：
-- 按科目层级展开/收起
-- 自动计算小计/合计
-- 支持多期间对比（列）
-- 金额格式化（千分位、负数红色）
-- 点击下钻
-
----
-
-### 3.5 期间管理 `/periods`
-
-**页面布局**：
-```
-┌─────────────────────────────────────────────────────────┐
-│ [期间列表]                                              │
-│ 期间     | 状态       | 凭证数 | 操作                   │
-│ 2025-01 | ● 开放     | 48    | [结账]                 │
-│ 2024-12 | ● 已结账   | 52    | [重开]                 │
-│ 2024-11 | ● 已结账   | 45    | [重开]                 │
-├─────────────────────────────────────────────────────────┤
-│ [结账确认对话框]                                        │
-│ 确认结账 2025-01？                                      │
-│ - 将结转损益到本年利润                                  │
-│ - 生成期末报表                                          │
-│ - 期间状态改为 closed                                   │
-│ [取消] [确认结账]                                       │
-└─────────────────────────────────────────────────────────┘
-```
-
-**需要的组件**：
-
-| 组件 | 描述 | 复用/新增 |
-|------|------|---------|
-| `PeriodTable` | 期间列表 | 新增 |
-| `PeriodStatusBadge` | 期间状态徽章（open/closed/adjustment） | 新增 |
-| `CloseConfirmDialog` | 结账确认对话框 | 新增 |
-
----
-
-### 3.6 应收管理 `/ar`
-
-**页面布局**：
-```
-┌─────────────────────────────────────────────────────────┐
-│ [Tab 切换]                                              │
-│ [应收列表] [账龄分析] [收款计划] [票据] [坏账]          │
-├─────────────────────────────────────────────────────────┤
-│ [筛选]                                                  │
-│ 状态: [未结清▼] | 期间: [2025-01▼] | 客户: [全部▼]      │
-├─────────────────────────────────────────────────────────┤
-│ [应收列表]                                              │
-│ ID | 客户 | 金额 | 已收 | 余额 | 日期 | 账龄 | 操作     │
-│ 1 | 客户A | 10,000 | 5,000 | 5,000 | 01-10 | 7天 | [核销] │
-├─────────────────────────────────────────────────────────┤
-│ [核销对话框]                                            │
-│ 应收ID: 1  客户: 客户A  未收金额: 5,000                  │
-│ 核销金额: [________]                                    │
-│ 核销日期: [2025-01-17]                                  │
-│ [取消] [确认核销]                                       │
-└─────────────────────────────────────────────────────────┘
-```
-
-**需要的组件**：
-
-| 组件 | 描述 | 复用/新增 |
-|------|------|---------|
-| `ARList` | 应收列表 | 新增 |
-| `AgingReport` | 账龄分析表（0-30/31-60/61-90/90+天） | 新增 |
-| `PaymentPlanList` | 收款计划列表 | 新增 |
-| `BillList` | 票据列表 | 新增 |
-| `BadDebtList` | 坏账列表 | 新增 |
-| `SettleDialog` | 核销对话框 | 新增 |
-| `CustomerSelector` | 客户选择器 | 新增 |
-
----
-
-### 3.7 应付管理 `/ap`
-
-与应收类似，组件可复用，换成供应商维度。
-
-**需要的组件**：
-
-| 组件 | 描述 |
-|------|------|
-| `APList` | 应付列表 |
-| `AgingReport` | 复用应收的账龄组件 |
-| `PaymentPlanList` | 付款计划列表 |
-| `BillList` | 复用票据组件 |
-| `SettleDialog` | 复用核销对话框 |
-| `SupplierSelector` | 供应商选择器 |
-
----
-
-### 3.8 存货管理 `/inventory`
-
-**需要的组件**：
-
-| 组件 | 描述 |
-|------|------|
-| `InventoryBalanceTable` | 存货结存表 |
-| `InventoryMovementList` | 出入库记录 |
-| `CountForm` | 盘点录入表单 |
-| `CountResultTable` | 盘点结果（账实差异） |
-| `ItemSelector` | 存货项目选择器 |
-
----
-
-### 3.9 固定资产 `/fixed-assets`
-
-**需要的组件**：
-
-| 组件 | 描述 |
-|------|------|
-| `AssetList` | 资产卡片列表 |
-| `AssetDetail` | 资产详情（含折旧计划） |
-| `DepreciationTable` | 折旧明细表 |
-| `AssetForm` | 资产登记表单 |
-| `DisposeDialog` | 处置对话框 |
-| `CIPList` | 在建工程列表 |
-| `TransferDialog` | 转固/转移对话框 |
-
----
-
-### 3.10 科目表 `/accounts`
-
-**需要的组件**：
-
-| 组件 | 描述 |
-|------|------|
-| `AccountTree` | 科目树形表（展开/收起） |
-| `AccountForm` | 科目新增/编辑表单 |
-| `AccountTypeFilter` | 科目类型筛选（资产/负债/权益/收入/费用） |
-
----
-
-### 3.11 维度管理 `/dimensions`
-
-**需要的组件**：
-
-| 组件 | 描述 |
-|------|------|
-| `DimensionTabs` | 维度类型 Tab（部门/项目/客户/供应商/员工） |
-| `DimensionList` | 维度列表 |
-| `DimensionForm` | 维度新增表单 |
-
----
-
-### 3.12 预算管理 `/budgets`
-
-**需要的组件**：
-
-| 组件 | 描述 |
-|------|------|
-| `BudgetTable` | 预算表（可编辑） |
-| `BudgetVarianceReport` | 预算执行分析（预算/实际/差异/执行率） |
-| `BudgetForm` | 预算设置表单 |
-
----
-
-### 3.13 凭证模板 `/templates`
-
-**需要的组件**：
-
-| 组件 | 描述 |
-|------|------|
-| `TemplateList` | 模板列表 |
-| `TemplateEditor` | 模板编辑器（JSON + 预览） |
-| `JSONEditor` | JSON 编辑器（语法高亮、校验） |
-
----
-
-### 3.14 外汇设置 `/fx`
-
-**需要的组件**：
-
-| 组件 | 描述 |
-|------|------|
-| `CurrencyList` | 币种列表 |
-| `RateTable` | 汇率表（按日期） |
-| `FXBalanceTable` | 外币余额表 |
-| `RevalueDialog` | 重估对话框 |
-
----
-
-## 四、通用组件清单
-
-### 4.1 可直接复用 zcpg 的组件
-
-| 组件 | 来源 |
-|------|------|
-| `Table` | `data_card_components.ex` |
-| `Timeline` | `ui_components.ex` |
-| `StatCard` | `multiboard_card_components.ex` |
-| `Modal/Dialog` | 通用 UI |
-| `Button/ButtonGroup` | 通用 UI |
-| `Dropdown/Select` | 通用 UI |
-| `DatePicker` | 通用 UI |
-| `FileUpload` | 通用 UI |
-| `Tabs` | 通用 UI |
-| `Charts (ECharts)` | 图表组件 |
-
-### 4.2 需要新增的核心组件
-
-| 组件 | 优先级 | 描述 |
-|------|--------|------|
-| `EntryTable` | **P0** | 可编辑分录表（凭证修改核心） |
-| `AccountSelector` | **P0** | 科目选择器（树形 + 搜索） |
-| `DimensionSelector` | **P0** | 维度选择器（部门/项目/客户/供应商/员工） |
-| `HierarchyTable` | **P0** | 层级分组表（报表用，建议 AntV S2） |
-| `PeriodSelector` | P1 | 期间选择器 |
-| `BalanceIndicator` | P1 | 借贷平衡指示器 |
-| `VoucherStatusBadge` | P1 | 凭证状态徽章 |
-| `AgingReport` | P1 | 账龄分析表 |
-| `AuditTimeline` | P2 | 审计轨迹时间线 |
-| `JSONEditor` | P2 | JSON 编辑器 |
-
----
-
-## 五、技术建议
-
-### 5.1 层级表方案
-
-**推荐：AntV S2**
-
-- 原生支持树形层级（`hierarchyType: 'tree'`）
-- 自动小计/合计
-- 展开/收起交互
-- 适合资产负债表、利润表等
-
-备选：如果数据量小，可在后端计算好层级小计，前端用普通表格渲染。
-
-### 5.2 可编辑表格方案
+### 8.2 可编辑表格方案
 
 **推荐：Ant Design ProComponents - EditableProTable**
 
-或自研基于 Ant Design Table + Form 的方案。
+### 8.3 科目选择器方案
 
-核心功能：
-- 行内编辑
-- 新增/删除行
-- 自定义单元格渲染（科目选择器、维度选择器）
-- 实时校验
-
-### 5.3 科目选择器方案
-
-**推荐：TreeSelect + 搜索**
-
-- 展示科目层级
-- 支持搜索（按代码/名称）
-- 显示停用状态
-- 可配置是否允许选择父级科目
+**推荐：Ant Design TreeSelect + 搜索**
 
 ---
 
-## 六、JSON 输出结构示例
+## 九、总结
 
-### 凭证详情页
-```json
-{
-  "component": "voucher_detail",
-  "voucher": {
-    "id": 1,
-    "voucher_no": "2025-01-001",
-    "date": "2025-01-15",
-    "description": "销售收入",
-    "status": "draft"
-  },
-  "entries": [
-    {"line_no": 1, "account_code": "1001", "account_name": "银行存款", "debit": 10000, "credit": 0, "dept_id": 1},
-    {"line_no": 2, "account_code": "6001", "account_name": "主营收入", "debit": 0, "credit": 10000}
-  ],
-  "actions": ["review", "delete"],
-  "editable": true
-}
-```
+### 组件数量统计
 
-### 报表页
-```json
-{
-  "component": "pivot_table",
-  "engine": "antv-s2",
-  "title": "资产负债表",
-  "period": "2025-01",
-  "rows": ["account_path"],
-  "columns": ["metric"],
-  "values": ["amount"],
-  "totals": {"row": true, "col": false},
-  "balance_check": {
-    "formula": "资产 = 负债 + 所有者权益",
-    "is_balanced": true
-  }
-}
-```
+| 类别 | 数量 |
+|------|------|
+| 核心业务组件（新增） | 6 |
+| 通用 UI 组件（新增） | 5 |
+| 业务专用组件（新增） | 5 |
+| **需新增总计** | **16** |
+| 可复用 zcpg | 10 |
+| **总计** | **26** |
 
----
+### 开发优先级
 
-## 七、总结
+| 优先级 | 组件 | 说明 |
+|--------|------|------|
+| **P0** | `EntryTable`, `AccountSelector`, `DimensionSelector`, `HierarchyTable`, `DataTable` | 凭证和报表核心 |
+| **P1** | `PeriodSelector`, `StatusBadge`, `BalanceIndicator`, `FormDialog`, `ConfirmDialog`, `AgingReport`, `ReportParams` | 基础交互 |
+| **P2** | `ExportMenu`, `BudgetCompareView`, `AuditTimeline`, `JSONEditor` | 增强功能 |
 
-| 类别 | 数量 | 说明 |
-|------|------|------|
-| Ledger 命令 | 60+ | 覆盖完整财务流程 |
-| 前端页面 | 14 | 核心5个 + 子账5个 + 配置4个 |
-| 需新增组件 | 10 | P0 级别 4 个（EntryTable、AccountSelector、DimensionSelector、HierarchyTable） |
-| 可复用组件 | 10+ | 来自 zcpg |
+### 页面开发顺序建议
 
-**开发优先级建议**：
-1. P0：凭证工作台 + 凭证详情（含可编辑分录表）
-2. P0：报表中心（含层级表）
-3. P1：余额查询、期间管理
-4. P1：子账管理（AR/AP/存货/固定资产）
-5. P2：配置页面
+1. **P0**：凭证工作台 + 凭证详情（依赖 EntryTable、AccountSelector、DimensionSelector、DataTable）
+2. **P0**：报表中心（依赖 HierarchyTable、ReportParams）
+3. **P1**：余额查询、期间管理
+4. **P1**：子账管理（AR/AP/存货/固定资产）- 主要复用 DataTable + FormDialog
+5. **P2**：配置页面
